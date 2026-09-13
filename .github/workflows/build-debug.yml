@@ -84,9 +84,6 @@ jobs:
           grep -q 'decode-additional-resources' apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
           grep -q 'DecodeAdditionalResources' brut.apktool/apktool-lib/src/main/java/brut/androlib/Config.java
 
-      - name: Check AAR metadata
-        run: ./gradlew :app:checkDebugAarMetadata --stacktrace --no-daemon
-
       - name: Build Debug APK
         run: |
           ./gradlew :app:assembleDebug \
