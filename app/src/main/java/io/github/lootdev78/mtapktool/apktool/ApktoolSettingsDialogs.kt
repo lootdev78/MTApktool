@@ -1,11 +1,7 @@
 package io.github.lootdev78.mtapktool.apktool
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import brut.androlib.res.AaptManager
 import io.github.apktool.android.runtime.ApktoolCommandRunner
 import io.github.apktool.android.runtime.ShellTokenizer
 import io.github.apktool.android.runtime.Toolchain
@@ -72,15 +69,6 @@ private enum class SettingsOverlay { NONE, FRAMEWORKS, AAPT2, SIGNATURE, PATHS, 
 @Composable
 fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
-    var notificationGranted by remember {
-        mutableStateOf(
-            Build.VERSION.SDK_INT < 33 ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notificationGranted = granted
-    }
     var general by remember { mutableStateOf(ApktoolSettings.generalDefaults(context)) }
     var decode by remember { mutableStateOf(ApktoolSettings.decodeDefaults(context)) }
     var build by remember { mutableStateOf(ApktoolSettings.buildDefaults(context)) }
@@ -131,37 +119,45 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
             ) { insets ->
                 LazyColumn(modifier = Modifier.fillMaxSize().padding(insets)) {
                     item { SettingSwitchRow("Nach Abschluss benachrichtigen", "Benachrichtigung nach Erstellen/Dekompilieren", general.notifyOnCompletion) { saveGeneral(general.copy(notifyOnCompletion = it)) } }
-                    item {
-                        SettingNavigationRow(
-                            "Apktool-Benachrichtigungen",
-                            if (notificationGranted) "Systemberechtigung ist aktiv. Laufende Jobs und Ergebnisse werden angezeigt." else "Android-Benachrichtigungsberechtigung fehlt.",
-                            if (notificationGranted) "Aktiv" else "Berechtigung erteilen",
-                        ) {
-                            if (Build.VERSION.SDK_INT >= 33 && !notificationGranted) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }
-                    }
                     item { SettingSwitchRow("Nicht benachrichtigen, falls ausgeführt", "Keine Abschlussmeldung, solange MTApktool sichtbar ist", general.suppressCompletionWhileOpen, general.notifyOnCompletion) { saveGeneral(general.copy(suppressCompletionWhileOpen = it)) } }
                     item { SettingValueRow("Suffix für apk", "Suffix für die Ausgabe-APK", general.apkSuffix.ifBlank { "Kein Suffix" }) { suffixDialog = true } }
                     item { SettingSwitchRow("Ordner \"build\" löschen", "Build-Verzeichnis nach erfolgreicher Kompilierung entfernen", build.deleteBuildDirectory) { saveBuild(build.copy(deleteBuildDirectory = it)) } }
+                    item { SettingSwitchRow("Vollständigen Build erzwingen", "Apktool --force: alle Build-Schritte erneut ausführen", build.force) { saveBuild(build.copy(force = it)) } }
+                    item { SettingSwitchRow("Resource-Crunching deaktivieren", "Apktool --no-crunch", build.noCrunch) { saveBuild(build.copy(noCrunch = it)) } }
+                    item { SettingSwitchRow("Originaldateien kopieren", "Apktool --copy-original für Manifest/META-INF", build.copyOriginal) { saveBuild(build.copy(copyOriginal = it)) } }
+                    item { SettingSwitchRow("Zipalign", "APK nach erfolgreichem Build ausrichten", build.zipalign) { saveBuild(build.copy(zipalign = it)) } }
+                    item { SettingSwitchRow("Signieren", "APK nach erfolgreichem Build signieren", build.sign) { saveBuild(build.copy(sign = it)) } }
                     item { SettingSwitchRow("Alles im Ausgabeverzeichnis", "Dekompilierte Projekte unter /apktool/output anlegen", general.decodeIntoOutputDirectory) { saveGeneral(general.copy(decodeIntoOutputDirectory = it)) } }
                     item { SettingSwitchRow("Erstellen im Ausgabeverzeichnis", "Kompilierte APKs unter /apktool/output ablegen", general.buildIntoOutputDirectory) { saveGeneral(general.copy(buildIntoOutputDirectory = it)) } }
-                    item { SettingSwitchRow("Analyse aller Smali", "Alle classes*.dex dekompilieren", decode.allSources) { saveDecode(decode.copy(allSources = it, noSources = if (it) false else decode.noSources)) } }
+                    item { SettingSwitchRow("Klassen*.dex dekompilieren", "Smali-Quellen beim Decode erzeugen", !decode.noSources) { saveDecode(decode.copy(noSources = !it, allSources = if (!it) false else decode.allSources, noDebugInfo = if (!it) false else decode.noDebugInfo, useRegisters = if (!it) false else decode.useRegisters)) } }
+                    item { SettingSwitchRow("Analyse aller Smali", "Alle classes*.dex dekompilieren", decode.allSources, !decode.noSources) { saveDecode(decode.copy(allSources = it, noSources = if (it) false else decode.noSources)) } }
+                    item { SettingSwitchRow("Ressourcen dekompilieren", "resources.arsc und XML-Ressourcen verarbeiten", !decode.noResources) { saveDecode(decode.copy(noResources = !it, onlyManifest = if (!it) false else decode.onlyManifest)) } }
+                    item { SettingSwitchRow("Nur AndroidManifest.xml", "Apktool --only-manifest", decode.onlyManifest, !decode.noResources) { saveDecode(decode.copy(onlyManifest = it)) } }
+                    item { SettingSwitchRow("Rohwerte ignorieren", "Apktool --ignore-raw-values", decode.ignoreRawValues, !decode.noResources) { saveDecode(decode.copy(ignoreRawValues = it)) } }
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                            Text("Ressourcen-Auflösung", style = MaterialTheme.typography.titleMedium)
+                            Text("Apktool --res-resolve-mode", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            CompactPicker(decode.resourceResolveMode, ApktoolSettings.resourceResolveModes, { mode ->
+                                when (mode) { "greedy" -> "Greedy"; "lazy" -> "Lazy"; else -> "Standard" }
+                            }) { saveDecode(decode.copy(resourceResolveMode = it)) }
+                        }
+                    }
+                    item { SettingSwitchRow("Assets nicht dekompilieren", "Apktool --no-assets", decode.noAssets) { saveDecode(decode.copy(noAssets = it)) } }
+                    item { SettingSwitchRow("Vorhandenes Projekt überschreiben", "Apktool decode --force", decode.force) { saveDecode(decode.copy(force = it)) } }
                     item { SettingNavigationRow("Verwaltung von Rahmenwerken", "Installierte Frameworks auswählen/importieren/löschen", ApktoolSettings.frameworkLabel(framework)) { overlay = SettingsOverlay.FRAMEWORKS } }
                     item { SettingNavigationRow("Austausch von Werkzeugen", "AAPT2 auswählen oder benutzerdefiniertes AAPT2 verwenden", ApktoolSettings.aaptLabel(aapt)) { overlay = SettingsOverlay.AAPT2 } }
                     item { SettingValueRow("Ausgabeverzeichnis", "Vorgabe-Ausgabeverzeichnis", ApktoolSettings.outputRoot(context)) { outputDialog = true } }
                     item { SettingSwitchRow("aapt2 verwenden", "AAPT1 ist absichtlich nicht verfügbar", true, false) {} }
-                    item { SettingSwitchRow("Debug-Informationen schreiben", "Smali-Debugdaten (.local, .param, .line)", !decode.noDebugInfo) { saveDecode(decode.copy(noDebugInfo = !it)) } }
+                    item { SettingSwitchRow("Debug-Informationen schreiben", "Smali-Debugdaten (.local, .param, .line)", !decode.noDebugInfo, !decode.noSources) { saveDecode(decode.copy(noDebugInfo = !it)) } }
                     item { SettingSwitchRow("apk als debuggingfähig einstellen", "android:debuggable beim Build aktivieren", build.debuggable) { saveBuild(build.copy(debuggable = it)) } }
-                    item { SettingSwitchRow("Verwenden Sie \"Register\" statt \"Lokale\".", "Smali mit .registers statt .locals ausgeben", decode.useRegisters) { saveDecode(decode.copy(useRegisters = it)) } }
+                    item { SettingSwitchRow("Verwenden Sie \"Register\" statt \"Lokale\".", "Smali mit .registers statt .locals ausgeben", decode.useRegisters, !decode.noSources) { saveDecode(decode.copy(useRegisters = it)) } }
                     item { SettingSwitchRow("Ausführlich", "Verbose-Modus für Decode/Build", decode.verbose || build.verbose) { saveDecode(decode.copy(verbose = it)); saveBuild(build.copy(verbose = it)) } }
                     item { SettingSwitchRow("Original anpassen", "Apktool --match-original", decode.matchOriginal) { saveDecode(decode.copy(matchOriginal = it)) } }
                     item { SettingSwitchRow("Beibehaltung der Ordnerstruktur", "Ordnerstruktur soweit Apktool möglich erhalten", decode.preserveDirectoryStructure) { saveDecode(decode.copy(preserveDirectoryStructure = it)) } }
                     item { SettingSwitchRow("Hinzufügen \"APKTOOL_DUMMY\"", "Wird vom Apktool-3.x-Kern automatisch behandelt", true, false) {} }
-                    item { SettingSwitchRow("Gebrochene Ressourcen beibehalten", "Apktool --keep-broken-res", decode.keepBrokenResources) { saveDecode(decode.copy(keepBrokenResources = it)) } }
+                    item { SettingSwitchRow("Gebrochene Ressourcen beibehalten", "Apktool --keep-broken-res", decode.keepBrokenResources, !decode.noResources && !decode.onlyManifest) { saveDecode(decode.copy(keepBrokenResources = it)) } }
                     item { SettingSwitchRow("Gespaltene Spuren entfernen", "Split-Metadaten nach Decode aus dem Manifest entfernen", decode.removeSplitTraces) { saveDecode(decode.copy(removeSplitTraces = it)) } }
-                    item { SettingSwitchRow("Versuche, Pakete zusammenzuführen", "Zusätzliche Ressourcenpakete beim Dekompilieren in das Hauptprojekt zusammenführen", decode.additionalResourcesMode == "merge", !decode.noResources) { checked -> saveDecode(decode.copy(additionalResourcesMode = if (checked) "merge" else "separate")) } }
                     item { SettingSwitchRow("<Eigenschaft> entfernen", "<property>-Tags nach Decode entfernen", decode.removePropertyTags) { saveDecode(decode.copy(removePropertyTags = it)) } }
                     item { SettingSwitchRow("Netzwerksicherheitskonfiguration hinzufügen", "Permissive networkSecurityConfig beim Build", build.networkSecurityConfig) { saveBuild(build.copy(networkSecurityConfig = it)) } }
                     item { SettingSwitchRow("Nicht ändern, wenn sie vorhanden ist", "Vorhandene networkSecurityConfig erhalten", build.networkSecurityKeepExisting, build.networkSecurityConfig) { saveBuild(build.copy(networkSecurityKeepExisting = it)) } }
@@ -291,18 +287,25 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
     var selected by remember { mutableStateOf(ApktoolSettings.aaptVariant(context)) }
     var custom by remember { mutableStateOf(ApktoolSettings.customAapt2Path(context)) }
     var info by remember { mutableStateOf("") }
+    var valid by remember { mutableStateOf(false) }
 
     LaunchedEffect(selected, custom) {
-        info = withContext(Dispatchers.IO) {
+        valid = false
+        val result = withContext(Dispatchers.IO) {
             runCatching {
                 if (selected == "custom") {
-                    val f = File(custom); if (!f.isFile) "Benutzerdefiniertes AAPT2 nicht gefunden" else "${f.absolutePath}\n%.2f MiB".format(f.length() / 1024.0 / 1024.0)
+                    val f = File(custom)
+                    if (!f.isFile) error("Benutzerdefiniertes AAPT2 nicht gefunden")
+                    if (AaptManager.getBinaryVersion(f) != 2) error("Datei ist kein AAPT2")
+                    "${f.absolutePath}\n%.2f MiB • AAPT2 geprüft".format(f.length() / 1024.0 / 1024.0)
                 } else {
                     val tc = Toolchain(context); tc.provision(); val f = tc.getAaptBinary(selected)
                     "${f.absolutePath}\n%.2f MiB • Page ${tc.runtimePageSize / 1024} KiB".format(f.length() / 1024.0 / 1024.0)
                 }
-            }.getOrElse { it.message ?: it.toString() }
+            }
         }
+        result.onSuccess { value -> info = value; valid = true }
+            .onFailure { error -> info = error.message ?: error.toString(); valid = false }
     }
 
     AlertDialog(
@@ -322,7 +325,7 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
         confirmButton = {
-            Button(enabled = selected != "custom" || custom.isNotBlank(), onClick = { ApktoolSettings.setAapt2(context, selected, custom); onBack() }) { Text("SPEICHERN") }
+            Button(enabled = valid, onClick = { ApktoolSettings.setAapt2(context, selected, custom); onBack() }) { Text("SPEICHERN") }
         },
     )
 }
@@ -406,57 +409,27 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
 @Composable
 private fun RuntimeInfoDialog(onBack: () -> Unit) {
     val context = LocalContext.current
-    var refresh by remember { mutableIntStateOf(0) }
-    var status by remember { mutableStateOf(ApktoolRuntimeStatus(false, "Prüfe eingebetteten Apktool-A Source-Port …")) }
-    var details by remember { mutableStateOf("") }
-
-    LaunchedEffect(refresh) {
-        val check = withContext(Dispatchers.IO) { ApktoolRuntimeVerifier.verify(context) }
-        status = check
-        details = withContext(Dispatchers.IO) {
+    var info by remember { mutableStateOf("Lade Runtime …") }
+    LaunchedEffect(Unit) {
+        info = withContext(Dispatchers.IO) {
             runCatching {
-                val tc = Toolchain(context)
-                tc.provisionDecode()
-                val aapt = runCatching { tc.getAaptBinary(ApktoolSettings.aaptVariant(context)) }.getOrNull()
-                buildString {
-                    append("Apktool source runtime: ").append(if (check.ready) "AKTIV" else "FEHLER").append('\n')
-                    append("Version: ").append(Toolchain.VERSION).append('\n')
-                    append("compileSdk/targetSdk: 36\n")
-                    append("minSdk: 29\n")
-                    append("AGP: 8.10.1\n")
-                    append("Gradle: 8.11.1\n")
-                    append("NDK: 29.0.14033849\n")
-                    append("ABI: arm64-v8a\n")
-                    append("Runtime page: ").append(tc.runtimePageSize / 1024).append(" KiB\n")
-                    append("Runner: ").append(ApktoolSettings.maxWorkers(context)).append("/4\n")
-                    append("Threads/job: ").append(ApktoolSettings.apktoolThreads(context)).append("/4\n")
-                    append("Frameworks: ").append(tc.frameworkDir.absolutePath).append('\n')
-                    append("Decode root: ").append(ApktoolSettings.projectsRoot(context)).append('\n')
-                    append("AAPT2: ").append(aapt?.absolutePath ?: "nicht für Decode erforderlich")
-                }
+                val tc = Toolchain(context); tc.provision()
+                """MTApktool runtime
+Apktool: ${Toolchain.VERSION}
+compileSdk/targetSdk: 36
+minSdk: 29
+AGP: 8.10.1
+Gradle: 8.11.1
+NDK: 29.0.14033849
+ABI: arm64-v8a
+Runtime page: ${tc.runtimePageSize / 1024} KiB
+Runner: ${ApktoolSettings.maxWorkers(context)}/4
+Threads/job: ${ApktoolSettings.apktoolThreads(context)}/4
+Root: ${tc.root.absolutePath}"""
             }.getOrElse { it.stackTraceToString() }
         }
     }
-
-    AlertDialog(
-        onDismissRequest = onBack,
-        title = { Text("Apktool Runtime") },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                Text(
-                    status.summary,
-                    color = if (status.ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (status.details.isNotBlank()) {
-                    Text(status.details, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
-                }
-                Text(details, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-            }
-        },
-        dismissButton = { TextButton(onClick = { refresh++ }) { Text("SELF-TEST") } },
-        confirmButton = { TextButton(onClick = onBack) { Text("ZURÜCK") } },
-    )
+    AlertDialog(onDismissRequest = onBack, title = { Text("Runtime") }, text = { Text(info, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }, confirmButton = { TextButton(onClick = onBack) { Text("ZURÜCK") } })
 }
 
 @Composable

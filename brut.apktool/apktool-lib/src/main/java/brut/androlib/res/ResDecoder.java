@@ -69,9 +69,6 @@ public class ResDecoder {
         }
 
         mTable.load();
-        // Snapshot only packages that came from this APK before reference resolution
-        // can load external framework/library packages into the same table.
-        List<ResPackageGroup> apkPackageGroups = new ArrayList<>(mTable.listPackageGroups());
 
         Map<ResFileDecoder.Type, ResStreamDecoder> decoders = new HashMap<>();
         decoders.put(ResFileDecoder.Type.UNKNOWN, new ResRawStreamDecoder());
@@ -79,99 +76,49 @@ public class ResDecoder {
 
         BinaryXmlResourceParser parser = new BinaryXmlResourceParser(
             mTable, mConfig.isIgnoreRawValues(), mConfig.isDecodeResolveLazy());
-        ResXmlSerializer fileSerial = new ResXmlSerializer(true);
+        ResXmlSerializer serial = new ResXmlSerializer(true);
         ResXmlPullEventHandler handler = new ResXmlPullEventHandler(mApkInfo);
-        decoders.put(ResFileDecoder.Type.BINARY_XML, new ResXmlPullStreamDecoder(parser, fileSerial, handler));
+        decoders.put(ResFileDecoder.Type.BINARY_XML, new ResXmlPullStreamDecoder(parser, serial, handler));
 
         ResFileDecoder fileDecoder = new ResFileDecoder(decoders);
-        Directory inDir;
-        Directory mainOutDir;
+        Directory inDir, outDir;
 
         try {
             inDir = mApkInfo.getApkFile().getDirectory();
-            mainOutDir = new FileDirectory(apkDir);
+            outDir = new FileDirectory(apkDir);
         } catch (DirectoryException ex) {
             throw new AndrolibException(ex);
         }
 
-        ResPackage mainPackage = mTable.getMainPackage();
-        decodePackageResources(mainPackage, inDir, mainOutDir, fileDecoder, "main");
-        AndrolibException mainError = parser.getFirstError();
-        if (mainError != null) {
-            throw mainError;
-        }
+        ResPackage pkg = mTable.getMainPackage();
 
-        Config.DecodeAdditionalResources additionalMode = mConfig.getDecodeAdditionalResources();
-        if (additionalMode != Config.DecodeAdditionalResources.NONE) {
-            for (ResPackageGroup group : apkPackageGroups) {
-                if (group == mainPackage.getGroup() || group.getId() == ResTable.SYS_PACKAGE_ID) {
-                    continue;
-                }
-
-                ResPackage extraPackage = group.getBasePackage();
-                Directory target = mainOutDir;
-                String targetLabel = "main";
-                if (additionalMode == Config.DecodeAdditionalResources.SEPARATE) {
-                    String pkgName = sanitizeAdditionalPackageName(group.getName());
-                    if (pkgName.isEmpty()) {
-                        pkgName = String.format(Locale.ROOT, "package-%02x", group.getId());
-                    }
-                    File extraDir = new File(new File(apkDir, "additional-resources"), pkgName);
-                    if (!extraDir.isDirectory() && !extraDir.mkdirs()) {
-                        throw new AndrolibException("Could not create additional resources directory: " + extraDir);
-                    }
-                    try {
-                        target = new FileDirectory(extraDir);
-                    } catch (DirectoryException ex) {
-                        throw new AndrolibException(ex);
-                    }
-                    targetLabel = extraDir.getPath();
-                }
-
-                Log.i(TAG, String.format(Locale.ROOT,
-                    "Decoding additional resource package 0x%02x (%s) into %s...",
-                    group.getId(), group.getName(), targetLabel));
-                try {
-                    decodePackageResources(extraPackage, inDir, target, fileDecoder, targetLabel);
-                } catch (AndrolibException ex) {
-                    // Additional packages are an Android-port convenience. A malformed
-                    // secondary package must not destroy an otherwise valid main decode.
-                    Log.w(TAG, "Could not decode additional resource package " + group.getName()
-                        + " (0x" + Integer.toHexString(group.getId()) + "): " + ex.getMessage());
-                }
-            }
-        }
-    }
-
-    private void decodePackageResources(ResPackage pkg, Directory inDir, Directory outDir,
-            ResFileDecoder fileDecoder, String targetLabel) throws AndrolibException {
-        Log.i(TAG, "Decoding value resources" + ("main".equals(targetLabel) ? "..." : " -> " + targetLabel + "..."));
+        Log.i(TAG, "Decoding value resources...");
         for (ResEntry entry : Lists.newArrayList(listEntries(pkg))) {
             if (entry.getValue() instanceof ResBag) {
                 ((ResBag) entry.getValue()).resolveKeys();
             }
         }
 
-        Log.i(TAG, "Decoding file resources" + ("main".equals(targetLabel) ? "..." : " -> " + targetLabel + "..."));
+        Log.i(TAG, "Decoding file resources...");
         for (ResEntry entry : Lists.newArrayList(listEntries(pkg))) {
             if (entry.getValue() instanceof ResFileReference) {
                 fileDecoder.decode(entry, inDir, outDir, mResFileMap);
             }
         }
 
-        ResXmlSerializer serial = new ResXmlSerializer(false);
-        Log.i(TAG, "Generating values XMLs" + ("main".equals(targetLabel) ? "..." : " -> " + targetLabel + "..."));
+        // Disable auto-escaping in generated XMLs.
+        serial = new ResXmlSerializer(false);
+
+        Log.i(TAG, "Generating values XMLs...");
         generateValuesXmls(pkg, outDir, serial);
         generatePublicXml(pkg, outDir, serial);
         generateStagingXmls(pkg, outDir, serial);
         generateOverlayableXml(pkg, outDir, serial);
-    }
 
-    private static String sanitizeAdditionalPackageName(String name) {
-        if (name == null) {
-            return "";
+        AndrolibException ex = parser.getFirstError();
+        if (ex != null) {
+            throw ex;
         }
-        return name.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
     private static Iterable<ResEntry> listEntries(ResPackage pkg) {

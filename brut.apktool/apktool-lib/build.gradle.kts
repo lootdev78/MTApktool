@@ -30,7 +30,7 @@ dependencies {
     api(project(":brut.j.yaml"))
 
     implementation(project(":smali-android"))
-    implementation("org.antlr:antlr-runtime:3.5.2")
+    implementation(project(":antlr-runtime"))
     implementation(libs.guava)
     implementation(libs.commons.io)
     implementation(libs.commons.text)

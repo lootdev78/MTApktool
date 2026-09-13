@@ -37,9 +37,8 @@ dependencies {
     api(libs.guava)
     implementation("com.google.code.findbugs:jsr305:3.0.2")
     implementation("com.beust:jcommander:1.82")
-    api("org.antlr:antlr-runtime:3.5.2")
-    implementation("org.antlr:stringtemplate:3.2.1")
-    antlr("org.antlr:antlr:3.5.2")
+    api(project(":antlr-runtime"))
+    antlr("org.antlr:antlr:3.5.3")
     jflex("de.jflex:jflex:1.9.1")
 }
 

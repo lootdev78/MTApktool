@@ -17,7 +17,6 @@ data class ApktoolDecodeDefaults(
     val ignoreRawValues: Boolean = false,
     val noAssets: Boolean = false,
     val resourceResolveMode: String = "default",
-    val additionalResourcesMode: String = "separate",
     val useRegisters: Boolean = true,
     val createNomedia: Boolean = false,
     val removeSplitTraces: Boolean = true,
@@ -50,7 +49,7 @@ data class ApktoolSignatureDefaults(
 
 data class ApktoolGeneralDefaults(
     val notifyOnCompletion: Boolean = true,
-    val suppressCompletionWhileOpen: Boolean = false,
+    val suppressCompletionWhileOpen: Boolean = true,
     val apkSuffix: String = "",
     val decodeIntoOutputDirectory: Boolean = false,
     val buildIntoOutputDirectory: Boolean = true,
@@ -83,7 +82,6 @@ object ApktoolSettings {
     private const val KEY_D_IGNORE_RAW = "decode_ignore_raw"
     private const val KEY_D_NO_ASSETS = "decode_no_assets"
     private const val KEY_D_RESOLVE_MODE = "decode_resolve_mode"
-    private const val KEY_D_ADDITIONAL_RESOURCES = "decode_additional_resources"
     private const val KEY_D_REGISTERS = "decode_use_registers"
     private const val KEY_D_NOMEDIA = "decode_create_nomedia"
     private const val KEY_D_REMOVE_SPLIT = "decode_remove_split_traces"
@@ -115,14 +113,15 @@ object ApktoolSettings {
     val frameworkOptions = listOf("default", "sdk36", "sdk35", "sdk34", "sdk33")
     val aaptOptions = listOf("default", "sdk36", "sdk35", "sdk33", "legacy", "custom")
     val resourceResolveModes = listOf("default", "greedy", "lazy")
-    val additionalResourcesModes = listOf("none", "main", "separate", "merge")
     val signatureProfiles = listOf("testkey", "custom")
 
     fun frameworkTag(context: Context): String =
-        prefs(context).getString(KEY_FRAMEWORK, DEFAULT_FRAMEWORK) ?: DEFAULT_FRAMEWORK
+        prefs(context).getString(KEY_FRAMEWORK, DEFAULT_FRAMEWORK)
+            ?.takeIf(::isValidFrameworkTag) ?: DEFAULT_FRAMEWORK
 
     fun aaptVariant(context: Context): String =
-        prefs(context).getString(KEY_AAPT, DEFAULT_AAPT) ?: DEFAULT_AAPT
+        prefs(context).getString(KEY_AAPT, DEFAULT_AAPT)
+            ?.takeIf { it in aaptOptions } ?: DEFAULT_AAPT
 
     fun customAapt2Path(context: Context): String = prefs(context).getString(KEY_CUSTOM_AAPT2, "").orEmpty()
     fun maxWorkers(context: Context): Int = prefs(context).getInt(KEY_WORKERS, 2).coerceIn(1, 4)
@@ -134,7 +133,7 @@ object ApktoolSettings {
         val p = prefs(context)
         return ApktoolGeneralDefaults(
             p.getBoolean(KEY_NOTIFY_DONE, true),
-            p.getBoolean(KEY_NOTIFY_HIDE_FOREGROUND, false),
+            p.getBoolean(KEY_NOTIFY_HIDE_FOREGROUND, true),
             p.getString(KEY_APK_SUFFIX, "").orEmpty(),
             p.getBoolean(KEY_DECODE_TO_OUTPUT, false),
             p.getBoolean(KEY_BUILD_TO_OUTPUT, true),
@@ -156,7 +155,6 @@ object ApktoolSettings {
             ignoreRawValues = p.getBoolean(KEY_D_IGNORE_RAW, false),
             noAssets = p.getBoolean(KEY_D_NO_ASSETS, false),
             resourceResolveMode = p.getString(KEY_D_RESOLVE_MODE, "default")?.takeIf { it in resourceResolveModes } ?: "default",
-            additionalResourcesMode = p.getString(KEY_D_ADDITIONAL_RESOURCES, "separate")?.takeIf { it in additionalResourcesModes } ?: "separate",
             useRegisters = p.getBoolean(KEY_D_REGISTERS, true),
             createNomedia = p.getBoolean(KEY_D_NOMEDIA, false),
             removeSplitTraces = p.getBoolean(KEY_D_REMOVE_SPLIT, true),
@@ -243,7 +241,6 @@ object ApktoolSettings {
             .putBoolean(KEY_D_IGNORE_RAW, value.ignoreRawValues)
             .putBoolean(KEY_D_NO_ASSETS, value.noAssets)
             .putString(KEY_D_RESOLVE_MODE, value.resourceResolveMode.takeIf { it in resourceResolveModes } ?: "default")
-            .putString(KEY_D_ADDITIONAL_RESOURCES, value.additionalResourcesMode.takeIf { it in additionalResourcesModes } ?: "separate")
             .putBoolean(KEY_D_REGISTERS, value.useRegisters && !value.noSources)
             .putBoolean(KEY_D_NOMEDIA, value.createNomedia)
             .putBoolean(KEY_D_REMOVE_SPLIT, value.removeSplitTraces)

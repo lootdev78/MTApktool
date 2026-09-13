@@ -23,8 +23,6 @@ public class Config {
     public enum DecodeSources { FULL, ONLY_MAIN_CLASSES, NONE }
     public enum DecodeResources { FULL, ONLY_MANIFEST, NONE }
     public enum DecodeResolve { DEFAULT, GREEDY, LAZY }
-    /** Android port: how resource packages other than the APK main package are decoded. */
-    public enum DecodeAdditionalResources { NONE, MAIN, SEPARATE, MERGE }
     public enum DecodeAssets { FULL, NONE }
 
     private final String mVersion;
@@ -44,7 +42,6 @@ public class Config {
     private boolean mBaksmaliUseRegisters;
     private DecodeResources mDecodeResources;
     private DecodeResolve mDecodeResolve;
-    private DecodeAdditionalResources mDecodeAdditionalResources;
     private boolean mKeepBrokenResources;
     private boolean mIgnoreRawValues;
     private boolean mAnalysisMode;
@@ -77,7 +74,6 @@ public class Config {
         mBaksmaliUseRegisters = false;
         mDecodeResources = DecodeResources.FULL;
         mDecodeResolve = DecodeResolve.DEFAULT;
-        mDecodeAdditionalResources = DecodeAdditionalResources.NONE;
         mKeepBrokenResources = false;
         mIgnoreRawValues = false;
         mAnalysisMode = false;
@@ -207,15 +203,6 @@ public class Config {
     public void setDecodeResolve(DecodeResolve decodeResolve) {
         assert decodeResolve != null;
         mDecodeResolve = decodeResolve;
-    }
-
-    public DecodeAdditionalResources getDecodeAdditionalResources() {
-        return mDecodeAdditionalResources;
-    }
-
-    public void setDecodeAdditionalResources(DecodeAdditionalResources mode) {
-        assert mode != null;
-        mDecodeAdditionalResources = mode;
     }
 
     public boolean isKeepBrokenResources() {

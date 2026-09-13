@@ -14,9 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -32,21 +35,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.lootdev78.mtapktool.feature.explorer.model.StorageInfo
 import io.github.lootdev78.mtapktool.feature.explorer.model.formatSize
 import io.github.lootdev78.mtapktool.feature.explorer.model.getStorageRoots
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
+import java.io.File
 
 
 @Composable
 fun SideBar(
     drawerWidth: Dp,
     viewModel: ExplorerViewModel = viewModel(),
-    onClose: () -> Unit,
-    onSettings: () -> Unit,
-    onJobs: () -> Unit,
+    bookmarks: List<String> = emptyList(),
+    onBookmarkClick: (String) -> Unit = {},
+    onRemoveBookmark: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onClose: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -85,6 +92,45 @@ fun SideBar(
 
         HorizontalDivider()
 
+        if (bookmarks.isNotEmpty()) {
+            Text(
+                text = "Bookmarks",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            bookmarks.forEach { path ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onClose()
+                            onBookmarkClick(path)
+                        }
+                        .padding(start = 12.dp, top = 2.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bookmark,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = File(path).name.ifBlank { path },
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = 12.sp
+                    )
+                    IconButton(onClick = { onRemoveBookmark(path) }) {
+                        Icon(Icons.Default.Close, contentDescription = "Remove bookmark")
+                    }
+                }
+            }
+            HorizontalDivider()
+        }
+
         NavigationDrawerItem(
             label = {
                 Text("Settings")
@@ -92,23 +138,7 @@ fun SideBar(
             selected = false,
             onClick = {
                 onClose()
-                onSettings()
-            },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = null
-                )
-            }
-        )
-
-
-        NavigationDrawerItem(
-            label = { Text("Apktool Jobs") },
-            selected = false,
-            onClick = {
-                onClose()
-                onJobs()
+                onOpenSettings()
             },
             icon = {
                 Icon(

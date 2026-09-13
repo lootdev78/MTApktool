@@ -71,14 +71,21 @@ public final class Toolchain {
         return getRuntimePageSize() >= 16 * 1024L;
     }
 
-    /**
-     * Provision the full build toolchain. Build/repack needs the bundled AAPT2
-     * executable, so this path keeps the original Apktool-A payload checks.
-     */
     public void provision() throws IOException {
         synchronized (PROVISION_LOCK) {
-            provisionDecodeLocked();
+            ensureDirectories();
             requireArm64Payload();
+            configureAndroidRuntimeProperties();
+
+            // Assets remain readable as sdk-XX.apk. Runtime copies use Apktool's
+            // ordinary framework tag convention so original CLI `-t sdkXX` works.
+            // Bundled framework names are owned by the app and refreshed on update;
+            // separately installed IDs/tags are left untouched.
+            for (int api : new int[]{33, 34, 35, 36}) {
+                String asset = "apktool/frameworks/sdk-" + api + ".apk";
+                copyAssetIfDifferent(asset, new File(frameworkDir, "1-sdk" + api + ".apk"));
+                if (api == 36) copyAssetIfDifferent(asset, new File(frameworkDir, "1.apk"));
+            }
 
             // Shared-storage mirrors are for visibility/CLI paths only. Android 10+
             // forbids executing writable app payloads, so Apktool executes AAPT2 from
@@ -87,33 +94,12 @@ public final class Toolchain {
             mirrorNative("libaapt2.so", new File(new File(aaptDir, "legacy"), "aapt2"));
             mirrorNative("libaapt2_33.so", new File(new File(aaptDir, "sdk33"), "aapt2"));
             mirrorNative("libaapt2_35.so", new File(new File(aaptDir, "sdk35"), "aapt2"));
+            ensureDebugKeystore();
+
+            System.setProperty("apktool.android.framework.dir", frameworkDir.getAbsolutePath());
             System.setProperty("apktool.android.aapt2", getAaptBinary("default").getAbsolutePath());
+        
         }
-    }
-
-    /**
-     * Decode-only provisioning. Apktool decoding does not execute AAPT2, so an
-     * AAPT2 extraction/ABI problem must not prevent APK -> project decoding.
-     */
-    public void provisionDecode() throws IOException {
-        synchronized (PROVISION_LOCK) {
-            provisionDecodeLocked();
-        }
-    }
-
-    private void provisionDecodeLocked() throws IOException {
-        ensureDirectories();
-        configureAndroidRuntimeProperties();
-
-        // Assets remain readable as sdk-XX.apk. Runtime copies use Apktool's
-        // ordinary framework tag convention so original CLI `-t sdkXX` works.
-        for (int api : new int[]{33, 34, 35, 36}) {
-            String asset = "apktool/frameworks/sdk-" + api + ".apk";
-            copyAssetIfDifferent(asset, new File(frameworkDir, "1-sdk" + api + ".apk"));
-            if (api == 36) copyAssetIfDifferent(asset, new File(frameworkDir, "1.apk"));
-        }
-        ensureDebugKeystore();
-        System.setProperty("apktool.android.framework.dir", frameworkDir.getAbsolutePath());
     }
 
     private void configureAndroidRuntimeProperties() {
@@ -147,16 +133,10 @@ public final class Toolchain {
     }
 
     public Config newConfig() throws IOException {
-        Config c = newDecodeConfig();
-        c.setAaptBinary(getAaptBinary("default").getAbsolutePath());
-        return c;
-    }
-
-    /** Decode configuration that intentionally has no AAPT2 dependency. */
-    public Config newDecodeConfig() {
         Config c = new Config(VERSION);
         c.setJobs(Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors())));
         c.setFrameworkDirectory(frameworkDir.getAbsolutePath());
+        c.setAaptBinary(getAaptBinary("default").getAbsolutePath());
         return c;
     }
 
@@ -175,9 +155,10 @@ public final class Toolchain {
             case "sdk36": name = isLargePageDevice() ? "libaapt2_33.so" : "libaapt2_35.so"; break;
             case "legacy": name = "libaapt2.so"; break;
             case "default":
-            default:
                 name = isLargePageDevice() ? "libaapt2_33.so" : "libaapt2_35.so";
                 break;
+            default:
+                throw new IOException("Unknown AAPT2 variant: " + variant);
         }
         File file = new File(context.getApplicationInfo().nativeLibraryDir, name);
         if (!file.isFile()) throw new IOException("Bundled arm64-v8a AAPT2 missing: " + file);

@@ -1,8 +1,5 @@
 package io.github.lootdev78.mtapktool.apktool
 
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,7 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 fun isApkLike(file: File): Boolean =
-    !file.isDirectory && file.extension.lowercase() in setOf("apk", "apks", "xapk", "apkm")
+    file.isFile && file.extension.lowercase() in setOf("apk", "apks", "xapk", "apkm")
 
 fun isApktoolProject(file: File): Boolean = file.isDirectory && File(file, "apktool.yml").isFile
 
@@ -63,13 +60,9 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
     val general = remember(file) { ApktoolSettings.generalDefaults(context) }
     val isSplitArchive = SplitArchiveSupport.isSplitArchive(file)
     val baseName = file.name.replace(Regex("(?i)\\.(apk|apks|xapk|apkm)$"), "")
-    val defaultRoot = if (general.decodeIntoOutputDirectory) {
-        ApktoolSettings.outputRoot(context)
-    } else {
-        ApktoolSettings.projectsRoot(context)
-    }
+    val root = if (general.decodeIntoOutputDirectory) ApktoolSettings.outputRoot(context) else ApktoolSettings.projectsRoot(context)
 
-    var output by remember(file) { mutableStateOf(uniquePath(defaultRoot, baseName)) }
+    var output by remember(file) { mutableStateOf(uniquePath(root, baseName)) }
     var framework by remember(file) { mutableStateOf(ApktoolSettings.frameworkTag(context)) }
     var resources by remember { mutableStateOf(!defaults.noResources) }
     var onlyManifest by remember { mutableStateOf(defaults.onlyManifest) }
@@ -87,7 +80,6 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
     var ignoreRaw by remember { mutableStateOf(defaults.ignoreRawValues) }
     var noAssets by remember { mutableStateOf(defaults.noAssets) }
     var resolveMode by remember { mutableStateOf(defaults.resourceResolveMode) }
-    var additionalResourcesMode by remember { mutableStateOf(defaults.additionalResourcesMode) }
     var verbose by remember { mutableStateOf(defaults.verbose) }
     var threads by remember { mutableIntStateOf(ApktoolSettings.apktoolThreads(context)) }
     var showSettings by remember { mutableStateOf(false) }
@@ -98,27 +90,6 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
     var splitScanning by remember(file) { mutableStateOf(isSplitArchive) }
     var splitScanError by remember(file) { mutableStateOf<String?>(null) }
     var allSplits by remember { mutableStateOf(false) }
-
-    var runtimeCheckKey by remember { mutableIntStateOf(0) }
-    var runtimeStatus by remember(file) {
-        mutableStateOf(ApktoolRuntimeStatus(false, "Apktool Runtime wird geprüft …"))
-    }
-
-    val outputFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            StorageFolderResolver.persistPermission(context, uri)
-            val folder = StorageFolderResolver.resolveTreeUri(context, uri)
-            if (folder != null) {
-                output = folder.absolutePath
-            } else {
-                Toast.makeText(
-                    context,
-                    "Der ausgewählte Storage-Ordner kann nicht als Dateipfad verwendet werden.",
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
-    }
 
     LaunchedEffect(file.absolutePath, isSplitArchive) {
         if (!isSplitArchive) return@LaunchedEffect
@@ -131,34 +102,13 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
         splitScanning = false
     }
 
-    LaunchedEffect(file.absolutePath, runtimeCheckKey) {
-        runtimeStatus = ApktoolRuntimeStatus(false, "Apktool Runtime wird geprüft …")
-        runtimeStatus = withContext(Dispatchers.IO) { ApktoolRuntimeVerifier.verify(context) }
-    }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                file.name,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.SemiBold,
-            )
-        },
+        title = { Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
         text = {
-            Column(modifier = Modifier.heightIn(max = 610.dp).verticalScroll(rememberScrollState())) {
-                CheckRow("Ressourcen dekompilieren", resources) {
-                    resources = it
-                    if (!it) {
-                        onlyManifest = false
-                        allSplits = false
-                    }
-                }
-                CheckRow("Klassen*.dex dekompilieren", classesDex) {
-                    classesDex = it
-                    if (!it) allDex = false
-                }
+            Column(modifier = Modifier.heightIn(max = 590.dp).verticalScroll(rememberScrollState())) {
+                CheckRow("Ressourcen dekompilieren", resources) { resources = it; if (!it) onlyManifest = false }
+                CheckRow("Klassen*.dex dekompilieren", classesDex) { classesDex = it; if (!it) allDex = false }
                 CheckRow("Alle *.dex dekompilieren", allDex, enabled = classesDex) { allDex = it }
                 CheckRow("die Datei \".nomedia\" erstellen", createNomedia) { createNomedia = it }
 
@@ -169,86 +119,23 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
                     label = { ApktoolSettings.frameworkLabel(it) },
                 ) { framework = it }
 
-                SectionTitle("Dekompilierung zusätzlicher Ressourcen")
-                ChoicePicker(
-                    value = additionalResourcesMode,
-                    options = ApktoolSettings.additionalResourcesModes,
-                    label = {
-                        when (it) {
-                            "none" -> "Nicht dekompilieren"
-                            "main" -> "Dekompilieren in das Hauptverzeichnis"
-                            "merge" -> "Versuche, Pakete zusammenzuführen"
-                            else -> "Dekompilieren in ein separates Verzeichnis"
-                        }
-                    },
-                    enabled = resources && !onlyManifest,
-                ) { additionalResourcesMode = it }
-                CheckRow("Nur AndroidManifest.xml dekompilieren", onlyManifest, enabled = resources) { onlyManifest = it }
-                CheckRow("Gebrochene Ressourcen beibehalten", keepBroken, enabled = resources && !onlyManifest) { keepBroken = it }
-                CheckRow("Rohe Ressourcenwerte ignorieren", ignoreRaw, enabled = resources) { ignoreRaw = it }
-                CheckRow("Assets nicht dekompilieren", noAssets, enabled = resources) { noAssets = it }
-
                 if (isSplitArchive) {
-                    SectionTitle("Zusätzliche Split-APKs")
-                    ChoicePicker(
-                        value = if (allSplits) "all" else "base",
-                        options = listOf("base", "all"),
-                        label = {
-                            if (it == "all") "Alle Split-APKs separat dekompilieren"
-                            else "Nur gewählte Basis-APK dekompilieren"
-                        },
-                        enabled = resources,
-                    ) { allSplits = it == "all" }
+                    SectionTitle("Dekompilierung zusätzlicher APKs")
+                    CheckRow("Alle APK-Splits in eigene Projekte dekompilieren", allSplits) { allSplits = it }
                     when {
                         splitScanning -> Text("Container wird analysiert …", style = MaterialTheme.typography.bodySmall)
                         splitEntries.isEmpty() -> Text(splitScanError ?: "Keine APK gefunden", color = MaterialTheme.colorScheme.error)
-                        !allSplits -> SplitEntryPicker(
-                            value = selectedSplitPath,
-                            entries = splitEntries,
-                            enabled = true,
-                        ) { selectedSplitPath = it }
+                        !allSplits -> SplitEntryPicker(selectedSplitPath, splitEntries) { selectedSplitPath = it }
                     }
                 }
 
-                SectionTitle("Ausgabepfad")
                 OutlinedTextField(
                     value = output,
                     onValueChange = { output = it },
-                    label = { Text("Dekompilier-Ausgabeordner") },
-                    supportingText = { Text("Der Ordner wird bei Bedarf erstellt.") },
+                    label = { Text("Ausgabeordner") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { outputFolderPicker.launch(null) }) {
-                        Text("ORDNER WÄHLEN / ERSTELLEN")
-                    }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { output = uniquePath(defaultRoot, baseName) }) {
-                        Text("STANDARD")
-                    }
-                }
-
-                Card(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text(
-                            if (runtimeStatus.ready) "Apktool Runtime bereit" else "Apktool Runtime",
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (runtimeStatus.ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        )
-                        Text(runtimeStatus.summary, style = MaterialTheme.typography.bodySmall)
-                        if (runtimeStatus.details.isNotBlank()) {
-                            Text(
-                                runtimeStatus.details,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (!runtimeStatus.ready) {
-                            TextButton(onClick = { runtimeCheckKey++ }) { Text("ERNEUT PRÜFEN") }
-                        }
-                    }
-                }
             }
         },
         dismissButton = {
@@ -259,28 +146,8 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
         },
         confirmButton = {
             TextButton(
-                enabled = runtimeStatus.ready && output.isNotBlank() &&
-                    (!isSplitArchive || (!splitScanning && splitEntries.isNotEmpty())),
+                enabled = output.isNotBlank() && (!isSplitArchive || (!splitScanning && splitEntries.isNotEmpty())),
                 onClick = {
-                    if (!file.isFile || !file.canRead()) {
-                        Toast.makeText(context, "APK kann nicht gelesen werden: ${file.absolutePath}", Toast.LENGTH_LONG).show()
-                        return@TextButton
-                    }
-
-                    val outputDir = StorageFolderResolver.ensureOutputDirectory(File(output)).getOrElse { error ->
-                        Toast.makeText(context, error.message ?: error.toString(), Toast.LENGTH_LONG).show()
-                        return@TextButton
-                    }
-                    if (outputDir.list()?.isNotEmpty() == true && !force) {
-                        Toast.makeText(
-                            context,
-                            "Ausgabeordner ist nicht leer. Aktiviere 'Vorhandenes Projekt überschreiben' oder wähle einen leeren Ordner.",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                        return@TextButton
-                    }
-                    output = outputDir.absolutePath
-
                     val flags = mutableListOf<String>()
                     if (framework != "default") flags += listOf("-t", framework)
                     flags += listOf("-j", threads.coerceIn(1, 4).toString())
@@ -290,55 +157,35 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
                     if (classesDex && noDebug) flags += "--no-debug-info"
                     if (classesDex && useRegisters) flags += "--use-registers"
                     if (!resources) flags += "-r" else if (onlyManifest) flags += "--only-manifest"
-                    if (resources && !onlyManifest && resolveMode != "default") {
-                        flags += listOf("--res-resolve-mode", resolveMode)
-                    }
-                    if (resources && !onlyManifest) {
-                        flags += listOf("--decode-additional-resources", additionalResourcesMode)
-                    }
+                    if (resources && !onlyManifest && resolveMode != "default") flags += listOf("--res-resolve-mode", resolveMode)
                     if (matchOriginal || preserveStructure) flags += "--match-original"
                     if (resources && !onlyManifest && keepBroken) flags += "--keep-broken-res"
                     if (resources && ignoreRaw) flags += "--ignore-raw-values"
-                    if (resources && noAssets) flags += "--no-assets"
+                    if (noAssets) flags += "--no-assets"
 
-                    val decodeAllSplits = isSplitArchive && resources && allSplits
-                    val command = if (isSplitArchive) {
-                        buildString {
-                            append("apktool apks-decode ")
-                            if (decodeAllSplits) append("--all-splits ")
-                            else if (!selectedSplitPath.isNullOrBlank()) {
-                                append("--entry ").append(ShellTokenizer.quote(selectedSplitPath!!)).append(' ')
-                            }
-                            append(ShellTokenizer.quote(file.absolutePath)).append(' ')
-                            append(ShellTokenizer.quote(outputDir.absolutePath)).append(" --")
-                            flags.forEach { append(' ').append(ShellTokenizer.quote(it)) }
-                        }
-                    } else {
-                        buildString {
-                            append("apktool decode")
-                            flags.forEach { append(' ').append(ShellTokenizer.quote(it)) }
-                            append(" -o ").append(ShellTokenizer.quote(outputDir.absolutePath))
-                            append(' ').append(ShellTokenizer.quote(file.absolutePath))
-                        }
+                    val command = if (isSplitArchive) buildString {
+                        append("apktool apks-decode ")
+                        if (allSplits) append("--all-splits ")
+                        else if (!selectedSplitPath.isNullOrBlank()) append("--entry ").append(ShellTokenizer.quote(selectedSplitPath!!)).append(' ')
+                        append(ShellTokenizer.quote(file.absolutePath)).append(' ')
+                        append(ShellTokenizer.quote(output)).append(" --")
+                        flags.forEach { append(' ').append(ShellTokenizer.quote(it)) }
+                    } else buildString {
+                        append("apktool decode")
+                        flags.forEach { append(' ').append(ShellTokenizer.quote(it)) }
+                        append(" -o ").append(ShellTokenizer.quote(output)).append(' ').append(ShellTokenizer.quote(file.absolutePath))
                     }
 
-                    val enqueue = runCatching {
-                        ApktoolJobService.enqueue(
-                            context = context,
-                            title = "Decode ${file.name}",
-                            command = command,
-                            postDecodeRoot = outputDir.absolutePath,
-                            createNomedia = createNomedia,
-                            removeSplitTraces = removeSplit,
-                            removePropertyTags = removeProperty,
-                        )
-                    }
-                    enqueue.onSuccess {
-                        Toast.makeText(context, "Apktool-Dekompilierung gestartet", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    }.onFailure { error ->
-                        Toast.makeText(context, "Apktool-Job konnte nicht gestartet werden: ${error.message}", Toast.LENGTH_LONG).show()
-                    }
+                    ApktoolJobService.enqueue(
+                        context = context,
+                        title = "Decode ${file.name}",
+                        command = command,
+                        postDecodeRoot = output,
+                        createNomedia = createNomedia,
+                        removeSplitTraces = removeSplit,
+                        removePropertyTags = removeProperty,
+                    )
+                    onDismiss()
                 },
             ) { Text("OK") }
         },
@@ -351,12 +198,25 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
             text = {
                 Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
                     CheckRow("Debug-Informationen schreiben", !noDebug) { noDebug = !it }
-                    CheckRow("Verwenden Sie \"Register\" statt \"Lokale\".", useRegisters, enabled = classesDex) { useRegisters = it }
+                    CheckRow("Nur AndroidManifest.xml dekompilieren", onlyManifest, enabled = resources) { onlyManifest = it }
+                    CheckRow("Verwenden Sie \"Register\" statt \"Lokale\".", useRegisters) { useRegisters = it }
                     CheckRow("Beibehaltung der Ordnerstruktur", preserveStructure) { preserveStructure = it }
+                    if (resources && !onlyManifest) {
+                        Text("Ressourcen-Auflösung", style = MaterialTheme.typography.labelLarge)
+                        ChoicePicker(resolveMode, ApktoolSettings.resourceResolveModes, { mode ->
+                            when (mode) {
+                                "greedy" -> "Greedy"
+                                "lazy" -> "Lazy"
+                                else -> "Standard"
+                            }
+                        }) { resolveMode = it }
+                    }
+                    CheckRow("Rohwerte in XML ignorieren", ignoreRaw, enabled = resources) { ignoreRaw = it }
+                    CheckRow("Assets nicht dekompilieren", noAssets) { noAssets = it }
                     CheckRow("Hinzufügen \"APKTOOL_DUMMY\"", true, enabled = false) { }
-                    CheckRow("Gebrochene Ressourcen beibehalten", keepBroken, enabled = resources && !onlyManifest) { keepBroken = it }
-                    CheckRow("Gespaltene Spuren entfernen", removeSplit, enabled = resources) { removeSplit = it }
-                    CheckRow("<Eigenschaft> entfernen", removeProperty, enabled = resources) { removeProperty = it }
+                    CheckRow("Gebrochene Ressourcen beibehalten", keepBroken) { keepBroken = it }
+                    CheckRow("Gespaltene Spuren entfernen", removeSplit) { removeSplit = it }
+                    CheckRow("<Eigenschaft> entfernen", removeProperty) { removeProperty = it }
                     CheckRow("Original anpassen", matchOriginal) { matchOriginal = it }
                     CheckRow("Vorhandenes Projekt überschreiben", force) { force = it }
                     CheckRow("Ausführlich", verbose) { verbose = it }
@@ -373,24 +233,12 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
                     ApktoolSettings.saveDecodeDefaults(
                         context,
                         ApktoolDecodeDefaults(
-                            force = force,
-                            allSources = allDex,
-                            noSources = !classesDex,
-                            noDebugInfo = noDebug,
-                            noResources = !resources,
-                            onlyManifest = onlyManifest,
-                            matchOriginal = matchOriginal,
-                            preserveDirectoryStructure = preserveStructure,
-                            keepBrokenResources = keepBroken,
-                            ignoreRawValues = ignoreRaw,
-                            noAssets = noAssets,
-                            resourceResolveMode = resolveMode,
-                            additionalResourcesMode = additionalResourcesMode,
-                            useRegisters = useRegisters,
-                            createNomedia = createNomedia,
-                            removeSplitTraces = removeSplit,
-                            removePropertyTags = removeProperty,
-                            verbose = verbose,
+                            force = force, allSources = allDex, noSources = !classesDex, noDebugInfo = noDebug,
+                            noResources = !resources, onlyManifest = onlyManifest, matchOriginal = matchOriginal,
+                            preserveDirectoryStructure = preserveStructure, keepBrokenResources = keepBroken,
+                            ignoreRawValues = ignoreRaw, noAssets = noAssets, resourceResolveMode = resolveMode,
+                            useRegisters = useRegisters, createNomedia = createNomedia, removeSplitTraces = removeSplit,
+                            removePropertyTags = removeProperty, verbose = verbose,
                         ),
                     )
                     ApktoolSettings.setApktoolThreads(context, threads)
@@ -401,16 +249,9 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
     }
 
     if (showThreads) {
-        ThreadPickerDialog(
-            "Dekompilierung smali",
-            threads,
-            onSave = {
-                threads = it
-                ApktoolSettings.setApktoolThreads(context, it)
-                showThreads = false
-            },
-            onDismiss = { showThreads = false },
-        )
+        ThreadPickerDialog("Dekompilierung smali", threads, onSave = {
+            threads = it; ApktoolSettings.setApktoolThreads(context, it); showThreads = false
+        }, onDismiss = { showThreads = false })
     }
 }
 
@@ -518,8 +359,10 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit) {
             onDismissRequest = { showSettings = false },
             title = { Text("Einstellungen") },
             text = {
-                Column {
+                Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
+                    CheckRow("Vollständigen Build erzwingen", force) { force = it }
                     CheckRow("apk als debuggingfähig einstellen", debuggable) { debuggable = it }
+                    CheckRow("Resource-Crunching deaktivieren", noCrunch) { noCrunch = it }
                     CheckRow("Netzwerksicherheitskonfiguration hinzufügen", netSec) { netSec = it }
                     CheckRow("Nicht ändern, wenn sie vorhanden ist", netSecKeep, enabled = netSec) { netSecKeep = it }
                     CheckRow("Ordner \"build\" löschen", deleteBuild) { deleteBuild = it }
@@ -653,16 +496,10 @@ private fun CheckRow(label: String, checked: Boolean, enabled: Boolean = true, o
 }
 
 @Composable
-private fun ChoicePicker(
-    value: String,
-    options: List<String>,
-    label: (String) -> String,
-    enabled: Boolean = true,
-    onSelected: (String) -> Unit,
-) {
+private fun ChoicePicker(value: String, options: List<String>, label: (String) -> String, onSelected: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxWidth()) {
-        TextButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(label(value), modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.width(8.dp)); Text("▾")
@@ -677,12 +514,7 @@ private fun ChoicePicker(
 }
 
 @Composable
-private fun SplitEntryPicker(
-    value: String?,
-    entries: List<SplitArchiveSupport.ApkEntry>,
-    enabled: Boolean = true,
-    onSelected: (String) -> Unit,
-) {
+private fun SplitEntryPicker(value: String?, entries: List<SplitArchiveSupport.ApkEntry>, onSelected: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val selected = entries.firstOrNull { it.path == value } ?: entries.firstOrNull()
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -691,7 +523,7 @@ private fun SplitEntryPicker(
             Text(selected?.path ?: "Automatisch", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box {
-            TextButton(onClick = { expanded = true }, enabled = enabled) { Text(if (selected?.preferred == true) "Base (auto)" else "Auswählen") }
+            TextButton(onClick = { expanded = true }) { Text(if (selected?.preferred == true) "Base (auto)" else "Auswählen") }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 entries.forEach { entry ->
                     DropdownMenuItem(

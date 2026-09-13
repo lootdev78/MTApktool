@@ -8,7 +8,6 @@ import java.io.InputStream;
 import java.security.KeyStore;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
-import java.util.Objects;
 
 public class SignWrapper {
 
@@ -61,12 +60,10 @@ public class SignWrapper {
                 .setV2SigningEnabled(v2)
                 .setV3SigningEnabled(v3)
                 .setV4SigningEnabled(v4);
-                if(v4) {
-                    String fileName = inputApk.getName();
-                    String formattedName = fileName.replaceFirst("\\.(xapk|aspk|apk[sm]|apk)", ".idsig");
-                    int lastDotIndex;
-                    b.setV4SignatureOutputFile(new File(output.getParentFile(), Objects.equals(fileName, formattedName) ?  (lastDotIndex = fileName.lastIndexOf('.')) == -1 ?
-                            fileName + "_signed" : fileName.substring(0, lastDotIndex) + "_signed." + fileName.substring(lastDotIndex + 1) : formattedName));
+                if (v4) {
+                    // apksigner's detached v4 signature belongs to the output APK,
+                    // not the input name. Keep the conventional <output>.idsig name.
+                    b.setV4SignatureOutputFile(new File(output.getAbsolutePath() + ".idsig"));
                 }
                 b.build().sign();
     }

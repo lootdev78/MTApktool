@@ -64,6 +64,7 @@ jobs:
             apktool-android \
             apksig-android \
             zipalign-android \
+            antlr-runtime \
             smali-android \
             brut.j.common \
             brut.j.util \
@@ -76,13 +77,10 @@ jobs:
             test -f "$module/build.gradle.kts" || { echo "Missing module: $module"; exit 1; }
           done
           test -f app/src/main/java/io/github/lootdev78/mtapktool/MainActivity.kt
-          test -f app/src/main/java/io/github/lootdev78/mtapktool/apktool/StorageFolderResolver.kt
-          test -f app/src/main/java/io/github/lootdev78/mtapktool/apktool/ApktoolRuntimeVerifier.kt
           test -f apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
-          grep -q 'new ApkDecoder(apk, c).decode(out);' apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
-          grep -q 'provisionDecode()' apktool-android/src/main/java/io/github/apktool/android/runtime/Toolchain.java
-          grep -q 'decode-additional-resources' apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
-          grep -q 'DecodeAdditionalResources' brut.apktool/apktool-lib/src/main/java/brut/androlib/Config.java
+          test -f third_party/antlr-runtime/src/main/java/org/antlr/runtime/Parser.java
+          test ! -f third_party/antlr-runtime/src/main/java/org/antlr/runtime/tree/DOTTreeGenerator.java
+          grep -q 'api(project(":antlr-runtime"))' smali-android/build.gradle.kts
 
       - name: Build Debug APK
         run: |

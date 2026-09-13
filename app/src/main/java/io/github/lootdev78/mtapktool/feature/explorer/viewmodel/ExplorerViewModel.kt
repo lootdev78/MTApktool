@@ -1,51 +1,45 @@
 package io.github.lootdev78.mtapktool.feature.explorer.viewmodel
 
 import android.os.Environment
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.state.PaneState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.Files
 import java.util.Stack
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 enum class ActivePane { LEFT, RIGHT }
 
-class ExplorerViewModel(
-    private val savedStateHandle: SavedStateHandle,
-) : ViewModel() {
+class ExplorerViewModel : ViewModel() {
 
-    companion object {
-        private const val KEY_LEFT_PATH = "explorer_left_path"
-        private const val KEY_RIGHT_PATH = "explorer_right_path"
-        private const val KEY_ACTIVE_PANE = "explorer_active_pane"
-    }
-
-    private val rootPath = Environment.getExternalStorageDirectory().absolutePath
-    private val initialLeftPath = savedStateHandle.get<String>(KEY_LEFT_PATH)
-        ?.takeIf { File(it).isDirectory } ?: rootPath
-    private val initialRightPath = savedStateHandle.get<String>(KEY_RIGHT_PATH)
-        ?.takeIf { File(it).isDirectory } ?: rootPath
-
-    private val _leftPaneState = MutableStateFlow(PaneState(currentPath = initialLeftPath))
+    private val _leftPaneState = MutableStateFlow(PaneState())
     val leftPaneState: StateFlow<PaneState> = _leftPaneState.asStateFlow()
 
-    private val _rightPaneState = MutableStateFlow(PaneState(currentPath = initialRightPath))
+    private val _rightPaneState = MutableStateFlow(PaneState())
     val rightPaneState: StateFlow<PaneState> = _rightPaneState.asStateFlow()
 
-    private val _activePane = MutableStateFlow(
-        savedStateHandle.get<String>(KEY_ACTIVE_PANE)
-            ?.let { runCatching { ActivePane.valueOf(it) }.getOrNull() }
-            ?: ActivePane.LEFT,
-    )
+
+    private val _activePane = MutableStateFlow(ActivePane.LEFT)
     val activePane: StateFlow<ActivePane> = _activePane.asStateFlow()
+
+    private val _operationMessages = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val operationMessages: SharedFlow<String> = _operationMessages.asSharedFlow()
 
     // Separate Back/Forward stacks for dual pane navigation history
     private val leftBackStack = Stack<String>()
@@ -56,13 +50,22 @@ class ExplorerViewModel(
 
 
     init {
-        loadDirectory(ActivePane.LEFT, initialLeftPath, isHistoryAction = true)
-        loadDirectory(ActivePane.RIGHT, initialRightPath, isHistoryAction = true)
+        val rootPath = Environment.getExternalStorageDirectory().absolutePath
+        loadDirectory(
+            ActivePane.LEFT,
+            rootPath,
+            isHistoryAction = false
+        )
+
+        loadDirectory(
+            ActivePane.RIGHT,
+            rootPath,
+            isHistoryAction = false
+        )
     }
 
     fun setActive(pane: ActivePane) {
         _activePane.value = pane
-        savedStateHandle[KEY_ACTIVE_PANE] = pane.name
     }
 
     fun loadDirectory(pane: ActivePane, path: String, isHistoryAction: Boolean = false) {
@@ -96,8 +99,6 @@ class ExplorerViewModel(
             updatePaneState(pane) {
                 it.copy(items = files, isLoading = false, selectedPaths = emptySet())
             }
-            if (pane == ActivePane.LEFT) savedStateHandle[KEY_LEFT_PATH] = path
-            else savedStateHandle[KEY_RIGHT_PATH] = path
         }
     }
 
@@ -205,6 +206,13 @@ class ExplorerViewModel(
         }
     }
 
+    fun ensureSelected(pane: ActivePane, itemPath: String) {
+        updatePaneState(pane) { state ->
+            if (itemPath in state.selectedPaths) state
+            else state.copy(selectedPaths = state.selectedPaths + itemPath)
+        }
+    }
+
 
 
     fun invertSelection(pane: ActivePane) {
@@ -250,8 +258,11 @@ class ExplorerViewModel(
                     val sourceFile = File(sourcePath)
                     if (sourceFile.exists()) {
                         val destFile = File(targetPath, sourceFile.name)
+                        ensureTransferTargetIsSafe(sourceFile, destFile)
                         if (sourceFile.isDirectory) {
-                            sourceFile.copyRecursively(destFile, overwrite = true)
+                            if (!sourceFile.copyRecursively(destFile, overwrite = true)) {
+                                throw IOException("Could not copy directory: ${sourceFile.path}")
+                            }
                         } else {
                             sourceFile.copyTo(destFile, overwrite = true)
                         }
@@ -261,7 +272,7 @@ class ExplorerViewModel(
                 refreshDirectory(targetPane)
                 clearSelection(fromPane)
             }.onFailure { e ->
-                // Log or handle error
+                _operationMessages.tryEmit("Copy failed: ${e.message ?: e.javaClass.simpleName}")
                 e.printStackTrace()
             }
         }
@@ -277,9 +288,23 @@ class ExplorerViewModel(
             runCatching {
                 itemsToMove.forEach { sourcePath ->
                     val sourceFile = File(sourcePath)
-                    if (sourceFile.exists()) {
-                        val destFile = File(targetPath, sourceFile.name)
-                        sourceFile.renameTo(destFile)
+                    if (!sourceFile.exists()) return@forEach
+                    val destFile = File(targetPath, sourceFile.name)
+                    ensureTransferTargetIsSafe(sourceFile, destFile)
+                    if (!sourceFile.renameTo(destFile)) {
+                        if (sourceFile.isDirectory) {
+                            if (!sourceFile.copyRecursively(destFile, overwrite = true)) {
+                                throw IOException("Could not copy directory while moving: ${sourceFile.path}")
+                            }
+                            if (!sourceFile.deleteRecursively()) {
+                                throw IOException("Copied but could not remove source directory: ${sourceFile.path}")
+                            }
+                        } else {
+                            sourceFile.copyTo(destFile, overwrite = true)
+                            if (!sourceFile.delete()) {
+                                throw IOException("Copied but could not remove source file: ${sourceFile.path}")
+                            }
+                        }
                     }
                 }
             }.onSuccess {
@@ -287,8 +312,88 @@ class ExplorerViewModel(
                 refreshDirectory(targetPane)
                 clearSelection(fromPane)
             }.onFailure { e ->
+                _operationMessages.tryEmit("Move failed: ${e.message ?: e.javaClass.simpleName}")
                 e.printStackTrace()
             }
+        }
+    }
+
+    fun linkToOppositePane(fromPane: ActivePane, sourcePath: String) {
+        val targetPane = if (fromPane == ActivePane.LEFT) ActivePane.RIGHT else ActivePane.LEFT
+        val targetPath = if (targetPane == ActivePane.RIGHT) _rightPaneState.value.currentPath else _leftPaneState.value.currentPath
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val source = File(sourcePath)
+                if (!source.exists()) throw IOException("Source does not exist: $sourcePath")
+                val destination = File(targetPath, source.name)
+                if (destination.exists() || Files.isSymbolicLink(destination.toPath())) {
+                    throw IOException("Target already exists: ${destination.name}")
+                }
+                Files.createSymbolicLink(destination.toPath(), source.toPath().toAbsolutePath())
+            }.onSuccess {
+                refreshDirectory(targetPane)
+                _operationMessages.tryEmit("Link created")
+            }.onFailure { e ->
+                _operationMessages.tryEmit("Link failed: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    fun compressItem(pane: ActivePane, sourcePath: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val source = File(sourcePath)
+                if (!source.exists()) throw IOException("Source does not exist: $sourcePath")
+                val parent = source.parentFile ?: throw IOException("Source has no parent directory")
+                val output = uniqueZipFile(parent, source.nameWithoutExtension.ifBlank { source.name })
+                ZipOutputStream(BufferedOutputStream(FileOutputStream(output))).use { zip ->
+                    addToZip(zip, parent, source)
+                }
+                output
+            }.onSuccess { output ->
+                refreshDirectory(pane)
+                _operationMessages.tryEmit("Created ${output.name}")
+            }.onFailure { e ->
+                _operationMessages.tryEmit("Compression failed: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun ensureTransferTargetIsSafe(source: File, destination: File) {
+        val sourceCanonical = source.canonicalFile
+        val destinationCanonical = destination.canonicalFile
+        if (sourceCanonical == destinationCanonical) {
+            throw IOException("Source and destination are the same")
+        }
+        if (source.isDirectory && destinationCanonical.path.startsWith(sourceCanonical.path + File.separator)) {
+            throw IOException("Cannot copy or move a directory into itself")
+        }
+    }
+
+    private fun uniqueZipFile(parent: File, baseName: String): File {
+        var candidate = File(parent, "$baseName.zip")
+        var suffix = 1
+        while (candidate.exists()) {
+            candidate = File(parent, "$baseName-$suffix.zip")
+            suffix++
+        }
+        return candidate
+    }
+
+    private fun addToZip(zip: ZipOutputStream, baseDir: File, file: File) {
+        if (Files.isSymbolicLink(file.toPath())) return
+        val entryName = file.relativeTo(baseDir).path.replace(File.separatorChar, '/')
+        if (file.isDirectory) {
+            val normalized = entryName.trimEnd('/') + "/"
+            zip.putNextEntry(ZipEntry(normalized))
+            zip.closeEntry()
+            file.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { child ->
+                addToZip(zip, baseDir, child)
+            }
+        } else {
+            zip.putNextEntry(ZipEntry(entryName))
+            file.inputStream().buffered().use { input -> input.copyTo(zip) }
+            zip.closeEntry()
         }
     }
 

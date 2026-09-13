@@ -79,6 +79,7 @@ fun FileContextMenuDialog(
     onCompress: () -> Unit,
     onProperty: () -> Unit,
     onShare: () -> Unit,
+    onOpenWith: () -> Unit,
     onAddBookmark: () -> Unit,
     onApktool: () -> Unit = {},
 ) {
@@ -178,7 +179,7 @@ fun FileContextMenuDialog(
                         left = MenuAction(
                             addArrow("Link"),
                             Icons.Outlined.Link,
-                            isEnabled = false,
+                            isEnabled = targetItem != null,
                             onClick = onLink
                         ),
                         right = MenuAction(
@@ -201,7 +202,7 @@ fun FileContextMenuDialog(
                         right = MenuAction(
                             "Compress",
                             Icons.Default.Archive,
-                            isEnabled = false,
+                            isEnabled = targetItem != null,
                             onClick = onCompress
                         ) // Unhighlighted
                     )
@@ -216,7 +217,7 @@ fun FileContextMenuDialog(
                         right = MenuAction(
                             "Share",
                             Icons.Default.Share,
-                            isEnabled = targetItem?.isDirectory == true,
+                            isEnabled = targetItem?.isDirectory == false,
                             onClick = onShare
                         )
                     )
@@ -225,12 +226,12 @@ fun FileContextMenuDialog(
                         left = MenuAction(
                             "Open with...",
                             Icons.Default.Check,
-                            isEnabled = false,
-                            onClick = {}), // Disabled / Unhighlighted
+                            isEnabled = targetItem?.isDirectory == false,
+                            onClick = onOpenWith),
                         right = MenuAction(
                             "+ Bookmarks",
                             Icons.Outlined.BookmarkAdd,
-                            isEnabled = false,
+                            isEnabled = targetItem != null,
                             onClick = onAddBookmark
                         ) // Unhighlighted
                     )

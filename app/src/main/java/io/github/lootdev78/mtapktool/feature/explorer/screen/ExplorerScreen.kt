@@ -1,8 +1,10 @@
 package io.github.lootdev78.mtapktool.feature.explorer.screen
 
+import android.content.ClipData
+import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Environment
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -46,7 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,9 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.navigation.NavHostController
 import io.github.lootdev78.mtapktool.apktool.ApktoolBuildDialog
@@ -105,24 +105,22 @@ fun ExplorerScreen(
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    // Returning from Android's storage/notification settings must refresh the panes
-    // instead of recreating the whole activity. Apktool jobs continue in the FGS.
-    DisposableEffect(lifecycleOwner, viewModel) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshDirectory(ActivePane.LEFT)
-                viewModel.refreshDirectory(ActivePane.RIGHT)
-                ApktoolJobService.query(navController.context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
 
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
     val activeState = if (activePane == ActivePane.LEFT) leftState else rightState
+    val context = navController.context
+    val bookmarkPreferences = remember(context) {
+        context.getSharedPreferences("explorer_bookmarks", Context.MODE_PRIVATE)
+    }
+    var bookmarks by remember(bookmarkPreferences) {
+        mutableStateOf(bookmarkPreferences.getStringSet("paths", emptySet()).orEmpty().toList().sorted())
+    }
+
+    LaunchedEffect(viewModel, context) {
+        viewModel.operationMessages.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // State Variables
     var showContextMenu by remember { mutableStateOf(false) }
@@ -151,31 +149,37 @@ fun ExplorerScreen(
             onDismissRequest = { showContextMenu = false },
             onCopy = {
                 targetItem?.let { item ->
-                    viewModel.toggleSelection(activePane, item.path, false)
+                    viewModel.ensureSelected(activePane, item.path)
                     viewModel.copySelectedToOppositePane(activePane)
                 }
                 showContextMenu = false
             },
             onMove = {
                 targetItem?.let { item ->
-                    viewModel.toggleSelection(activePane, item.path, false)
+                    viewModel.ensureSelected(activePane, item.path)
                     viewModel.moveSelectedToOppositePane(activePane)
                 }
                 showContextMenu = false
             },
-            onLink = { showContextMenu = false },
+            onLink = {
+                targetItem?.let { item -> viewModel.linkToOppositePane(activePane, item.path) }
+                showContextMenu = false
+            },
             onRename = {
                 showRenameDialog = true
                 showContextMenu = false
             },
             onDelete = {
                 targetItem?.let { item ->
-                    viewModel.toggleSelection(activePane, item.path, false)
+                    viewModel.ensureSelected(activePane, item.path)
                     viewModel.deleteSelected(activePane)
                 }
                 showContextMenu = false
             },
-            onCompress = { showContextMenu = false },
+            onCompress = {
+                targetItem?.let { item -> viewModel.compressItem(activePane, item.path) }
+                showContextMenu = false
+            },
             onProperty = {
                 showPropertyDialog = true
                 showContextMenu = false
@@ -183,18 +187,45 @@ fun ExplorerScreen(
             onShare = {
                 targetItem?.let { item ->
                     val file = File(item.path)
-                    if (file.exists()) {
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "*/*"
-                            putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    if (file.isFile) {
+                        runCatching {
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                file
+                            )
+                            val mimeType = MimeTypeMap.getSingleton()
+                                .getMimeTypeFromExtension(file.extension.lowercase()) ?: "*/*"
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = mimeType
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                clipData = ClipData.newRawUri(file.name, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Share File"))
+                        }.onFailure { error ->
+                            Toast.makeText(context, "Share failed: ${error.message}", Toast.LENGTH_SHORT).show()
                         }
-                        navController.context.startActivity(Intent.createChooser(intent, "Share File"))
                     }
                 }
                 showContextMenu = false
             },
-            onAddBookmark = { showContextMenu = false },
+            onOpenWith = {
+                targetItem?.let { item ->
+                    val file = File(item.path)
+                    if (file.isFile) FileOpener.openFile(context, file)
+                }
+                showContextMenu = false
+            },
+            onAddBookmark = {
+                targetItem?.let { item ->
+                    val updated = (bookmarks + item.path).distinct().sorted()
+                    bookmarks = updated
+                    bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
+                    Toast.makeText(context, "Bookmark added", Toast.LENGTH_SHORT).show()
+                }
+                showContextMenu = false
+            },
             onApktool = {
                 targetItem?.let { item ->
                     val file = File(item.path)
@@ -294,15 +325,18 @@ fun ExplorerScreen(
             drawerContent = {
                     SideBar(
                         drawerWidth = drawerWidth,
+                        viewModel = viewModel,
+                        bookmarks = bookmarks,
+                        onBookmarkClick = { path -> viewModel.navigateToDirectPath(activePane, path) },
+                        onRemoveBookmark = { path ->
+                            val updated = bookmarks.filterNot { it == path }
+                            bookmarks = updated
+                            bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
+                        },
+                        onOpenSettings = { showApktoolSettings = true },
                         onClose = {
                             scope.launch { drawerState.close() }
-                        },
-                        onSettings = {
-                            showApktoolSettings = true
-                        },
-                        onJobs = {
-                            showApktoolJobs = true
-                        },
+                        }
                     )
                 }
         ) {

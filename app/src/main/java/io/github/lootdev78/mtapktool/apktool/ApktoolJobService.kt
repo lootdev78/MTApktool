@@ -7,14 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import io.github.lootdev78.mtapktool.MainActivity
 import io.github.apktool.android.runtime.ApktoolCommandRunner
-import io.github.apktool.android.runtime.ShellTokenizer
 import io.github.apktool.android.runtime.Toolchain
 import java.io.File
 import java.io.FileWriter
@@ -62,8 +58,8 @@ class ApktoolJobService : Service() {
         private const val EXTRA_REMOVE_SPLIT = "remove_split"
         private const val EXTRA_REMOVE_PROPERTY = "remove_property"
 
-        private const val CHANNEL = "mtapktool_jobs_v2"
-        private const val DONE_CHANNEL = "mtapktool_done_v2"
+        private const val CHANNEL = "mtapktool_jobs"
+        private const val DONE_CHANNEL = "mtapktool_done"
         private const val NOTIFICATION_ID = 2317
 
         @Volatile private var appVisible = false
@@ -153,12 +149,10 @@ class ApktoolJobService : Service() {
         @Volatile var output: String? = null,
         @Volatile var cancelRequested: Boolean = false,
         @Volatile var future: Future<*>? = null,
-        @Volatile var lastNotificationAt: Long = 0L,
     )
 
     private val records = ConcurrentHashMap<String, Record>()
     private lateinit var executor: ThreadPoolExecutor
-    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -168,9 +162,6 @@ class ApktoolJobService : Service() {
             Thread(runnable, "mtapktool-worker").apply { priority = Thread.NORM_PRIORITY - 1 }
         }
         executor.allowCoreThreadTimeOut(false)
-        wakeLock = getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MTApktool:ApktoolJobs")
-            .apply { setReferenceCounted(false) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -182,7 +173,7 @@ class ApktoolJobService : Service() {
             ACTION_SET_WORKERS -> resizePool(intent.getIntExtra(EXTRA_WORKERS, ApktoolSettings.maxWorkers(this)).coerceIn(1, 4))
         }
         updateForegroundState()
-        return START_REDELIVER_INTENT
+        return START_NOT_STICKY
     }
 
     private fun enqueueInternal(intent: Intent) {
@@ -208,7 +199,7 @@ class ApktoolJobService : Service() {
             removePropertyTags = intent.getBooleanExtra(EXTRA_REMOVE_PROPERTY, false),
         )
         records[id] = record
-        ensureForeground(notification("Queued: ${record.title}", true))
+        startForeground(NOTIFICATION_ID, notification("Queued: ${record.title}", true))
         broadcast(record)
         record.future = executor.submit { runJob(record) }
     }
@@ -222,7 +213,7 @@ class ApktoolJobService : Service() {
         var log: PrintWriter? = null
         try {
             val toolchain = Toolchain(this)
-            if (commandRequiresAapt2(record.command)) toolchain.provision() else toolchain.provisionDecode()
+            toolchain.provision()
             checkCancelled(record)
             val logFile = File(toolchain.logsDir, "job-${stamp()}-${record.id.take(8)}.log")
             val writer = PrintWriter(FileWriter(logFile, true), true)
@@ -233,7 +224,6 @@ class ApktoolJobService : Service() {
                 record.line = line.takeLast(600)
                 writer.println(line)
                 broadcast(record)
-                maybeUpdateProgressNotification(record)
             }
             val runner = ApktoolCommandRunner(toolchain, listener)
             var result = if (SplitArchiveSupport.isSplitDecodeCommand(record.command)) {
@@ -284,16 +274,6 @@ class ApktoolJobService : Service() {
         }
     }
 
-    private fun commandRequiresAapt2(command: String): Boolean {
-        val args = runCatching { ShellTokenizer.split(command.trim()) }.getOrDefault(emptyList())
-        if (args.isEmpty()) return false
-        var i = 0
-        val launcher = args.getOrNull(i)?.lowercase(Locale.ROOT).orEmpty()
-        if (launcher == "apktool" || launcher == "apktool-original") i++
-        val verb = args.getOrNull(i)?.lowercase(Locale.ROOT).orEmpty()
-        return verb == "b" || verb == "build"
-    }
-
     private fun checkCancelled(record: Record) {
         if (record.cancelRequested || Thread.currentThread().isInterrupted) throw CancellationException("Cancelled")
     }
@@ -320,16 +300,6 @@ class ApktoolJobService : Service() {
     }
 
     private fun broadcast(record: Record) {
-        val snapshot = ApktoolJobInfo(
-            id = record.id,
-            title = record.title,
-            command = record.command,
-            status = record.status.name,
-            line = record.line,
-            output = record.output,
-            createdAt = record.createdAt,
-        )
-        ApktoolJobHistory.save(this, snapshot)
         sendBroadcast(Intent(ACTION_STATUS).apply {
             setPackage(packageName)
             putExtra(EXTRA_JOB_ID, record.id); putExtra(EXTRA_TITLE, record.title); putExtra(EXTRA_COMMAND, record.command)
@@ -343,66 +313,26 @@ class ApktoolJobService : Service() {
         val active = records.values.count { !it.status.isTerminal() }
         val running = records.values.count { it.status == Status.RUNNING }
         val queued = records.values.count { it.status == Status.QUEUED }
-        if (active == 0) {
-            if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        } else {
-            if (wakeLock?.isHeld != true) runCatching { wakeLock?.acquire() }
-            getSystemService(NotificationManager::class.java).notify(
-                NOTIFICATION_ID,
-                notification("$running running • $queued queued • ${executor.corePoolSize}/4 runner", true),
-            )
-        }
+        if (active == 0) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+        else getSystemService(NotificationManager::class.java).notify(
+            NOTIFICATION_ID,
+            notification("$running running • $queued queued • ${executor.corePoolSize}/4 runner", true),
+        )
     }
 
     private fun maybeNotifyCompletion(record: Record) {
         if (!record.status.isTerminal() || record.status == Status.CANCELLED) return
         val general = ApktoolSettings.generalDefaults(this)
         if (!general.notifyOnCompletion || (general.suppressCompletionWhileOpen && appVisible)) return
-        val headline = if (record.status == Status.SUCCEEDED) "Dekompilierung/Build abgeschlossen" else "Apktool fehlgeschlagen"
-        val details = if (record.status == Status.SUCCEEDED) {
-            record.output ?: record.line.lineSequence().lastOrNull().orEmpty()
-        } else {
-            record.line.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(500)
-        }
+        val text = if (record.status == Status.SUCCEEDED) "Abgeschlossen" else "Fehlgeschlagen"
         runCatching {
-            val builder = Notification.Builder(this, DONE_CHANNEL)
-                .setContentTitle(record.title)
-                .setContentText(headline)
-                .setStyle(Notification.BigTextStyle().bigText("$headline\n$details"))
-                .setSmallIcon(if (record.status == Status.SUCCEEDED) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
-                .setContentIntent(openAppIntent())
-                .setAutoCancel(true)
             getSystemService(NotificationManager::class.java).notify(
                 3000 + (record.id.hashCode() and 0x0fff),
-                builder.build(),
+                Notification.Builder(this, DONE_CHANNEL)
+                    .setContentTitle(record.title).setContentText(text)
+                    .setSmallIcon(if (record.status == Status.SUCCEEDED) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
+                    .setContentIntent(openAppIntent()).setAutoCancel(true).build(),
             )
-        }
-    }
-
-    private fun maybeUpdateProgressNotification(record: Record, force: Boolean = false) {
-        if (record.status.isTerminal()) return
-        val now = System.currentTimeMillis()
-        if (!force && now - record.lastNotificationAt < 700L) return
-        record.lastNotificationAt = now
-        val line = record.line.lineSequence().lastOrNull().orEmpty().replace('\n', ' ').take(120)
-        val active = records.values.count { !it.status.isTerminal() }
-        val text = if (line.isBlank()) record.title else "${record.title}: $line"
-        runCatching {
-            getSystemService(NotificationManager::class.java).notify(
-                NOTIFICATION_ID,
-                notification("$text • $active aktiv", true),
-            )
-        }
-    }
-
-    private fun ensureForeground(value: Notification) {
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, value, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            @Suppress("DEPRECATION")
-            startForeground(NOTIFICATION_ID, value)
         }
     }
 
@@ -411,55 +341,21 @@ class ApktoolJobService : Service() {
             this, 1, Intent(this, ApktoolJobService::class.java).setAction(ACTION_CANCEL_ALL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val builder = Notification.Builder(this, CHANNEL)
-            .setContentTitle("MTApktool • Apktool")
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentIntent(openAppIntent())
-            .setOnlyAlertOnce(true)
-            .setOngoing(ongoing)
-            .setShowWhen(true)
-            .setProgress(0, 0, ongoing)
-            .setCategory(Notification.CATEGORY_PROGRESS)
+        return Notification.Builder(this, CHANNEL)
+            .setContentTitle("MTApktool").setContentText(text).setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentIntent(openAppIntent()).setOnlyAlertOnce(true).setOngoing(ongoing).setProgress(0, 0, ongoing)
             .addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Alle stoppen", stopAll).build())
-        if (Build.VERSION.SDK_INT >= 31 && ongoing) {
-            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-        }
-        return builder.build()
+            .build()
     }
 
     private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
-        this,
-        0,
-        Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        },
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
     private fun createChannels() {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "MTApktool Apktool-Jobs", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Fortschritt laufender Dekompilier-, Build-, Signatur- und Framework-Aufgaben"
-                setShowBadge(true)
-            },
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(DONE_CHANNEL, "MTApktool Apktool-Ergebnisse", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Erfolgreiche und fehlgeschlagene Apktool-Aufgaben"
-                setShowBadge(true)
-            },
-        )
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        // Closing/swiping the UI must not cancel the foreground Apktool worker.
-        if (::executor.isInitialized && records.values.any { !it.status.isTerminal() }) {
-            updateForegroundState()
-        }
-        super.onTaskRemoved(rootIntent)
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, "MTApktool Jobs", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(DONE_CHANNEL, "MTApktool Ergebnisse", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
@@ -467,11 +363,7 @@ class ApktoolJobService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId)
     }
 
-    override fun onDestroy() {
-        if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
-        if (::executor.isInitialized) executor.shutdownNow()
-        super.onDestroy()
-    }
+    override fun onDestroy() { if (::executor.isInitialized) executor.shutdownNow(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun Status.isTerminal() = this == Status.SUCCEEDED || this == Status.FAILED || this == Status.CANCELLED
