@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+JAVA_CMD="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+if [ -z "${JAVA_HOME:-}" ]; then
+    JAVA_CMD=java
+fi
+
+if ! command -v "$JAVA_CMD" >/dev/null 2>&1 && [ ! -x "$JAVA_CMD" ]; then
+    echo "Java executable not found: $JAVA_CMD" >&2
+    exit 1
+fi
+
+JAVA_MAJOR=$(
+    "$JAVA_CMD" -version 2>&1 \
+        | sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p'
+)
+if [ "$JAVA_MAJOR" != "25" ]; then
+    echo "MTApktool Java 25 profile requires JDK 25; detected: ${JAVA_MAJOR:-unknown}" >&2
+    echo "Set JAVA_HOME to a JDK 25 installation and retry." >&2
+    exit 1
+fi
+
+exec "$JAVA_CMD" \
+    -Xmx64m -Xms64m \
+    -Dorg.gradle.appname=gradlew25 \
+    -classpath "$APP_HOME/gradle/java25-wrapper/gradle-wrapper.jar" \
+    org.gradle.wrapper.GradleWrapperMain \
+    "$@" \
+    -Pmtapktool.javaVersion=25 \
+    -Pandroid.builtInKotlin=false \
+    -Pandroid.newDsl=false

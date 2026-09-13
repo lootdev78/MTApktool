@@ -2,6 +2,11 @@ plugins {
     id("com.android.library")
 }
 
+val mtapktoolJavaVersion = providers.gradleProperty("mtapktool.javaVersion")
+    .orElse("17")
+    .map(String::toInt)
+    .get()
+
 android {
     namespace = "io.github.apktool.android.apksig"
     compileSdk = 36
@@ -12,8 +17,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
+        targetCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
     }
 
     packaging {

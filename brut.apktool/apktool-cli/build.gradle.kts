@@ -2,6 +2,11 @@ plugins {
     id("com.android.library")
 }
 
+val mtapktoolJavaVersion = providers.gradleProperty("mtapktool.javaVersion")
+    .orElse("17")
+    .map(String::toInt)
+    .get()
+
 android {
     namespace = "brut.apktool.cli"
     compileSdk = 36
@@ -11,8 +16,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
+        targetCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
     }
 
     sourceSets["main"].resources.srcDir("src/main/resources")

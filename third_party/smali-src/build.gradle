@@ -31,6 +31,10 @@
 apply plugin: 'idea'
 
 version = '3.0.9'
+def mtapktoolJavaVersion = (findProperty('mtapktool.javaVersion') ?: '17') as int
+if (!(mtapktoolJavaVersion in [17, 25])) {
+    throw new GradleException("mtapktool.javaVersion must be 17 or 25")
+}
 def jcommanderVersion = ''
 
 if (!('release' in gradle.startParameter.taskNames)) {
@@ -85,8 +89,8 @@ subprojects {
     version = parent.version
 
     java {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.toVersion(mtapktoolJavaVersion)
+        targetCompatibility JavaVersion.toVersion(mtapktoolJavaVersion)
     }
 
     jar {

@@ -6,6 +6,11 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val mtapktoolJavaVersion = providers.gradleProperty("mtapktool.javaVersion")
+    .orElse("17")
+    .map(String::toInt)
+    .get()
+
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -59,12 +64,17 @@ android {
     buildFeatures { compose = true }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
+        targetCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
     }
 }
 
-kotlin { jvmToolchain(17) }
+kotlin {
+    jvmToolchain(mtapktoolJavaVersion)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(mtapktoolJavaVersion.toString()))
+    }
+}
 
 // Keep all transitive AndroidX variants on the SDK-36/AGP-8 compatible line.
 // Without this, a newer transitive KMP Android artifact can reintroduce

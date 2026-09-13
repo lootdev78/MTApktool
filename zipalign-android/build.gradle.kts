@@ -2,6 +2,11 @@ plugins {
     id("com.android.library")
 }
 
+val mtapktoolJavaVersion = providers.gradleProperty("mtapktool.javaVersion")
+    .orElse("17")
+    .map(String::toInt)
+    .get()
+
 val nativeZipalign = providers.gradleProperty("apktool.nativeZipalign")
     .map { it.equals("true", ignoreCase = true) }
     .orElse(false)
@@ -26,8 +31,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
+        targetCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
     }
 
     if (nativeZipalign) {
