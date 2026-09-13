@@ -200,10 +200,6 @@ fun ExplorerScreen(
         ApktoolDecodeDialog(
             file = apktoolTarget!!,
             onDismiss = { showApktoolDecode = false },
-            onOpenSettings = {
-                showApktoolDecode = false
-                showApktoolSettings = true
-            },
         )
     }
 
@@ -211,10 +207,6 @@ fun ExplorerScreen(
         ApktoolBuildDialog(
             project = apktoolTarget!!,
             onDismiss = { showApktoolBuild = false },
-            onOpenSettings = {
-                showApktoolBuild = false
-                showApktoolSettings = true
-            },
         )
     }
 

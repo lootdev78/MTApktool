@@ -8,24 +8,37 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import io.github.apktool.android.runtime.ApktoolCommandRunner
 import io.github.apktool.android.runtime.ShellTokenizer
 import io.github.apktool.android.runtime.Toolchain
@@ -50,134 +65,448 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class SettingsPage {
-    HOME, GENERAL, FRAMEWORKS, AAPT2, DECODE, BUILD, SIGNATURE, PATHS, RUNTIME
+private enum class SettingsOverlay {
+    NONE, FRAMEWORKS, AAPT2, SIGNATURE, PATHS, RUNTIME
 }
 
+/**
+ * Full-screen Material3 settings page arranged after Apktool M's
+ * "Erstellen & Dekodieren" screen. AAPT1 is intentionally absent.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
-    var page by remember { mutableStateOf(SettingsPage.HOME) }
-    when (page) {
-        SettingsPage.HOME -> SettingsHomeDialog(onDismiss = onDismiss, onOpen = { page = it })
-        SettingsPage.GENERAL -> GeneralDefaultsDialog(onBack = { page = SettingsPage.HOME })
-        SettingsPage.FRAMEWORKS -> FrameworkManagerDialog(onBack = { page = SettingsPage.HOME })
-        SettingsPage.AAPT2 -> Aapt2ManagerDialog(onBack = { page = SettingsPage.HOME })
-        SettingsPage.DECODE -> DecodeDefaultsDialog(onBack = { page = SettingsPage.HOME })
-        SettingsPage.BUILD -> BuildDefaultsDialog(
-            onBack = { page = SettingsPage.HOME },
-            onSignature = { page = SettingsPage.SIGNATURE },
-        )
-        SettingsPage.SIGNATURE -> SignatureManagerDialog(onBack = { page = SettingsPage.BUILD })
-        SettingsPage.PATHS -> PathsAndJobsDialog(onBack = { page = SettingsPage.HOME })
-        SettingsPage.RUNTIME -> RuntimeInfoDialog(onBack = { page = SettingsPage.HOME })
+    val context = LocalContext.current
+
+    var general by remember { mutableStateOf(ApktoolSettings.generalDefaults(context)) }
+    var decode by remember { mutableStateOf(ApktoolSettings.decodeDefaults(context)) }
+    var build by remember { mutableStateOf(ApktoolSettings.buildDefaults(context)) }
+    var framework by remember { mutableStateOf(ApktoolSettings.frameworkTag(context)) }
+    var aapt by remember { mutableStateOf(ApktoolSettings.aaptVariant(context)) }
+    var workers by remember { mutableIntStateOf(ApktoolSettings.maxWorkers(context)) }
+    var threads by remember { mutableIntStateOf(ApktoolSettings.apktoolThreads(context)) }
+    var projectsRoot by remember { mutableStateOf(ApktoolSettings.projectsRoot(context)) }
+    var outputRoot by remember { mutableStateOf(ApktoolSettings.outputRoot(context)) }
+
+    var overlay by remember { mutableStateOf(SettingsOverlay.NONE) }
+    var showSuffixEditor by remember { mutableStateOf(false) }
+    var showOutputEditor by remember { mutableStateOf(false) }
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var overflow by remember { mutableStateOf(false) }
+
+    fun saveGeneral(value: ApktoolGeneralDefaults) {
+        general = value
+        ApktoolSettings.saveGeneralDefaults(context, value)
     }
-}
 
-@Composable
-private fun SettingsHomeDialog(onDismiss: () -> Unit, onOpen: (SettingsPage) -> Unit) {
-    val context = LocalContext.current
-    val framework = ApktoolSettings.frameworkTag(context)
-    val aapt = ApktoolSettings.aaptVariant(context)
-    val workers = ApktoolSettings.maxWorkers(context)
+    fun saveDecode(value: ApktoolDecodeDefaults) {
+        decode = value
+        ApktoolSettings.saveDecodeDefaults(context, value)
+    }
 
-    AlertDialog(
+    fun saveBuild(value: ApktoolBuildDefaults) {
+        build = value
+        ApktoolSettings.saveBuildDefaults(context, value)
+    }
+
+    fun matches(title: String, subtitle: String = ""): Boolean {
+        val q = query.trim()
+        return q.isEmpty() || title.contains(q, ignoreCase = true) || subtitle.contains(q, ignoreCase = true)
+    }
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("MTApktool Einstellungen") },
-        text = {
-            LazyColumn(modifier = Modifier.heightIn(max = 580.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                item {
-                    SettingsEntry("Erstellen & Dekodieren", "Benachrichtigung, Suffix und Ausgabeverzeichnisse") {
-                        onOpen(SettingsPage.GENERAL)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Erstellen & Dekodieren") },
+                        navigationIcon = {
+                            IconButton(onClick = onDismiss) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = {
+                                searching = !searching
+                                if (!searching) query = ""
+                            }) {
+                                Icon(Icons.Default.Search, contentDescription = "Suchen")
+                            }
+                            Box {
+                                IconButton(onClick = { overflow = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Mehr")
+                                }
+                                DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Zurücksetzen") },
+                                        onClick = {
+                                            overflow = false
+                                            ApktoolSettings.resetDefaults(context)
+                                            general = ApktoolSettings.generalDefaults(context)
+                                            decode = ApktoolSettings.decodeDefaults(context)
+                                            build = ApktoolSettings.buildDefaults(context)
+                                            framework = ApktoolSettings.frameworkTag(context)
+                                            aapt = ApktoolSettings.aaptVariant(context)
+                                            workers = ApktoolSettings.maxWorkers(context)
+                                            threads = ApktoolSettings.apktoolThreads(context)
+                                            projectsRoot = ApktoolSettings.projectsRoot(context)
+                                            outputRoot = ApktoolSettings.outputRoot(context)
+                                        },
+                                    )
+                                }
+                            }
+                        },
+                    )
+                },
+            ) { innerPadding ->
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 28.dp),
+                ) {
+                    if (searching) {
+                        item {
+                            OutlinedTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                label = { Text("Einstellungen durchsuchen") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                            )
+                        }
                     }
-                }
-                item {
-                    SettingsEntry("Framework Manager", "Aktiv: ${ApktoolSettings.frameworkLabel(framework)}") {
-                        onOpen(SettingsPage.FRAMEWORKS)
+
+                    if (matches("Nach Abschluss benachrichtigen", "Erstellung und Dekompilierung")) item {
+                        SettingSwitchRow(
+                            title = "Nach Abschluss benachrichtigen",
+                            subtitle = "Senden einer Benachrichtigung nach Abschluss der Erstellung und Dekompilierung",
+                            checked = general.notifyOnCompletion,
+                        ) { saveGeneral(general.copy(notifyOnCompletion = it)) }
                     }
-                }
-                item {
-                    SettingsEntry("AAPT2 Manager", "Aktiv: ${ApktoolSettings.aaptLabel(aapt)} • AAPT1 deaktiviert") {
-                        onOpen(SettingsPage.AAPT2)
+
+                    if (matches("Nicht benachrichtigen, falls ausgeführt")) item {
+                        SettingSwitchRow(
+                            title = "Nicht benachrichtigen, falls ausgeführt",
+                            subtitle = "Zeigt keine Abschlussbenachrichtigung an, wenn die App geöffnet ist",
+                            checked = general.suppressCompletionWhileOpen,
+                            enabled = general.notifyOnCompletion,
+                        ) { saveGeneral(general.copy(suppressCompletionWhileOpen = it)) }
                     }
-                }
-                item {
-                    SettingsEntry("Dekompilieren", "Smali, Ressourcen, APKTOOL_DUMMY-nahe und Split-Optionen") {
-                        onOpen(SettingsPage.DECODE)
+
+                    if (matches("Suffix für apk")) item {
+                        SettingValueRow(
+                            title = "Suffix für apk",
+                            subtitle = "Suffix für den Namen der Ausgabedatei",
+                            value = general.apkSuffix.ifBlank { "Kein Suffix" },
+                            onClick = { showSuffixEditor = true },
+                        )
                     }
-                }
-                item {
-                    SettingsEntry("Kompilieren", "Build, AAPT2, Netzwerk, Zipalign und Signatur") {
-                        onOpen(SettingsPage.BUILD)
+
+                    if (matches("Ordner build löschen")) item {
+                        SettingSwitchRow(
+                            title = "Ordner \"build\" löschen",
+                            subtitle = "Löschen des Ordners build nach der Kompilierung",
+                            checked = build.deleteBuildDirectory,
+                        ) { saveBuild(build.copy(deleteBuildDirectory = it)) }
                     }
-                }
-                item {
-                    SettingsEntry("Pfade & Jobs", "$workers parallele Runner • maximal 4") {
-                        onOpen(SettingsPage.PATHS)
+
+                    if (matches("Alles im Ausgabeverzeichnis")) item {
+                        SettingSwitchRow(
+                            title = "Alles im Ausgabeverzeichnis",
+                            subtitle = "Alles in das Ausgabeverzeichnis dekompilieren",
+                            checked = general.decodeIntoOutputDirectory,
+                        ) { saveGeneral(general.copy(decodeIntoOutputDirectory = it)) }
                     }
-                }
-                item {
-                    SettingsEntry("Runtime", "SDK 36 • NDK 29.0.14033849 • arm64-v8a") {
-                        onOpen(SettingsPage.RUNTIME)
+
+                    if (matches("Erstellen im Ausgabeverzeichnis")) item {
+                        SettingSwitchRow(
+                            title = "Erstellen im Ausgabeverzeichnis",
+                            subtitle = "Bei der Erstellung von Projekten werden die APKs im Ausgabeverzeichnis abgelegt",
+                            checked = general.buildIntoOutputDirectory,
+                        ) { saveGeneral(general.copy(buildIntoOutputDirectory = it)) }
+                    }
+
+                    if (matches("Analyse aller Smali")) item {
+                        SettingSwitchRow(
+                            title = "Analyse aller Smali",
+                            subtitle = "Alle DEX/Smali-Klassen beim Dekompilieren einbeziehen",
+                            checked = decode.allSources,
+                        ) { saveDecode(decode.copy(allSources = it, noSources = if (it) false else decode.noSources)) }
+                    }
+
+                    if (matches("Benutzerdefinierter Rahmen")) item {
+                        SettingSwitchRow(
+                            title = "Benutzerdefinierter Rahmen",
+                            subtitle = "Verwendung eines vom Benutzer importierten Frameworks anstelle des integrierten Frameworks",
+                            checked = !ApktoolSettings.isBuiltInFramework(framework),
+                        ) { checked ->
+                            if (checked) {
+                                overlay = SettingsOverlay.FRAMEWORKS
+                            } else {
+                                framework = ApktoolSettings.DEFAULT_FRAMEWORK
+                                ApktoolSettings.setFrameworkTag(context, framework)
+                            }
+                        }
+                    }
+
+                    if (matches("Austausch von Werkzeugen")) item {
+                        SettingNavigationRow(
+                            title = "Austausch von Werkzeugen",
+                            subtitle = "Auswahl und Ersatz von aapt2",
+                            trailing = ApktoolSettings.aaptLabel(aapt),
+                            onClick = { overlay = SettingsOverlay.AAPT2 },
+                        )
+                    }
+
+                    if (matches("Verwaltung von Rahmenwerken")) item {
+                        SettingNavigationRow(
+                            title = "Verwaltung von Rahmenwerken",
+                            subtitle = "Verwaltung der installierten Frameworks",
+                            trailing = ApktoolSettings.frameworkLabel(framework),
+                            onClick = { overlay = SettingsOverlay.FRAMEWORKS },
+                        )
+                    }
+
+                    if (matches("Ausgabeverzeichnis")) item {
+                        SettingValueRow(
+                            title = "Ausgabeverzeichnis",
+                            subtitle = "Das Vorgabe-Ausgabeverzeichnis festlegen",
+                            value = outputRoot,
+                            onClick = { showOutputEditor = true },
+                        )
+                    }
+
+                    if (matches("aapt2 verwenden")) item {
+                        SettingSwitchRow(
+                            title = "aapt2 verwenden",
+                            subtitle = "AAPT1 ist in MTApktool nicht verfügbar • ${ApktoolSettings.aaptLabel(aapt)}",
+                            checked = true,
+                            onChecked = { overlay = SettingsOverlay.AAPT2 },
+                        )
+                    }
+
+                    if (matches("Debug-Informationen schreiben")) item {
+                        SettingSwitchRow(
+                            title = "Debug-Informationen schreiben",
+                            subtitle = "Debug-Informationen ausgeben (.local, .param, .line, etc.)",
+                            checked = !decode.noDebugInfo,
+                        ) { saveDecode(decode.copy(noDebugInfo = !it)) }
+                    }
+
+                    if (matches("apk als debuggingfähig einstellen")) item {
+                        SettingSwitchRow(
+                            title = "apk als debuggingfähig einstellen",
+                            subtitle = "Setzt android:debuggable auf true im kompilierten Manifest der APK",
+                            checked = build.debuggable,
+                        ) { saveBuild(build.copy(debuggable = it)) }
+                    }
+
+                    if (matches("Register statt Lokale")) item {
+                        SettingSwitchRow(
+                            title = "Verwenden Sie \"Register\" statt \"Lokale\".",
+                            subtitle = "Bei der Dekompilierung nach Smali .registers anstelle von .locals verwenden",
+                            checked = decode.useRegisters,
+                        ) { saveDecode(decode.copy(useRegisters = it)) }
+                    }
+
+                    if (matches("Ausführlich")) item {
+                        SettingSwitchRow(
+                            title = "Ausführlich",
+                            subtitle = "Ausführlichen Modus für Dekompilierung und Build einschalten",
+                            checked = decode.verbose || build.verbose,
+                        ) {
+                            saveDecode(decode.copy(verbose = it))
+                            saveBuild(build.copy(verbose = it))
+                        }
+                    }
+
+                    if (matches("Original anpassen")) item {
+                        SettingSwitchRow(
+                            title = "Original anpassen",
+                            subtitle = "Die Originalsignatur und das Manifest werden soweit Apktool dies unterstützt aufbewahrt",
+                            checked = decode.matchOriginal,
+                        ) { saveDecode(decode.copy(matchOriginal = it)) }
+                    }
+
+                    if (matches("Beibehaltung der Ordnerstruktur")) item {
+                        SettingSwitchRow(
+                            title = "Beibehaltung der Ordnerstruktur",
+                            subtitle = "Versuche, die Ordnerstruktur des Originals beizubehalten; nützlich für Systemanwendungen",
+                            checked = decode.preserveDirectoryStructure,
+                        ) { saveDecode(decode.copy(preserveDirectoryStructure = it)) }
+                    }
+
+                    if (matches("APKTOOL_DUMMY")) item {
+                        SettingSwitchRow(
+                            title = "Hinzufügen \"APKTOOL_DUMMY\"",
+                            subtitle = "Fehlende Ressourcen werden von Apktool 3.x automatisch als APKTOOL_DUMMY behandelt",
+                            checked = true,
+                            enabled = false,
+                            onChecked = {},
+                        )
+                    }
+
+                    if (matches("Gebrochene Ressourcen beibehalten")) item {
+                        SettingSwitchRow(
+                            title = "Gebrochene Ressourcen beibehalten",
+                            subtitle = "Ressourcen trotz Dekompilierfehlern soweit möglich behalten",
+                            checked = decode.keepBrokenResources,
+                        ) { saveDecode(decode.copy(keepBrokenResources = it)) }
+                    }
+
+                    if (matches("Gespaltene Spuren entfernen")) item {
+                        SettingSwitchRow(
+                            title = "Gespaltene Spuren entfernen",
+                            subtitle = "Entfernen von Split-Spuren aus Ressourcen während der Dekompilierung",
+                            checked = decode.removeSplitTraces,
+                        ) { saveDecode(decode.copy(removeSplitTraces = it)) }
+                    }
+
+                    if (matches("Eigenschaft entfernen")) item {
+                        SettingSwitchRow(
+                            title = "<Eigenschaft> entfernen",
+                            subtitle = "Entfernen von <property>-Tags aus dem Manifest beim Dekompilieren",
+                            checked = decode.removePropertyTags,
+                        ) { saveDecode(decode.copy(removePropertyTags = it)) }
+                    }
+
+                    if (matches("Pakete zusammenzuführen")) item {
+                        SettingSwitchRow(
+                            title = "Versuche, Pakete zusammenzuführen",
+                            subtitle = "Greedy-Ressourcenauflösung für zusätzliche Ressourcenpakete verwenden",
+                            checked = decode.resourceResolveMode == "greedy",
+                        ) {
+                            saveDecode(decode.copy(resourceResolveMode = if (it) "greedy" else "default"))
+                        }
+                    }
+
+                    if (matches("Beschreibungen für Berechtigungen")) item {
+                        SettingSwitchRow(
+                            title = "Beschreibungen für Berechtigungen",
+                            subtitle = "Vom aktuellen Apktool-A Kern nicht direkt unterstützt",
+                            checked = false,
+                            enabled = false,
+                            onChecked = {},
+                        )
+                    }
+
+                    if (matches("Netzwerksicherheitskonfiguration hinzufügen")) item {
+                        SettingSwitchRow(
+                            title = "Netzwerksicherheitskonfiguration hinzufügen",
+                            subtitle = "Eine allgemein zulässige Netzwerksicherheitskonfiguration zur Erstellungszeit hinzufügen",
+                            checked = build.networkSecurityConfig,
+                        ) { saveBuild(build.copy(networkSecurityConfig = it)) }
+                    }
+
+                    if (matches("Nicht ändern, wenn sie vorhanden ist")) item {
+                        SettingSwitchRow(
+                            title = "Nicht ändern, wenn sie vorhanden ist",
+                            subtitle = "Eine bereits vorhandene Netzwerksicherheitskonfiguration nicht überschreiben",
+                            checked = build.networkSecurityKeepExisting,
+                            enabled = build.networkSecurityConfig,
+                        ) { saveBuild(build.copy(networkSecurityKeepExisting = it)) }
+                    }
+
+                    if (matches("Benachrichtigung am Arbeitsplatz")) item {
+                        SettingSwitchRow(
+                            title = "Benachrichtigung am Arbeitsplatz",
+                            subtitle = "Während laufender Jobs erforderlich, da Android den Foreground-Service sichtbar halten muss",
+                            checked = true,
+                            enabled = false,
+                            onChecked = {},
+                        )
+                    }
+
+                    if (matches("Signatur")) item {
+                        SettingNavigationRow(
+                            title = "Signatur",
+                            subtitle = "Vorgabesignatur, benutzerdefinierter Keystore und v1–v4",
+                            trailing = ApktoolSettings.signatureLabel(ApktoolSettings.signatureDefaults(context)),
+                            onClick = { overlay = SettingsOverlay.SIGNATURE },
+                        )
+                    }
+
+                    if (matches("Pfade & Jobs")) item {
+                        SettingNavigationRow(
+                            title = "Pfade & Jobs",
+                            subtitle = "Projekte, Ausgabe, Apktool-Threads und parallele Runner",
+                            trailing = "$workers Runner • $threads Threads",
+                            onClick = { overlay = SettingsOverlay.PATHS },
+                        )
+                    }
+
+                    if (matches("Runtime")) item {
+                        SettingNavigationRow(
+                            title = "Runtime",
+                            subtitle = "SDK 36 • NDK 29.0.14033849 • arm64-v8a",
+                            onClick = { overlay = SettingsOverlay.RUNTIME },
+                        )
                     }
                 }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = {
-                ApktoolSettings.resetDefaults(context)
-                onDismiss()
-            }) { Text("ZURÜCKSETZEN") }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } },
-    )
-}
+        }
+    }
 
-@Composable
-private fun GeneralDefaultsDialog(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val defaults = remember { ApktoolSettings.generalDefaults(context) }
-    var notify by remember { mutableStateOf(defaults.notifyOnCompletion) }
-    var hideWhileOpen by remember { mutableStateOf(defaults.suppressCompletionWhileOpen) }
-    var suffix by remember { mutableStateOf(defaults.apkSuffix) }
-    var decodeToOutput by remember { mutableStateOf(defaults.decodeIntoOutputDirectory) }
-    var buildToOutput by remember { mutableStateOf(defaults.buildIntoOutputDirectory) }
+    if (showSuffixEditor) {
+        TextValueDialog(
+            title = "Suffix für apk",
+            value = general.apkSuffix,
+            hint = "z. B. -mod",
+            onDismiss = { showSuffixEditor = false },
+            onSave = {
+                saveGeneral(general.copy(apkSuffix = it))
+                general = ApktoolSettings.generalDefaults(context)
+                showSuffixEditor = false
+            },
+        )
+    }
 
-    AlertDialog(
-        onDismissRequest = onBack,
-        title = { Text("Erstellen & Dekodieren") },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 570.dp).verticalScroll(rememberScrollState())) {
-                SettingCheck("Nach Abschluss benachrichtigen", notify) { notify = it }
-                SettingHint("Sendet nach abgeschlossener Erstellung oder Dekompilierung eine Meldung.")
-                SettingCheck("Nicht benachrichtigen, falls ausgeführt", hideWhileOpen, enabled = notify) { hideWhileOpen = it }
-                SettingHint("Keine Abschlussmeldung, solange MTApktool sichtbar ist. Die Android-Foreground-Service-Meldung bleibt systembedingt bestehen.")
-                OutlinedTextField(
-                    value = suffix,
-                    onValueChange = { suffix = it },
-                    label = { Text("Suffix für APK") },
-                    supportingText = { Text("Wird an den Build-Dateinamen angehängt.") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-                SettingCheck("Alles im Ausgabeverzeichnis", decodeToOutput) { decodeToOutput = it }
-                SettingHint("Dekompilierte Projekte verwenden standardmäßig den Ausgabeordner statt /apktool/projects.")
-                SettingCheck("Erstellen im Ausgabeverzeichnis", buildToOutput) { buildToOutput = it }
-                SettingHint("Kompilierte APKs werden standardmäßig unter /apktool/output angelegt.")
-                Spacer(Modifier.height(6.dp))
-                Text("Frameworks und Werkzeuge werden in den separaten Managern verwaltet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        },
-        dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
-        confirmButton = {
-            Button(onClick = {
-                ApktoolSettings.saveGeneralDefaults(
-                    context,
-                    ApktoolGeneralDefaults(notify, hideWhileOpen, suffix, decodeToOutput, buildToOutput),
-                )
-                onBack()
-            }) { Text("SPEICHERN") }
-        },
-    )
+    if (showOutputEditor) {
+        TextValueDialog(
+            title = "Ausgabeverzeichnis",
+            value = outputRoot,
+            hint = ApktoolSettings.defaultOutputRoot(),
+            onDismiss = { showOutputEditor = false },
+            onSave = {
+                outputRoot = it.ifBlank { ApktoolSettings.defaultOutputRoot() }
+                ApktoolSettings.savePathsAndWorkers(context, workers, projectsRoot, outputRoot, threads)
+                showOutputEditor = false
+            },
+        )
+    }
+
+    when (overlay) {
+        SettingsOverlay.FRAMEWORKS -> FrameworkManagerDialog(onBack = {
+            framework = ApktoolSettings.frameworkTag(context)
+            overlay = SettingsOverlay.NONE
+        })
+
+        SettingsOverlay.AAPT2 -> Aapt2ManagerDialog(onBack = {
+            aapt = ApktoolSettings.aaptVariant(context)
+            overlay = SettingsOverlay.NONE
+        })
+
+        SettingsOverlay.SIGNATURE -> SignatureManagerDialog(onBack = { overlay = SettingsOverlay.NONE })
+
+        SettingsOverlay.PATHS -> PathsAndJobsDialog(onBack = {
+            workers = ApktoolSettings.maxWorkers(context)
+            threads = ApktoolSettings.apktoolThreads(context)
+            projectsRoot = ApktoolSettings.projectsRoot(context)
+            outputRoot = ApktoolSettings.outputRoot(context)
+            overlay = SettingsOverlay.NONE
+        })
+
+        SettingsOverlay.RUNTIME -> RuntimeInfoDialog(onBack = { overlay = SettingsOverlay.NONE })
+        SettingsOverlay.NONE -> Unit
+    }
 }
 
 @Composable
@@ -220,8 +549,12 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
                         } ?: error("Framework-Datei kann nicht geöffnet werden")
                     }
                 }
-                result.onSuccess { installPath = it; status = "Framework ausgewählt." }
-                    .onFailure { status = it.message ?: it.toString() }
+                result.onSuccess {
+                    installPath = it
+                    status = "Framework ausgewählt."
+                }.onFailure {
+                    status = it.message ?: it.toString()
+                }
             }
         }
     }
@@ -239,35 +572,40 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
         title = { Text("Verwaltung der installierten Frameworks") },
         text = {
             Column(modifier = Modifier.heightIn(max = 600.dp)) {
-                Text("Verwendetes Framework", style = MaterialTheme.typography.labelLarge)
+                Text("Aktives Framework", style = MaterialTheme.typography.labelLarge)
                 CompactPicker(
                     value = active,
-                    options = ApktoolSettings.frameworkOptions,
+                    options = ApktoolSettings.availableFrameworkTags(context),
                     label = { ApktoolSettings.frameworkLabel(it) },
                     onSelected = {
                         active = it
                         ApktoolSettings.setFrameworkTag(context, it)
                     },
                 )
+
                 Spacer(Modifier.height(6.dp))
-                Text("Installierte Frameworks", fontWeight = FontWeight.SemiBold)
                 if (frameworks.isEmpty()) {
                     Text("Keine Framework-Dateien gefunden.", style = MaterialTheme.typography.bodySmall)
                 } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 210.dp)) {
+                    LazyColumn(modifier = Modifier.heightIn(max = 230.dp)) {
                         items(frameworks, key = { it.absolutePath }) { file ->
                             val checked = file.absolutePath in selected
                             Row(
-                                modifier = Modifier.fillMaxWidth().clickable {
-                                    selected = if (checked) selected - file.absolutePath else selected + file.absolutePath
-                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selected = if (checked) selected - file.absolutePath else selected + file.absolutePath
+                                    },
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Checkbox(checked = checked, onCheckedChange = {
-                                    selected = if (it) selected + file.absolutePath else selected - file.absolutePath
-                                })
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = {
+                                        selected = if (it) selected + file.absolutePath else selected - file.absolutePath
+                                    },
+                                )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(frameworkDisplayName(file), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
                                         "${frameworkSdkLabel(file)} • %.2f MiB".format(file.length() / 1024.0 / 1024.0),
                                         style = MaterialTheme.typography.labelSmall,
@@ -279,38 +617,45 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
                     }
                 }
 
-                OutlinedTextField(
-                    value = installPath,
-                    onValueChange = { installPath = it },
-                    label = { Text("Framework APK") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { frameworkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "application/zip")) }) {
-                        Text("APK AUSWÄHLEN")
-                    }
+                TextButton(
+                    onClick = {
+                        frameworkPicker.launch(
+                            arrayOf(
+                                "application/vnd.android.package-archive",
+                                "application/octet-stream",
+                                "application/zip",
+                            ),
+                        )
+                    },
+                ) { Text("FRAMEWORK IMPORTIEREN") }
+
+                if (installPath.isNotBlank()) {
                     OutlinedTextField(
                         value = installTag,
                         onValueChange = { installTag = it },
-                        label = { Text("Tag") },
+                        label = { Text("Framework-Tag (optional)") },
                         singleLine = true,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
+                    TextButton(
+                        onClick = {
+                            val command = buildString {
+                                append("apktool install-framework -p ")
+                                    .append(ShellTokenizer.quote(ApktoolSettings.frameworkDir()))
+                                if (installTag.isNotBlank()) {
+                                    append(" -t ").append(ShellTokenizer.quote(installTag.trim()))
+                                }
+                                append(' ').append(ShellTokenizer.quote(installPath))
+                            }
+                            runFrameworkCommand(command)
+                            installPath = ""
+                        },
+                    ) { Text("INSTALLIEREN") }
                 }
-                TextButton(
-                    enabled = installPath.isNotBlank(),
-                    onClick = {
-                        val command = buildString {
-                            append("apktool install-framework -p ").append(ShellTokenizer.quote(ApktoolSettings.frameworkDir()))
-                            if (installTag.isNotBlank()) append(" -t ").append(ShellTokenizer.quote(installTag.trim()))
-                            append(' ').append(ShellTokenizer.quote(installPath.trim()))
-                        }
-                        ApktoolJobService.enqueue(context, "Framework installieren", command)
-                        status = "Framework-Installation wurde als Job gestartet."
-                    },
-                ) { Text("INSTALLIEREN") }
-                if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                if (status.isNotBlank()) {
+                    Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         },
         dismissButton = {
@@ -333,24 +678,54 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Aapt2ManagerDialog(onBack: () -> Unit) {
+fun Aapt2ManagerDialog(onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(ApktoolSettings.aaptVariant(context)) }
     var customPath by remember { mutableStateOf(ApktoolSettings.customAapt2Path(context)) }
     var runtimeInfo by remember { mutableStateOf("") }
+
+    val aaptPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val toolchain = Toolchain(context)
+                        toolchain.provision()
+                        val file = context.contentResolver.openInputStream(uri)?.use { input ->
+                            toolchain.copyIntoInput(input, "custom-aapt2")
+                        } ?: error("AAPT2-Datei kann nicht geöffnet werden")
+                        if (!file.setExecutable(true, false) && !file.canExecute()) {
+                            error("AAPT2-Datei ist nicht ausführbar")
+                        }
+                        file.absolutePath
+                    }
+                }
+                result.onSuccess {
+                    customPath = it
+                    selected = "custom"
+                }
+            }
+        }
+    }
 
     LaunchedEffect(selected, customPath) {
         runtimeInfo = withContext(Dispatchers.IO) {
             runCatching {
                 if (selected == "custom") {
-                    val f = File(customPath)
-                    if (!f.isFile) "Benutzerdefiniertes AAPT2 nicht gefunden"
-                    else "${f.absolutePath}\n%.2f MiB".format(f.length() / 1024.0 / 1024.0)
+                    val file = File(customPath)
+                    if (!file.isFile) {
+                        "Benutzerdefiniertes AAPT2 nicht gefunden"
+                    } else {
+                        "${file.absolutePath}\n%.2f MiB".format(file.length() / 1024.0 / 1024.0)
+                    }
                 } else {
                     val toolchain = Toolchain(context)
                     toolchain.provision()
                     val file = toolchain.getAaptBinary(selected)
-                    "${file.absolutePath}\n%.2f MiB • Page ${toolchain.runtimePageSize / 1024} KiB".format(file.length() / 1024.0 / 1024.0)
+                    "${file.absolutePath}\n%.2f MiB • Page ${toolchain.runtimePageSize / 1024} KiB".format(
+                        file.length() / 1024.0 / 1024.0,
+                    )
                 }
             }.getOrElse { it.message ?: it.toString() }
         }
@@ -360,8 +735,16 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
         onDismissRequest = onBack,
         title = { Text("AAPT2 Manager") },
         text = {
-            Column(modifier = Modifier.heightIn(max = 560.dp)) {
-                Text("AAPT1 ist absichtlich nicht verfügbar.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "AAPT1 ist absichtlich nicht verfügbar.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(8.dp))
                 CompactPicker(
                     value = selected,
@@ -369,23 +752,31 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
                     label = { ApktoolSettings.aaptLabel(it) },
                     onSelected = { selected = it },
                 )
+
                 if (selected == "custom") {
                     OutlinedTextField(
                         value = customPath,
                         onValueChange = { customPath = it },
                         label = { Text("AAPT2 Pfad") },
-                        supportingText = { Text("Muss auf Android tatsächlich ausführbar sein.") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
+                    TextButton(onClick = { aaptPicker.launch(arrayOf("application/octet-stream", "*/*")) }) {
+                        Text("DATEI AUSWÄHLEN")
+                    }
                 }
+
                 Card(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
                     Column(Modifier.padding(10.dp)) {
                         Text("Aktive Binary", fontWeight = FontWeight.SemiBold)
-                        Text(runtimeInfo, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            runtimeInfo,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
-                SettingHint("Automatisch nutzt auf 16-KiB-Geräten die kompatible SDK33-Payload und sonst die neuere SDK35-Payload. SDK36 wählt die kompatible Payload für das Gerät.")
             }
         },
         dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
@@ -397,142 +788,6 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
                     onBack()
                 },
             ) { Text("SPEICHERN") }
-        },
-    )
-}
-
-@Composable
-private fun DecodeDefaultsDialog(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val defaults = remember { ApktoolSettings.decodeDefaults(context) }
-    var force by remember { mutableStateOf(defaults.force) }
-    var allSources by remember { mutableStateOf(defaults.allSources) }
-    var noSources by remember { mutableStateOf(defaults.noSources) }
-    var noDebug by remember { mutableStateOf(defaults.noDebugInfo) }
-    var noResources by remember { mutableStateOf(defaults.noResources) }
-    var onlyManifest by remember { mutableStateOf(defaults.onlyManifest) }
-    var matchOriginal by remember { mutableStateOf(defaults.matchOriginal) }
-    var keepBroken by remember { mutableStateOf(defaults.keepBrokenResources) }
-    var ignoreRaw by remember { mutableStateOf(defaults.ignoreRawValues) }
-    var noAssets by remember { mutableStateOf(defaults.noAssets) }
-    var resolveMode by remember { mutableStateOf(defaults.resourceResolveMode) }
-    var useRegisters by remember { mutableStateOf(defaults.useRegisters) }
-    var nomedia by remember { mutableStateOf(defaults.createNomedia) }
-    var removeSplit by remember { mutableStateOf(defaults.removeSplitTraces) }
-    var removeProperty by remember { mutableStateOf(defaults.removePropertyTags) }
-    var verbose by remember { mutableStateOf(defaults.verbose) }
-
-    AlertDialog(
-        onDismissRequest = onBack,
-        title = { Text("Dekompilieren – Einstellungen") },
-        text = {
-            LazyColumn(modifier = Modifier.heightIn(max = 585.dp)) {
-                item { SettingCheck("Debug-Informationen schreiben", !noDebug, !noSources) { noDebug = !it } }
-                item { SettingCheck("Register statt Lokale verwenden", useRegisters, !noSources) { useRegisters = it } }
-                item { SettingHint("Erzeugt .registers statt .locals in Smali.") }
-                item { SettingCheck("Original anpassen", matchOriginal) { matchOriginal = it } }
-                item { SettingHint("Hält Dateien so nah wie Apktool möglich am Original; kann einen späteren Rebuild erschweren.") }
-                item { SettingCheck("APKTOOL_DUMMY zulassen", true, enabled = false) { } }
-                item { SettingHint("Apktool 3.x erzeugt APKTOOL_DUMMY automatisch für fehlende Ressourcenreferenzen; dieses Verhalten ist im Port aktiv.") }
-                item { SettingCheck("Gebrochene Ressourcen beibehalten", keepBroken, !noResources && !onlyManifest) { keepBroken = it } }
-                item { SettingCheck("Gespaltene Spuren entfernen", removeSplit) { removeSplit = it } }
-                item { SettingCheck("<property> entfernen", removeProperty) { removeProperty = it } }
-                item { SettingCheck(".nomedia im Projekt anlegen", nomedia) { nomedia = it } }
-                item { SettingCheck("Ausführlich", verbose) { verbose = it } }
-                item { SettingCheck("Vorhandenes Projekt überschreiben", force) { force = it } }
-                item { SettingCheck("Alle *.dex dekompilieren", allSources) { allSources = it; if (it) noSources = false } }
-                item { SettingCheck("Smali nicht dekompilieren", noSources) { noSources = it; if (it) { allSources = false; noDebug = false; useRegisters = false } } }
-                item { SettingCheck("Ressourcen nicht dekompilieren", noResources) { noResources = it; if (it) onlyManifest = false } }
-                item { SettingCheck("Nur AndroidManifest.xml", onlyManifest, !noResources) { onlyManifest = it } }
-                item {
-                    Column(Modifier.padding(vertical = 4.dp)) {
-                        Text("Resource resolve mode", style = MaterialTheme.typography.labelLarge)
-                        CompactPicker(resolveMode, ApktoolSettings.resourceResolveModes, { it }) { resolveMode = it }
-                    }
-                }
-                item { SettingCheck("Raw values ignorieren", ignoreRaw, !noResources) { ignoreRaw = it } }
-                item { SettingCheck("Assets nicht dekompilieren", noAssets) { noAssets = it } }
-            }
-        },
-        dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
-        confirmButton = {
-            Button(onClick = {
-                ApktoolSettings.saveDecodeDefaults(
-                    context,
-                    ApktoolDecodeDefaults(
-                        force = force,
-                        allSources = allSources,
-                        noSources = noSources,
-                        noDebugInfo = noDebug,
-                        noResources = noResources,
-                        onlyManifest = onlyManifest,
-                        matchOriginal = matchOriginal,
-                        keepBrokenResources = keepBroken,
-                        ignoreRawValues = ignoreRaw,
-                        noAssets = noAssets,
-                        resourceResolveMode = resolveMode,
-                        useRegisters = useRegisters,
-                        createNomedia = nomedia,
-                        removeSplitTraces = removeSplit,
-                        removePropertyTags = removeProperty,
-                        verbose = verbose,
-                    ),
-                )
-                onBack()
-            }) { Text("SPEICHERN") }
-        },
-    )
-}
-
-@Composable
-private fun BuildDefaultsDialog(onBack: () -> Unit, onSignature: () -> Unit) {
-    val context = LocalContext.current
-    val defaults = remember { ApktoolSettings.buildDefaults(context) }
-    var force by remember { mutableStateOf(defaults.force) }
-    var debuggable by remember { mutableStateOf(defaults.debuggable) }
-    var copyOriginal by remember { mutableStateOf(defaults.copyOriginal) }
-    var noCrunch by remember { mutableStateOf(defaults.noCrunch) }
-    var netSec by remember { mutableStateOf(defaults.networkSecurityConfig) }
-    var align by remember { mutableStateOf(defaults.zipalign) }
-    var sign by remember { mutableStateOf(defaults.sign) }
-    var deleteBuild by remember { mutableStateOf(defaults.deleteBuildDirectory) }
-    var verbose by remember { mutableStateOf(defaults.verbose) }
-
-    AlertDialog(
-        onDismissRequest = onBack,
-        title = { Text("Kompilieren – Einstellungen") },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 570.dp).verticalScroll(rememberScrollState())) {
-                SettingCheck("APK als debuggingfähig einstellen", debuggable) { debuggable = it }
-                SettingCheck("Netzwerksicherheitskonfiguration hinzufügen", netSec) { netSec = it }
-                SettingCheck("Ordner \"build\" löschen", deleteBuild) { deleteBuild = it }
-                SettingCheck("Originaldateien/Prüfsummen übernehmen", copyOriginal) { copyOriginal = it }
-                SettingHint("Entspricht Apktool --copy-original und übernimmt Original-Manifest/META-INF, soweit Apktool dies unterstützt.")
-                SettingCheck("Force build", force) { force = it }
-                SettingCheck("No crunch", noCrunch) { noCrunch = it }
-                SettingCheck("Ausführlich", verbose) { verbose = it }
-                Spacer(Modifier.height(5.dp))
-                Text("Nach dem Build", fontWeight = FontWeight.SemiBold)
-                SettingCheck("Zipalign (16 KiB page aware)", align) { align = it }
-                SettingCheck("Signieren", sign) { sign = it }
-                SettingsEntry("Signatur", ApktoolSettings.signatureLabel(ApktoolSettings.signatureDefaults(context))) { onSignature() }
-                SettingHint("AAPT2 wird im AAPT2 Manager gewählt. AAPT1 wird nicht angeboten.")
-            }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = onSignature) { Text("SIGNATUR") }
-                TextButton(onClick = onBack) { Text("ABBRECHEN") }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                ApktoolSettings.saveBuildDefaults(
-                    context,
-                    ApktoolBuildDefaults(force, debuggable, copyOriginal, noCrunch, netSec, align, sign, deleteBuild, verbose),
-                )
-                onBack()
-            }) { Text("SPEICHERN") }
         },
     )
 }
@@ -561,8 +816,13 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
                         } ?: error("Signaturdatei kann nicht geöffnet werden")
                     }
                 }
-                result.onSuccess { path = it; profile = "custom"; status = "Signaturdatei ausgewählt." }
-                    .onFailure { status = it.message ?: it.toString() }
+                result.onSuccess {
+                    path = it
+                    profile = "custom"
+                    status = "Signaturdatei ausgewählt."
+                }.onFailure {
+                    status = it.message ?: it.toString()
+                }
             }
         }
     }
@@ -571,13 +831,18 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
         onDismissRequest = onBack,
         title = { Text("Signatur") },
         text = {
-            Column(modifier = Modifier.heightIn(max = 570.dp).verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 570.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 CompactPicker(
                     value = profile,
                     options = ApktoolSettings.signatureProfiles,
                     label = { if (it == "testkey") "Vorgabesignatur (testkey)" else "Benutzerdefinierte Signatur" },
                     onSelected = { profile = it },
                 )
+
                 if (profile == "custom") {
                     OutlinedTextField(
                         value = path,
@@ -586,7 +851,9 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    TextButton(onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-pkcs12", "*/*")) }) { Text("DATEI AUSWÄHLEN") }
+                    TextButton(onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-pkcs12", "*/*")) }) {
+                        Text("DATEI AUSWÄHLEN")
+                    }
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
@@ -596,12 +863,15 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+
                 SettingCheck("Signatur v1", v1) { v1 = it }
                 SettingCheck("Signatur v2", v2) { v2 = it }
                 SettingCheck("Signatur v3", v3) { v3 = it }
                 SettingCheck("Signatur v4", v4) { v4 = it }
-                SettingHint("Mindestens ein Signaturschema muss aktiv sein. V4 kann eine zusätzliche .idsig-Datei erzeugen, abhängig vom Signer.")
-                if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                if (status.isNotBlank()) {
+                    Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         },
         dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
@@ -609,7 +879,10 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
             Button(
                 enabled = (v1 || v2 || v3 || v4) && (profile != "custom" || path.isNotBlank()),
                 onClick = {
-                    ApktoolSettings.saveSignatureDefaults(context, ApktoolSignatureDefaults(profile, path, password, v1, v2, v3, v4))
+                    ApktoolSettings.saveSignatureDefaults(
+                        context,
+                        ApktoolSignatureDefaults(profile, path, password, v1, v2, v3, v4),
+                    )
                     onBack()
                 },
             ) { Text("SPEICHERN") }
@@ -629,17 +902,24 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
         onDismissRequest = onBack,
         title = { Text("Pfade & Jobs") },
         text = {
-            Column(modifier = Modifier.heightIn(max = 570.dp).verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 570.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 Text("Parallele Runner", fontWeight = FontWeight.SemiBold)
                 NumberPickerRow(value = workers, range = 1..4) { workers = it }
                 SettingHint("Maximal vier Decode/Build-Jobs gleichzeitig. Jeder Job kann einzeln gestoppt werden.")
+
                 Text("Apktool Threads pro Job", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
                 NumberPickerRow(value = threads, range = 1..4) { threads = it }
-                SettingHint("Entspricht -j/--jobs für Smali/Build. Bei vier parallelen Runnern kann ein niedrigerer Wert RAM und CPU deutlich entlasten.")
+                SettingHint("Apktool -j/--jobs. Der Android-Port begrenzt pro Job auf 1–4 Threads.")
+
                 OutlinedTextField(
                     value = projects,
                     onValueChange = { projects = it },
                     label = { Text("Projects root") },
+                    supportingText = { Text("Standard: ${ApktoolSettings.defaultProjectsRoot()}") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
@@ -647,6 +927,7 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
                     value = output,
                     onValueChange = { output = it },
                     label = { Text("Build output root") },
+                    supportingText = { Text("Standard: ${ApktoolSettings.defaultOutputRoot()}") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 )
@@ -666,6 +947,7 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
 private fun RuntimeInfoDialog(onBack: () -> Unit) {
     val context = LocalContext.current
     var info by remember { mutableStateOf("Lade Runtime …") }
+
     LaunchedEffect(Unit) {
         info = withContext(Dispatchers.IO) {
             runCatching {
@@ -675,6 +957,9 @@ private fun RuntimeInfoDialog(onBack: () -> Unit) {
                     append("MTApktool runtime\n")
                     append("Apktool: ").append(Toolchain.VERSION).append('\n')
                     append("compileSdk/targetSdk: 36\n")
+                    append("minSdk: 29\n")
+                    append("AGP: 8.10.1\n")
+                    append("Gradle: 8.11.1\n")
                     append("NDK: 29.0.14033849\n")
                     append("ABI: arm64-v8a\n")
                     append("Runtime page: ").append(toolchain.runtimePageSize / 1024).append(" KiB\n")
@@ -687,6 +972,7 @@ private fun RuntimeInfoDialog(onBack: () -> Unit) {
             }.getOrElse { it.stackTraceToString() }
         }
     }
+
     AlertDialog(
         onDismissRequest = onBack,
         title = { Text("Runtime") },
@@ -696,19 +982,132 @@ private fun RuntimeInfoDialog(onBack: () -> Unit) {
 }
 
 @Composable
-private fun SettingsEntry(title: String, subtitle: String, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+private fun TextValueDialog(
+    title: String,
+    value: String,
+    hint: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var text by remember(value) { mutableStateOf(value) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text(hint) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("SPEICHERN") } },
+    )
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onChecked: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onChecked(!checked) }
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.5f),
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.55f),
+            )
+        }
+        Switch(checked = checked, onCheckedChange = if (enabled) onChecked else null, enabled = enabled)
+    }
+}
+
+@Composable
+private fun SettingNavigationRow(
+    title: String,
+    subtitle: String,
+    trailing: String = "",
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (trailing.isNotBlank()) {
+                Text(
+                    trailing,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SettingCheck(label: String, checked: Boolean, enabled: Boolean = true, onChecked: (Boolean) -> Unit) {
+private fun SettingValueRow(
+    title: String,
+    subtitle: String,
+    value: String,
+    onClick: () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled) { onChecked(!checked) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                value,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingCheck(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onChecked: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onChecked(!checked) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = checked, onCheckedChange = onChecked, enabled = enabled)
@@ -722,7 +1121,7 @@ private fun SettingHint(text: String) {
         text,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 48.dp, bottom = 5.dp),
+        modifier = Modifier.padding(start = 4.dp, bottom = 5.dp),
     )
 }
 
@@ -737,28 +1136,40 @@ private fun NumberPickerRow(value: Int, range: IntRange, onSelected: (Int) -> Un
 }
 
 @Composable
-private fun CompactPicker(value: String, options: List<String>, label: (String) -> String, onSelected: (String) -> Unit) {
+private fun CompactPicker(
+    value: String,
+    options: List<String>,
+    label: (String) -> String,
+    onSelected: (String) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxWidth()) {
-        TextButton(onClick = { expanded = true }, modifier = Modifier.align(Alignment.CenterEnd)) { Text(label(value)) }
+        TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(label(value), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.width(8.dp))
+                Text("▾")
+            }
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option ->
+            options.distinct().forEach { option ->
                 DropdownMenuItem(
                     text = { Text(label(option)) },
-                    onClick = { expanded = false; onSelected(option) },
+                    onClick = {
+                        expanded = false
+                        onSelected(option)
+                    },
                 )
             }
         }
     }
 }
 
-private fun frameworkDisplayName(file: File): String = file.name
-
 private fun frameworkSdkLabel(file: File): String {
     val sdk = Regex("sdk(\\d+)", RegexOption.IGNORE_CASE).find(file.name)?.groupValues?.getOrNull(1)
     return when {
         sdk != null -> "SDK $sdk"
-        file.name == "1.apk" -> "SDK 36"
-        else -> "Framework"
+        file.name.matches(Regex("\\d+(-.+)?\\.apk", RegexOption.IGNORE_CASE)) -> "Framework"
+        else -> "Benutzerdefiniert"
     }
 }

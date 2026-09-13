@@ -2,6 +2,7 @@ package io.github.lootdev78.mtapktool.apktool
 
 import android.content.Context
 import android.os.Environment
+import java.io.File
 
 data class ApktoolDecodeDefaults(
     val force: Boolean = false,
@@ -11,6 +12,7 @@ data class ApktoolDecodeDefaults(
     val noResources: Boolean = false,
     val onlyManifest: Boolean = false,
     val matchOriginal: Boolean = false,
+    val preserveDirectoryStructure: Boolean = false,
     val keepBrokenResources: Boolean = true,
     val ignoreRawValues: Boolean = false,
     val noAssets: Boolean = false,
@@ -28,6 +30,7 @@ data class ApktoolBuildDefaults(
     val copyOriginal: Boolean = false,
     val noCrunch: Boolean = false,
     val networkSecurityConfig: Boolean = false,
+    val networkSecurityKeepExisting: Boolean = true,
     val zipalign: Boolean = true,
     val sign: Boolean = true,
     val deleteBuildDirectory: Boolean = false,
@@ -76,6 +79,7 @@ object ApktoolSettings {
     private const val KEY_D_NO_RES = "decode_no_res"
     private const val KEY_D_ONLY_MANIFEST = "decode_only_manifest"
     private const val KEY_D_MATCH_ORIGINAL = "decode_match_original"
+    private const val KEY_D_PRESERVE_STRUCTURE = "decode_preserve_structure"
     private const val KEY_D_KEEP_BROKEN = "decode_keep_broken"
     private const val KEY_D_IGNORE_RAW = "decode_ignore_raw"
     private const val KEY_D_NO_ASSETS = "decode_no_assets"
@@ -91,6 +95,7 @@ object ApktoolSettings {
     private const val KEY_B_COPY_ORIGINAL = "build_copy_original"
     private const val KEY_B_NO_CRUNCH = "build_no_crunch"
     private const val KEY_B_NET_SEC = "build_net_sec"
+    private const val KEY_B_NET_SEC_KEEP_EXISTING = "build_net_sec_keep_existing"
     private const val KEY_B_ALIGN = "build_zipalign"
     private const val KEY_B_SIGN = "build_sign"
     private const val KEY_B_DELETE_BUILD = "build_delete_build_dir"
@@ -154,6 +159,7 @@ object ApktoolSettings {
             noResources = p.getBoolean(KEY_D_NO_RES, false),
             onlyManifest = p.getBoolean(KEY_D_ONLY_MANIFEST, false),
             matchOriginal = p.getBoolean(KEY_D_MATCH_ORIGINAL, false),
+            preserveDirectoryStructure = p.getBoolean(KEY_D_PRESERVE_STRUCTURE, false),
             keepBrokenResources = p.getBoolean(KEY_D_KEEP_BROKEN, true),
             ignoreRawValues = p.getBoolean(KEY_D_IGNORE_RAW, false),
             noAssets = p.getBoolean(KEY_D_NO_ASSETS, false),
@@ -175,6 +181,7 @@ object ApktoolSettings {
             copyOriginal = p.getBoolean(KEY_B_COPY_ORIGINAL, false),
             noCrunch = p.getBoolean(KEY_B_NO_CRUNCH, false),
             networkSecurityConfig = p.getBoolean(KEY_B_NET_SEC, false),
+            networkSecurityKeepExisting = p.getBoolean(KEY_B_NET_SEC_KEEP_EXISTING, true),
             zipalign = p.getBoolean(KEY_B_ALIGN, true),
             sign = p.getBoolean(KEY_B_SIGN, true),
             deleteBuildDirectory = p.getBoolean(KEY_B_DELETE_BUILD, false),
@@ -197,10 +204,30 @@ object ApktoolSettings {
     }
 
     fun setFrameworkTag(context: Context, framework: String) {
-        prefs(context).edit()
-            .putString(KEY_FRAMEWORK, framework.takeIf { it in frameworkOptions } ?: DEFAULT_FRAMEWORK)
-            .apply()
+        val normalized = framework.trim().takeIf { isValidFrameworkTag(it) } ?: DEFAULT_FRAMEWORK
+        prefs(context).edit().putString(KEY_FRAMEWORK, normalized).apply()
     }
+
+    fun availableFrameworkTags(context: Context): List<String> {
+        val tags = linkedSetOf<String>()
+        tags += frameworkOptions
+        File(frameworkDir()).listFiles { file -> file.isFile && file.name.endsWith(".apk", ignoreCase = true) }
+            ?.forEach { file ->
+                Regex("^\\d+-(.+)\\.apk$", RegexOption.IGNORE_CASE)
+                    .matchEntire(file.name)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.takeIf { isValidFrameworkTag(it) }
+                    ?.let(tags::add)
+            }
+        frameworkTag(context).takeIf { isValidFrameworkTag(it) }?.let(tags::add)
+        return tags.toList()
+    }
+
+    fun isBuiltInFramework(tag: String): Boolean = tag in frameworkOptions
+
+    private fun isValidFrameworkTag(tag: String): Boolean =
+        tag.isNotBlank() && tag.length <= 80 && tag.matches(Regex("[A-Za-z0-9._-]+"))
 
     fun setAapt2(context: Context, variant: String, customPath: String = customAapt2Path(context)) {
         prefs(context).edit()
@@ -252,6 +279,7 @@ object ApktoolSettings {
             .putBoolean(KEY_D_NO_RES, noResources)
             .putBoolean(KEY_D_ONLY_MANIFEST, onlyManifest)
             .putBoolean(KEY_D_MATCH_ORIGINAL, value.matchOriginal)
+            .putBoolean(KEY_D_PRESERVE_STRUCTURE, value.preserveDirectoryStructure)
             .putBoolean(KEY_D_KEEP_BROKEN, value.keepBrokenResources && !noResources && !onlyManifest)
             .putBoolean(KEY_D_IGNORE_RAW, value.ignoreRawValues && !noResources)
             .putBoolean(KEY_D_NO_ASSETS, value.noAssets)
@@ -271,6 +299,7 @@ object ApktoolSettings {
             .putBoolean(KEY_B_COPY_ORIGINAL, value.copyOriginal)
             .putBoolean(KEY_B_NO_CRUNCH, value.noCrunch)
             .putBoolean(KEY_B_NET_SEC, value.networkSecurityConfig)
+            .putBoolean(KEY_B_NET_SEC_KEEP_EXISTING, value.networkSecurityKeepExisting)
             .putBoolean(KEY_B_ALIGN, value.zipalign)
             .putBoolean(KEY_B_SIGN, value.sign)
             .putBoolean(KEY_B_DELETE_BUILD, value.deleteBuildDirectory)

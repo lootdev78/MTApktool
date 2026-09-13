@@ -13,7 +13,7 @@ android {
     ndkVersion = "29.0.14033849"
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 29
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -26,8 +26,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     if (nativeZipalign) {

@@ -5,11 +5,6 @@ plugins {
     antlr
 }
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
-
 val smaliRoot = rootProject.layout.projectDirectory.dir("third_party/smali-src")
 val generatedJflex = layout.buildDirectory.dir("generated-src/jflex/main")
 

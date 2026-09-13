@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.android.library)
+    id("com.android.library")
 }
 
 android {
@@ -8,14 +8,14 @@ android {
     ndkVersion = "29.0.14033849"
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 29
         ndk { abiFilters += "arm64-v8a" }
         consumerProguardFiles("consumer-rules.pro")
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     packaging {
@@ -28,9 +28,9 @@ android {
 }
 
 dependencies {
-    implementation(project(":brut.apktool:apktool-lib"))
-    implementation(project(":brut.apktool:apktool-cli"))
-    implementation(project(":apksig-android"))
-    implementation(project(":zipalign-android"))
+    api(project(":brut.apktool:apktool-lib"))
+    api(project(":brut.apktool:apktool-cli"))
+    api(project(":apksig-android"))
+    api(project(":zipalign-android"))
     implementation(libs.commons.cli)
 }

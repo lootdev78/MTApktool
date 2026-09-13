@@ -29,7 +29,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK 36
+      - name: Install Android SDK 36 and NDK 29
         run: |
           sdkmanager --install \
             "platform-tools" \
@@ -48,6 +48,28 @@ jobs:
           ./gradlew --version
           sdkmanager --list_installed | grep -E \
             'platforms;android-36|build-tools;36|ndk;29'
+
+      - name: Verify integrated source modules
+        run: |
+          set -eu
+          for module in \
+            app \
+            apktool-android \
+            apksig-android \
+            zipalign-android \
+            smali-android \
+            brut.j.common \
+            brut.j.util \
+            brut.j.dir \
+            brut.j.xml \
+            brut.j.yaml \
+            brut.apktool/apktool-lib \
+            brut.apktool/apktool-cli
+          do
+            test -f "$module/build.gradle.kts" || { echo "Missing module: $module"; exit 1; }
+          done
+          test -f app/src/main/java/io/github/lootdev78/mtapktool/MainActivity.kt
+          test -f apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
 
       - name: Build Debug APK
         run: |

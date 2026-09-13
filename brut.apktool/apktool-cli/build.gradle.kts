@@ -1,30 +1,28 @@
+plugins {
+    id("com.android.library")
+}
+
 android {
     namespace = "brut.apktool.cli"
     compileSdk = 36
-    ndkVersion = "29.0.14033849"
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 29
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    sourceSets {
-        getByName("main") {
-            resources.srcDir("src/main/resources")
-        }
-    }
+    sourceSets["main"].resources.srcDir("src/main/resources")
 
     packaging {
-        resources {
-            excludes += setOf(
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE*",
-                "META-INF/NOTICE*"
-            )
-        }
+        resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
     }
+}
+
+dependencies {
+    api(project(":brut.apktool:apktool-lib"))
+    implementation(libs.commons.cli)
 }

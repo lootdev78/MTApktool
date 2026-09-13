@@ -5,16 +5,15 @@ plugins {
 android {
     namespace = "io.github.apktool.android.apksig"
     compileSdk = 36
-    ndkVersion = "29.0.14033849"
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 29
         consumerProguardFiles("consumer-rules.pro")
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     packaging {
