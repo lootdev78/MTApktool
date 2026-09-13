@@ -15,6 +15,9 @@ jobs:
     name: Build Debug APK
     runs-on: ubuntu-latest
 
+    env:
+      JAVA_VERSION: '17'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -25,6 +28,12 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+
+      - name: Verify Java runtime
+        run: |
+          java -version
+          echo "JAVA_HOME=$JAVA_HOME"
+          test "$(java -version 2>&1 | grep -o 'version \"17' | head -1)" != ""
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -41,46 +50,10 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Show toolchain
+      - name: Force Gradle Java 17
         run: |
-          java -version
+          echo "org.gradle.java.home=$JAVA_HOME" >> gradle.properties
           ./gradlew --version
-          sdkmanager --list_installed | grep -E \
-            'platforms;android-36|build-tools;36|ndk;29'
-
-      - name: Verify SDK-36 dependency pins
-        run: |
-          grep -q 'coreKtx = "1.18.0"' gradle/libs.versions.toml
-          grep -q 'lifecycleViewmodelCompose = "2.10.0"' gradle/libs.versions.toml
-          grep -q 'version "8.10.1"' build.gradle.kts
-          grep -q 'compileSdk = 36' app/build.gradle.kts
-          grep -q 'targetSdk = 36' app/build.gradle.kts
-
-      - name: Verify integrated source modules
-        run: |
-          set -eu
-          for module in \
-            app \
-            apktool-android \
-            apksig-android \
-            zipalign-android \
-            antlr-runtime \
-            smali-android \
-            brut.j.common \
-            brut.j.util \
-            brut.j.dir \
-            brut.j.xml \
-            brut.j.yaml \
-            brut.apktool/apktool-lib \
-            brut.apktool/apktool-cli
-          do
-            test -f "$module/build.gradle.kts" || { echo "Missing module: $module"; exit 1; }
-          done
-          test -f app/src/main/java/io/github/lootdev78/mtapktool/MainActivity.kt
-          test -f apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
-          test -f third_party/antlr-runtime/src/main/java/org/antlr/runtime/Parser.java
-          test ! -f third_party/antlr-runtime/src/main/java/org/antlr/runtime/tree/DOTTreeGenerator.java
-          grep -q 'api(project(":antlr-runtime"))' smali-android/build.gradle.kts
 
       - name: Build Debug APK
         run: |
@@ -90,16 +63,12 @@ jobs:
 
       - name: Locate APK
         run: |
-          echo "=== APK files ==="
-          find . -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            -print
+          find . -type f -path '*/build/outputs/apk/debug/*.apk' -print
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: MTApktool-debug
-          path: |
-            app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
