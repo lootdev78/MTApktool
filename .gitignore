@@ -1,0 +1,65 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Local configuration
+local.properties
+
+# Android build outputs
+*/build/
+*/out/
+
+# APKs / App Bundles
+*.apk
+*.aab
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# Kotlin
+*.kotlin_module
+
+# Generated files
+bin/
+gen/
+
+# Signing / secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# Firebase / Google services
+google-services.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# Kotlin/Java crash dumps
+hs_err_pid*
+
+# Android Studio captures
+captures/
+
+# Navigation / profiler
+.navigation/
+
+# Compose / Android Studio generated
+/composeApp/build/

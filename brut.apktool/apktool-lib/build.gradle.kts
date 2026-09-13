@@ -1,0 +1,38 @@
+plugins {
+    id("com.android.library")
+}
+
+android {
+    namespace = "brut.androlib"
+    compileSdk = 36
+    ndkVersion = "29.0.14033849"
+
+    defaultConfig {
+        minSdk = 26
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets["main"].resources.srcDir("src/main/resources")
+
+    packaging {
+        resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
+    }
+}
+
+dependencies {
+    api(project(":brut.j.common"))
+    api(project(":brut.j.util"))
+    api(project(":brut.j.dir"))
+    api(project(":brut.j.xml"))
+    api(project(":brut.j.yaml"))
+
+    implementation(project(":smali-android"))
+    implementation("org.antlr:antlr-runtime:3.5.2")
+    implementation(libs.guava)
+    implementation(libs.commons.io)
+    implementation(libs.commons.text)
+}

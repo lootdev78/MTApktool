@@ -1,0 +1,64 @@
+[versions]
+#kotlin = "2.4.10"
+coilCompose = "3.5.0"
+datastorePreferences = "1.2.1"
+editor = "0.23.6"
+kotlin = "2.4.10"
+activityCompose = "1.13.0"
+agp = "9.3.1"
+composeBom = "2026.06.01"
+coreKtx = "1.19.0"
+junit = "4.13.2"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+appcompat = "1.7.1"
+kotlinxCoroutinesAndroid = "1.11.0"
+languageTextmate = "0.23.6"
+lifecycleViewmodelCompose = "2.11.0"
+material = "1.14.0"
+navigationCompose = "2.9.8"
+foundationLayout = "1.11.4"
+foundation = "1.11.4"
+
+commonsIo = "2.22.0"
+commonsCli = "1.11.0"
+commonsText = "1.15.0"
+guava = "33.4.8-android"
+xmlpull = "1.1.3.1"
+
+[libraries]
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+editor = { module = "io.github.Rosemoe.sora-editor:editor", version.ref = "editor" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutinesAndroid" }
+language-textmate = { module = "io.github.Rosemoe.sora-editor:language-textmate", version.ref = "languageTextmate" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
+commons-cli = { module = "commons-cli:commons-cli", version.ref = "commonsCli" }
+commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
+commons-text = { module = "org.apache.commons:commons-text", version.ref = "commonsText" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
+xmlpull = { module = "xmlpull:xmlpull", version.ref = "xmlpull" }
+
+
+[plugins]
+android-library = { id = "com.android.library", version.ref = "agp" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+org-jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+
+#compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
