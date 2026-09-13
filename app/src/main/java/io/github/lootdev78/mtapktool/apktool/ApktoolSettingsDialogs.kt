@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -470,12 +471,11 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
     }
 
     if (showOutputEditor) {
-        TextValueDialog(
+        ApktoolFolderPickerDialog(
+            initialPath = outputRoot,
             title = "Ausgabeverzeichnis",
-            value = outputRoot,
-            hint = ApktoolSettings.defaultOutputRoot(),
             onDismiss = { showOutputEditor = false },
-            onSave = {
+            onSelected = {
                 outputRoot = it.ifBlank { ApktoolSettings.defaultOutputRoot() }
                 ApktoolSettings.savePathsAndWorkers(context, workers, projectsRoot, outputRoot, threads)
                 showOutputEditor = false
@@ -897,6 +897,8 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
     var threads by remember { mutableIntStateOf(ApktoolSettings.apktoolThreads(context)) }
     var projects by remember { mutableStateOf(ApktoolSettings.projectsRoot(context)) }
     var output by remember { mutableStateOf(ApktoolSettings.outputRoot(context)) }
+    var showProjectsPicker by remember { mutableStateOf(false) }
+    var showOutputPicker by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onBack,
@@ -921,6 +923,11 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
                     label = { Text("Projects root") },
                     supportingText = { Text("Standard: ${ApktoolSettings.defaultProjectsRoot()}") },
                     singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { showProjectsPicker = true }) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = "Projects root auswählen")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 OutlinedTextField(
@@ -929,6 +936,11 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
                     label = { Text("Build output root") },
                     supportingText = { Text("Standard: ${ApktoolSettings.defaultOutputRoot()}") },
                     singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { showOutputPicker = true }) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = "Build output root auswählen")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 )
             }
@@ -941,6 +953,29 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
             }) { Text("SPEICHERN") }
         },
     )
+
+    if (showProjectsPicker) {
+        ApktoolFolderPickerDialog(
+            initialPath = projects,
+            title = "Projects root",
+            onDismiss = { showProjectsPicker = false },
+            onSelected = {
+                projects = it
+                showProjectsPicker = false
+            },
+        )
+    }
+    if (showOutputPicker) {
+        ApktoolFolderPickerDialog(
+            initialPath = output,
+            title = "Build output root",
+            onDismiss = { showOutputPicker = false },
+            onSelected = {
+                output = it
+                showOutputPicker = false
+            },
+        )
+    }
 }
 
 @Composable

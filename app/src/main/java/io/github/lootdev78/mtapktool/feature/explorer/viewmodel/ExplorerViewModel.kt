@@ -1,6 +1,7 @@
 package io.github.lootdev78.mtapktool.feature.explorer.viewmodel
 
 import android.os.Environment
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
@@ -17,7 +18,7 @@ import java.util.Stack
 
 enum class ActivePane { LEFT, RIGHT }
 
-class ExplorerViewModel : ViewModel() {
+class ExplorerViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
 
     private val _leftPaneState = MutableStateFlow(PaneState())
     val leftPaneState: StateFlow<PaneState> = _leftPaneState.asStateFlow()
@@ -39,28 +40,28 @@ class ExplorerViewModel : ViewModel() {
 
     init {
         val rootPath = Environment.getExternalStorageDirectory().absolutePath
-        loadDirectory(
-            ActivePane.LEFT,
-            rootPath,
-            isHistoryAction = false
-        )
+        val leftPath = savedDirectory(KEY_LEFT_PATH, rootPath)
+        val rightPath = savedDirectory(KEY_RIGHT_PATH, rootPath)
+        _activePane.value = runCatching {
+            ActivePane.valueOf(savedStateHandle.get<String>(KEY_ACTIVE_PANE).orEmpty())
+        }.getOrDefault(ActivePane.LEFT)
 
-        loadDirectory(
-            ActivePane.RIGHT,
-            rootPath,
-            isHistoryAction = false
-        )
+        loadDirectory(ActivePane.LEFT, leftPath, isHistoryAction = true)
+        loadDirectory(ActivePane.RIGHT, rightPath, isHistoryAction = true)
     }
 
     fun setActive(pane: ActivePane) {
         _activePane.value = pane
+        savedStateHandle[KEY_ACTIVE_PANE] = pane.name
     }
 
     fun loadDirectory(pane: ActivePane, path: String, isHistoryAction: Boolean = false) {
         val currentPath = if (pane == ActivePane.LEFT) _leftPaneState.value.currentPath else _rightPaneState.value.currentPath
+        val targetDir = File(path).absoluteFile
+        val resolvedPath = if (targetDir.isDirectory) targetDir.absolutePath else Environment.getExternalStorageDirectory().absolutePath
 
         // If navigating to a new path (not back/forward action), save to back stack & clear forward stack
-        if (!isHistoryAction && currentPath.isNotEmpty() && currentPath != path) {
+        if (!isHistoryAction && currentPath.isNotEmpty() && currentPath != resolvedPath) {
             if (pane == ActivePane.LEFT) {
                 leftBackStack.push(currentPath)
                 leftForwardStack.clear()
@@ -71,10 +72,11 @@ class ExplorerViewModel : ViewModel() {
         }
 
         viewModelScope.launch {
-            updatePaneState(pane) { it.copy(isLoading = true, currentPath = path) }
+            updatePaneState(pane) { it.copy(isLoading = true, currentPath = resolvedPath) }
+            savedStateHandle[if (pane == ActivePane.LEFT) KEY_LEFT_PATH else KEY_RIGHT_PATH] = resolvedPath
 
             val files = withContext(Dispatchers.IO) {
-                val dir = File(path)
+                val dir = File(resolvedPath)
                 if (dir.exists() && dir.isDirectory) {
                     dir.listFiles()
                         ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
@@ -351,4 +353,16 @@ class ExplorerViewModel : ViewModel() {
             _rightPaneState.update { it.copy(highlightedItemName = highlightFileName) }
         }
     }
+
+    private fun savedDirectory(key: String, fallback: String): String {
+        val saved = savedStateHandle.get<String>(key).orEmpty()
+        return saved.takeIf { it.isNotBlank() && File(it).isDirectory } ?: fallback
+    }
+
+    private companion object {
+        const val KEY_LEFT_PATH = "explorer_left_path"
+        const val KEY_RIGHT_PATH = "explorer_right_path"
+        const val KEY_ACTIVE_PANE = "explorer_active_pane"
+    }
+
 }

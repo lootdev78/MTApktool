@@ -44,7 +44,8 @@ import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewMode
 fun SideBar(
     drawerWidth: Dp,
     viewModel: ExplorerViewModel = viewModel(),
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -89,7 +90,8 @@ fun SideBar(
             },
             selected = false,
             onClick = {
-                // TODO: open settings
+                onClose()
+                onSettings()
             },
             icon = {
                 Icon(

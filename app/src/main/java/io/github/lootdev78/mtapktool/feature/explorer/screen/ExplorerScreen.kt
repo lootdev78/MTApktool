@@ -278,9 +278,11 @@ fun ExplorerScreen(
             drawerContent = {
                     SideBar(
                         drawerWidth = drawerWidth,
-                        onClose= {
+                        viewModel = viewModel,
+                        onClose = {
                             scope.launch { drawerState.close() }
-                        }
+                        },
+                        onSettings = { showApktoolSettings = true },
                     )
                 }
         ) {
