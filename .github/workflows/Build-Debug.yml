@@ -39,15 +39,15 @@ jobs:
 
           yes | sdkmanager --licenses || true
 
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
       - name: Show toolchain
         run: |
           java -version
           ./gradlew --version
           sdkmanager --list_installed | grep -E \
             'platforms;android-36|build-tools;36|ndk;29'
-
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
 
       - name: Build Debug APK
         run: |
