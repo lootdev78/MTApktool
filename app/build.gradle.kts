@@ -11,6 +11,11 @@ val mtapktoolJavaVersion = providers.gradleProperty("mtapktool.javaVersion")
     .map(String::toInt)
     .get()
 
+val mtapktoolCompileSdk = providers.gradleProperty("mtapktool.compileSdk").orElse("36").map(String::toInt).get()
+val mtapktoolMinSdk = providers.gradleProperty("mtapktool.minSdk").orElse("29").map(String::toInt).get()
+val mtapktoolTargetSdk = providers.gradleProperty("mtapktool.targetSdk").orElse("36").map(String::toInt).get()
+val mtapktoolNdkVersion = providers.gradleProperty("mtapktool.ndkVersion").orElse("29.0.14033849").get()
+
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -20,8 +25,8 @@ val releaseKeystore = file("release.jks")
 
 android {
     namespace = "io.github.lootdev78.mtapktool"
-    compileSdk = 36
-    ndkVersion = "29.0.14033849"
+    compileSdk = mtapktoolCompileSdk
+    ndkVersion = mtapktoolNdkVersion
 
     signingConfigs {
         if (releaseKeystore.isFile) {
@@ -36,8 +41,8 @@ android {
 
     defaultConfig {
         applicationId = "io.github.lootdev78.mtapktool"
-        minSdk = 29
-        targetSdk = 36
+        minSdk = mtapktoolMinSdk
+        targetSdk = mtapktoolTargetSdk
         versionCode = 1
         versionName = "1.0"
         ndk { abiFilters += "arm64-v8a" }
@@ -111,6 +116,11 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
+    implementation(libs.commons.compress)
+    implementation(libs.zip4j)
+    implementation(libs.xz)
+    // Use the Android AAR so libzstd JNI payloads are packaged as native libraries.
+    implementation("com.github.luben:zstd-jni:1.5.7-4@aar")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

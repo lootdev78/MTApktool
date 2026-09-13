@@ -54,7 +54,7 @@ fun isApkLike(file: File): Boolean =
 fun isApktoolProject(file: File): Boolean = file.isDirectory && File(file, "apktool.yml").isFile
 
 @Composable
-fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
+fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
     val context = LocalContext.current
     val defaults = remember(file) { ApktoolSettings.decodeDefaults(context) }
     val general = remember(file) { ApktoolSettings.generalDefaults(context) }
@@ -176,7 +176,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
                         append(" -o ").append(ShellTokenizer.quote(output)).append(' ').append(ShellTokenizer.quote(file.absolutePath))
                     }
 
-                    ApktoolJobService.enqueue(
+                    val jobId = ApktoolJobService.enqueue(
                         context = context,
                         title = "Decode ${file.name}",
                         command = command,
@@ -185,6 +185,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
                         removeSplitTraces = removeSplit,
                         removePropertyTags = removeProperty,
                     )
+                    onJobQueued(jobId)
                     onDismiss()
                 },
             ) { Text("OK") }
@@ -256,7 +257,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit) {
+fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
     val context = LocalContext.current
     val defaults = remember(project) { ApktoolSettings.buildDefaults(context) }
     val general = remember(project) { ApktoolSettings.generalDefaults(context) }
@@ -339,7 +340,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit) {
                         }
                         append(" -o ").append(ShellTokenizer.quote(output)).append(' ').append(ShellTokenizer.quote(project.absolutePath))
                     }
-                    ApktoolJobService.enqueue(
+                    val jobId = ApktoolJobService.enqueue(
                         context = context,
                         title = "Build ${project.name}",
                         command = command,
@@ -348,6 +349,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit) {
                         signature = signature,
                         cleanBuildProject = if (deleteBuild) project.absolutePath else null,
                     )
+                    onJobQueued(jobId)
                     onDismiss()
                 },
             ) { Text("OK") }
@@ -455,7 +457,7 @@ fun ApktoolJobsDialog(jobs: List<ApktoolJobInfo>, onCancel: (String) -> Unit, on
 }
 
 @Composable
-fun ApktoolCliDialog(onDismiss: () -> Unit) {
+fun ApktoolCliDialog(onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
     val context = LocalContext.current
     var command by remember { mutableStateOf("apktool --help") }
     AlertDialog(
@@ -474,7 +476,7 @@ fun ApktoolCliDialog(onDismiss: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
         confirmButton = {
-            Button(enabled = command.isNotBlank(), onClick = { ApktoolJobService.enqueue(context, "CLI", command); onDismiss() }) { Text("START") }
+            Button(enabled = command.isNotBlank(), onClick = { val jobId = ApktoolJobService.enqueue(context, "CLI", command); onJobQueued(jobId); onDismiss() }) { Text("START") }
         },
     )
 }

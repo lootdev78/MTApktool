@@ -3,6 +3,8 @@ package io.github.lootdev78.mtapktool.feature.explorer.viewmodel
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.lootdev78.mtapktool.archive.ArchiveEngine
+import io.github.lootdev78.mtapktool.archive.ArchiveRequest
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.state.PaneState
 import kotlinx.coroutines.Dispatchers
@@ -15,14 +17,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.util.Stack
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 enum class ActivePane { LEFT, RIGHT }
 
@@ -339,23 +337,24 @@ class ExplorerViewModel : ViewModel() {
         }
     }
 
-    fun compressItem(pane: ActivePane, sourcePath: String) {
+    /**
+     * Creates an archive using the options from the MT-style archive dialog.
+     * The work runs off the UI thread and both panes are refreshed because the
+     * destination may intentionally be the opposite pane.
+     */
+    fun createArchive(pane: ActivePane, request: ArchiveRequest) {
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val source = File(sourcePath)
-                if (!source.exists()) throw IOException("Source does not exist: $sourcePath")
-                val parent = source.parentFile ?: throw IOException("Source has no parent directory")
-                val output = uniqueZipFile(parent, source.nameWithoutExtension.ifBlank { source.name })
-                ZipOutputStream(BufferedOutputStream(FileOutputStream(output))).use { zip ->
-                    addToZip(zip, parent, source)
+            runCatching { ArchiveEngine.create(request) }
+                .onSuccess { outputs ->
+                    refreshDirectory(ActivePane.LEFT)
+                    refreshDirectory(ActivePane.RIGHT)
+                    clearSelection(pane)
+                    val names = outputs.joinToString { it.name }
+                    _operationMessages.tryEmit("Created $names")
                 }
-                output
-            }.onSuccess { output ->
-                refreshDirectory(pane)
-                _operationMessages.tryEmit("Created ${output.name}")
-            }.onFailure { e ->
-                _operationMessages.tryEmit("Compression failed: ${e.message ?: e.javaClass.simpleName}")
-            }
+                .onFailure { e ->
+                    _operationMessages.tryEmit("Compression failed: ${e.message ?: e.javaClass.simpleName}")
+                }
         }
     }
 
@@ -367,33 +366,6 @@ class ExplorerViewModel : ViewModel() {
         }
         if (source.isDirectory && destinationCanonical.path.startsWith(sourceCanonical.path + File.separator)) {
             throw IOException("Cannot copy or move a directory into itself")
-        }
-    }
-
-    private fun uniqueZipFile(parent: File, baseName: String): File {
-        var candidate = File(parent, "$baseName.zip")
-        var suffix = 1
-        while (candidate.exists()) {
-            candidate = File(parent, "$baseName-$suffix.zip")
-            suffix++
-        }
-        return candidate
-    }
-
-    private fun addToZip(zip: ZipOutputStream, baseDir: File, file: File) {
-        if (Files.isSymbolicLink(file.toPath())) return
-        val entryName = file.relativeTo(baseDir).path.replace(File.separatorChar, '/')
-        if (file.isDirectory) {
-            val normalized = entryName.trimEnd('/') + "/"
-            zip.putNextEntry(ZipEntry(normalized))
-            zip.closeEntry()
-            file.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { child ->
-                addToZip(zip, baseDir, child)
-            }
-        } else {
-            zip.putNextEntry(ZipEntry(entryName))
-            file.inputStream().buffered().use { input -> input.copyTo(zip) }
-            zip.closeEntry()
         }
     }
 
@@ -452,10 +424,16 @@ class ExplorerViewModel : ViewModel() {
 
     // --- Direct Path Navigation with Scroll/Highlight Target ---
     fun navigateToDirectPath(pane: ActivePane, fullPath: String) {
-        val target = File(fullPath)
-        if (!target.exists()) return
+        val target = File(fullPath.trim())
+        if (!target.exists()) {
+            _operationMessages.tryEmit("Path not found: ${target.path}")
+            return
+        }
 
-        val directoryPath = if (target.isDirectory) target.absolutePath else target.parent ?: return
+        val directoryPath = if (target.isDirectory) target.absolutePath else target.parent ?: run {
+            _operationMessages.tryEmit("Cannot open path: ${target.path}")
+            return
+        }
         val highlightFileName = if (target.isDirectory) null else target.name
 
         loadDirectory(pane, directoryPath)

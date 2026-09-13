@@ -82,6 +82,7 @@ fun ClassicFilePane(
     onFocus: () -> Unit,
     onNavigateUp: () -> Unit,
     onRefresh: () -> Unit,
+    onPathClick: () -> Unit,
     onItemClick: (FileItem) -> Unit,
     onItemLongClick: (FileItem) -> Unit,
     onSwipeSelect: (FileItem) -> Unit,
@@ -138,7 +139,29 @@ fun ClassicFilePane(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 12.dp, top = 2.dp),
                     ) {
-                        // 1. Static Parent Directory Item "."
+                        if (paneState.searchQuery.isEmpty()) {
+                            item(key = "__mtapktool_path__${paneState.currentPath}") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onFocus(); onPathClick() }
+                                        .padding(horizontal = 8.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = paneState.currentPath,
+                                        modifier = Modifier.weight(1f),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+
+                        // 1. Static Parent Directory Item ".."
                         if (paneState.searchQuery.isEmpty()) {
                             item {
                                 ParentDirectoryRow(onClick = {

@@ -1,6 +1,5 @@
 package io.github.lootdev78.mtapktool.feature.explorer.component
 
-import android.content.ClipboardManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,11 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -27,11 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -41,156 +35,64 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GoToPathDialog(
     initialPath: String,
     onDismiss: () -> Unit,
-    onGo: (String) -> Unit
+    onGo: (String) -> Unit,
 ) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    var pathInput by remember { mutableStateOf(initialPath) }
-
     val focusRequester = remember { FocusRequester() }
-
-
-    var textFieldValue by remember {
-        mutableStateOf(
-            TextFieldValue(
-                text = pathInput,
-                selection = TextRange(pathInput.length)
-            )
-        )
+    var pathValue by remember(initialPath) {
+        mutableStateOf(TextFieldValue(initialPath, TextRange(0, initialPath.length)))
     }
 
-
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-    }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(4.dp),
             color = MaterialTheme.colorScheme.surface,
-            contentColor =  MaterialTheme.colorScheme.onSurface,
             shadowElevation = 8.dp,
-            modifier = Modifier.width(420.dp).wrapContentWidth()
+            modifier = Modifier.width(420.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(start = 28.dp, top = 24.dp, end=20.dp, bottom = 12.dp)
-            ) {
-                Text(
-                    text = "Go to path",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
+            Column(Modifier.padding(start = 28.dp, top = 24.dp, end = 20.dp, bottom = 12.dp)) {
+                Text("Jump to path", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(12.dp))
                 TextField(
-                    value = textFieldValue,
-                    onValueChange = { textFieldValue = it },
-                    placeholder = {
-                        Text(
-                            text = "Name",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
+                    value = pathValue,
+                    onValueChange = { pathValue = it },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        // outline is the standard color for borders
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        // onSurface automatically turns white in dark mode and black in light mode
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        cursorColor = MaterialTheme.colorScheme.primary
+                        cursorColor = MaterialTheme.colorScheme.primary,
                     ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.SpaceBetween
-
-                ) {
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-
+                Spacer(Modifier.height(20.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                val text = clipboard.getClipEntry()?.clipData?.getItemAt(0)?.text?.toString().orEmpty()
+                                if (text.isNotBlank()) pathValue = TextFieldValue(text, TextRange(0, text.length))
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                    ) { Text("PASTE", fontWeight = FontWeight.Bold) }
+                    Row {
+                        TextButton(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 12.dp)) {
+                            Text("CANCEL", fontWeight = FontWeight.Bold)
+                        }
                         TextButton(
-                            onClick = {
-                                scope.launch {
-                                    val clipEntry = clipboard.getClipEntry()
-
-                                    // Extract text from the entry (returns AnnotatedString?)
-                                    val clipboardText = clipEntry?.clipData?.getItemAt(0)?.text?.toString() ?: ""
-
-                                    if (clipboardText.isNotEmpty()) {
-                                        pathInput = clipboardText
-                                    }
-
-                                }
-
-
-
-                            },
-                            contentPadding = PaddingValues(horizontal = 12.dp)
-                        ) {
-                            Text(
-                                text = "PASTE",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-
-
-                            TextButton(
-                                onClick = onDismiss,
-                                contentPadding = PaddingValues(horizontal = 12.dp)
-                            ) {
-                                Text(
-                                    text = "CANCEL",
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            TextButton(
-                                onClick = {
-                                    if (pathInput.isNotBlank()) {
-                                        onGo(pathInput.trim())
-                                    }
-                                },
-                                contentPadding = PaddingValues(horizontal = 12.dp)
-                            ) {
-                                Text(
-                                    text = "GO",
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                        }
+                            onClick = { pathValue.text.trim().takeIf(String::isNotBlank)?.let(onGo) },
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                        ) { Text("OK", fontWeight = FontWeight.Bold) }
                     }
-
-
-
                 }
             }
         }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FlipToBack
@@ -35,10 +36,12 @@ fun SelectionBottomBar(
     onInvertSelection: () -> Unit,
     onCloseSelected: () -> Unit,
     onDeleteSelected: () -> Unit,
-    onMoreOptions: () -> Unit
+    onArchiveSelected: () -> Unit,
+    onMoreOptions: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(52.dp)
             .background(Color(0xFF212121)), // Dark MT Manager bottom bar
@@ -67,6 +70,12 @@ fun SelectionBottomBar(
             icon = Icons.Default.Delete,
             label = "Delete",
             onClick = onDeleteSelected
+        )
+
+        BottomBarActionItem(
+            icon = Icons.Default.Archive,
+            label = "Archive",
+            onClick = onArchiveSelected
         )
 
         BottomBarActionItem(

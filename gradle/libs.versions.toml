@@ -24,6 +24,10 @@ commonsCli = "1.11.0"
 commonsText = "1.15.0"
 guava = "33.4.8-android"
 xmlpull = "1.1.3.1"
+commonsCompress = "1.28.0"
+zip4j = "2.11.5"
+xz = "1.10"
+zstdJni = "1.5.7-4"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
@@ -52,6 +56,10 @@ commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
 commons-text = { module = "org.apache.commons:commons-text", version.ref = "commonsText" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 xmlpull = { module = "xmlpull:xmlpull", version.ref = "xmlpull" }
+commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
+zip4j = { module = "net.lingala.zip4j:zip4j", version.ref = "zip4j" }
+xz = { module = "org.tukaani:xz", version.ref = "xz" }
+zstd-jni = { module = "com.github.luben:zstd-jni", version.ref = "zstdJni" }
 
 [plugins]
 org-jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,11 +72,12 @@ import androidx.navigation.NavHostController
 import io.github.lootdev78.mtapktool.apktool.ApktoolBuildDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolDecodeDialog
-import io.github.lootdev78.mtapktool.apktool.ApktoolJobsDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolJobsViewModel
 import io.github.lootdev78.mtapktool.apktool.ApktoolSettingsDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolTaskPanel
 import io.github.lootdev78.mtapktool.apktool.isApkLike
 import io.github.lootdev78.mtapktool.apktool.isApktoolProject
+import io.github.lootdev78.mtapktool.archive.ArchiveCreateDialog
 import io.github.lootdev78.mtapktool.feature.editor.FileInfoDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.ClassicFilePane
 import io.github.lootdev78.mtapktool.feature.explorer.component.CustomCreateItemDialog
@@ -89,6 +92,7 @@ import io.github.lootdev78.mtapktool.feature.explorer.state.isImageFile
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
 import io.github.lootdev78.mtapktool.feature.explorer.util.FileOpener
+import io.github.lootdev78.mtapktool.settings.AppSettingsDialog
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -126,6 +130,7 @@ fun ExplorerScreen(
     var showContextMenu by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showGoToPathDialog by remember { mutableStateOf(false) }
+    var goToPane by remember { mutableStateOf<ActivePane?>(null) }
     var showPropertyDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var targetItem by remember { mutableStateOf<FileItem?>(null) }
@@ -133,10 +138,14 @@ fun ExplorerScreen(
     var showApktoolDecode by remember { mutableStateOf(false) }
     var showApktoolBuild by remember { mutableStateOf(false) }
     var showApktoolSettings by remember { mutableStateOf(false) }
-    var showApktoolJobs by remember { mutableStateOf(false) }
+    var showAppSettings by remember { mutableStateOf(false) }
+    var showTaskPanel by remember { mutableStateOf(false) }
     var showApktoolCli by remember { mutableStateOf(false) }
     var showApktoolOptions by remember { mutableStateOf(false) }
     var apktoolTarget by remember { mutableStateOf<File?>(null) }
+    var showArchiveDialog by remember { mutableStateOf(false) }
+    var archiveSources by remember { mutableStateOf<List<File>>(emptyList()) }
+    var archivePane by remember { mutableStateOf(ActivePane.LEFT) }
 
     val hasSelectedItems = activeState.selectedPaths.isNotEmpty()
     val canNavigateBack = activeState.currentPath != rootPath && activeState.currentPath != "/"
@@ -177,7 +186,11 @@ fun ExplorerScreen(
                 showContextMenu = false
             },
             onCompress = {
-                targetItem?.let { item -> viewModel.compressItem(activePane, item.path) }
+                targetItem?.let { item ->
+                    archiveSources = listOf(File(item.path))
+                    archivePane = activePane
+                    showArchiveDialog = true
+                }
                 showContextMenu = false
             },
             onProperty = {
@@ -270,25 +283,44 @@ fun ExplorerScreen(
     }
 
     if (showGoToPathDialog) {
+        val targetPane = goToPane ?: activePane
+        val targetState = if (targetPane == ActivePane.LEFT) leftState else rightState
         GoToPathDialog(
-            initialPath = activeState.currentPath,
-            onDismiss = { showGoToPathDialog = false },
+            initialPath = targetState.currentPath,
+            onDismiss = { showGoToPathDialog = false; goToPane = null },
             onGo = { path ->
-                viewModel.navigateToDirectPath(activePane, path)
+                viewModel.setActive(targetPane)
+                viewModel.navigateToDirectPath(targetPane, path)
                 showGoToPathDialog = false
+                goToPane = null
             }
+        )
+    }
+
+    if (showArchiveDialog && archiveSources.isNotEmpty()) {
+        val sourceState = if (archivePane == ActivePane.LEFT) leftState else rightState
+        val otherState = if (archivePane == ActivePane.LEFT) rightState else leftState
+        ArchiveCreateDialog(
+            sources = archiveSources,
+            currentDirectory = File(sourceState.currentPath),
+            oppositeDirectory = File(otherState.currentPath),
+            onDismiss = { showArchiveDialog = false },
+            onCreate = { request ->
+                viewModel.createArchive(archivePane, request)
+                showArchiveDialog = false
+            },
         )
     }
 
     if (showApktoolDecode) {
         apktoolTarget?.takeIf(::isApkLike)?.let { file ->
-            ApktoolDecodeDialog(file = file, onDismiss = { showApktoolDecode = false })
+            ApktoolDecodeDialog(file = file, onDismiss = { showApktoolDecode = false }, onJobQueued = { showTaskPanel = true })
         } ?: run { showApktoolDecode = false }
     }
 
     if (showApktoolBuild) {
         apktoolTarget?.takeIf(::isApktoolProject)?.let { project ->
-            ApktoolBuildDialog(project = project, onDismiss = { showApktoolBuild = false })
+            ApktoolBuildDialog(project = project, onDismiss = { showApktoolBuild = false }, onJobQueued = { showTaskPanel = true })
         } ?: run { showApktoolBuild = false }
     }
 
@@ -296,21 +328,21 @@ fun ExplorerScreen(
         ApktoolSettingsDialog(onDismiss = { showApktoolSettings = false })
     }
 
-    if (showApktoolJobs) {
-        ApktoolJobsDialog(
-            jobs = apktoolJobs,
-            onCancel = apktoolJobsViewModel::cancel,
-            onCancelAll = apktoolJobsViewModel::cancelAll,
-            onDismiss = { showApktoolJobs = false },
+    if (showAppSettings) {
+        AppSettingsDialog(
+            onDismiss = { showAppSettings = false },
+            onJobQueued = { showTaskPanel = true },
         )
     }
 
     if (showApktoolCli) {
-        ApktoolCliDialog(onDismiss = { showApktoolCli = false })
+        ApktoolCliDialog(onDismiss = { showApktoolCli = false }, onJobQueued = { showTaskPanel = true })
     }
 
-    BackHandler(enabled = canNavigateBack || isSearching) {
-        if (isSearching) {
+    BackHandler(enabled = showTaskPanel || canNavigateBack || isSearching) {
+        if (showTaskPanel) {
+            showTaskPanel = false
+        } else if (isSearching) {
             isSearching = false
             viewModel.clearSearch(activePane)
         } else {
@@ -333,7 +365,7 @@ fun ExplorerScreen(
                             bookmarks = updated
                             bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
                         },
-                        onOpenSettings = { showApktoolSettings = true },
+                        onOpenSettings = { showAppSettings = true },
                         onClose = {
                             scope.launch { drawerState.close() }
                         }
@@ -380,7 +412,14 @@ fun ExplorerScreen(
 
                             Spacer(modifier = Modifier.width(8.dp))
 
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        goToPane = activePane
+                                        showGoToPathDialog = true
+                                    }
+                            ) {
                                 Text(
                                     text = activeState.currentPath,
                                     fontSize = 16.sp,
@@ -428,7 +467,7 @@ fun ExplorerScreen(
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Apktool Jobs (${apktoolJobs.count { !it.isTerminal }})") },
-                                        onClick = { showApktoolOptions = false; showApktoolJobs = true }
+                                        onClick = { showApktoolOptions = false; showTaskPanel = true }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Apktool CLI") },
@@ -454,6 +493,7 @@ fun ExplorerScreen(
                         onFocus = { viewModel.setActive(ActivePane.LEFT) },
                         onNavigateUp = { viewModel.navigateUp(ActivePane.LEFT) },
                         onRefresh = { viewModel.refreshDirectory(ActivePane.LEFT) },
+                        onPathClick = { goToPane = ActivePane.LEFT; showGoToPathDialog = true },
                         onItemClick = { item ->
                             if (leftState.selectedPaths.isNotEmpty()) {
                                 viewModel.toggleSelection(ActivePane.LEFT, item.path, false)
@@ -524,6 +564,7 @@ fun ExplorerScreen(
                         onFocus = { viewModel.setActive(ActivePane.RIGHT) },
                         onNavigateUp = { viewModel.navigateUp(ActivePane.RIGHT) },
                         onRefresh = { viewModel.refreshDirectory(ActivePane.RIGHT) },
+                        onPathClick = { goToPane = ActivePane.RIGHT; showGoToPathDialog = true },
                         onItemClick = { item ->
                             if (rightState.selectedPaths.isNotEmpty()) {
                                 viewModel.toggleSelection(ActivePane.RIGHT, item.path, false)
@@ -590,14 +631,20 @@ fun ExplorerScreen(
                         onInvertSelection = { viewModel.invertSelection(activePane) },
                         onDeleteSelected = { viewModel.deleteSelected(activePane) },
                         onCloseSelected = { viewModel.cancelSelection(activePane) },
-                        onMoreOptions = { viewModel.moveSelectedToOppositePane(activePane) }
+                        onArchiveSelected = {
+                            archivePane = activePane
+                            archiveSources = activeState.selectedPaths.map(::File)
+                            showArchiveDialog = archiveSources.isNotEmpty()
+                        },
+                        onMoreOptions = { viewModel.moveSelectedToOppositePane(activePane) },
+                        modifier = Modifier.taskPanelSwipe { showTaskPanel = true },
                     )
                 } else {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         shadowElevation = 8.dp,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().taskPanelSwipe { showTaskPanel = true }
                     ) {
                         Row(
                             modifier = Modifier
@@ -624,7 +671,7 @@ fun ExplorerScreen(
                             )
                             BottomNavIconButton(
                                 icon = Icons.Default.ArrowUpward,
-                                onClick = { showGoToPathDialog = true }
+                                onClick = { goToPane = activePane; showGoToPathDialog = true }
                             )
                         }
                     }
@@ -632,6 +679,39 @@ fun ExplorerScreen(
             }
         }
     }
+
+    ApktoolTaskPanel(
+        visible = showTaskPanel,
+        jobs = apktoolJobs,
+        onCancel = apktoolJobsViewModel::cancel,
+        onCancelAll = apktoolJobsViewModel::cancelAll,
+        onDismiss = { showTaskPanel = false },
+    )
+}
+
+private fun Modifier.taskPanelSwipe(onOpen: () -> Unit): Modifier = pointerInput(onOpen) {
+    var startX = 0f
+    var total = 0f
+    var opened = false
+    detectHorizontalDragGestures(
+        onDragStart = { offset ->
+            startX = offset.x
+            total = 0f
+            opened = false
+        },
+        onHorizontalDrag = { change, amount ->
+            if (startX >= size.width * 0.72f && amount < 0f) {
+                total += amount
+                if (!opened && total <= -90f) {
+                    opened = true
+                    onOpen()
+                }
+                change.consume()
+            }
+        },
+        onDragEnd = { total = 0f; opened = false },
+        onDragCancel = { total = 0f; opened = false },
+    )
 }
 
 @Composable
