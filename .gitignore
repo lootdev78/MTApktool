@@ -2,6 +2,8 @@
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
+# Machine-local Gradle daemon JVM criteria; CI pins Java explicitly.
+gradle/gradle-daemon-jvm.properties
 
 # Android Studio / IntelliJ
 .idea/
