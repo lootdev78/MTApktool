@@ -1,1 +1,1 @@
-# Apktool, smali and apksig use reflection-sensitive paths. The app currently disables shrinking.
+# Runtime module is consumed by :app. Shrinking is disabled for the current app build.

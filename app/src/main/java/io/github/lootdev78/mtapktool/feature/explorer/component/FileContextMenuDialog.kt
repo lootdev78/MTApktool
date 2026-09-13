@@ -20,8 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
@@ -55,8 +56,8 @@ import io.github.lootdev78.mtapktool.apktool.isApktoolProject
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
+import java.io.File
 
 data class MenuAction(
     val title: String,
@@ -79,7 +80,7 @@ fun FileContextMenuDialog(
     onProperty: () -> Unit,
     onShare: () -> Unit,
     onAddBookmark: () -> Unit,
-    onApktool: () -> Unit,
+    onApktool: () -> Unit = {},
 ) {
 
 
@@ -102,7 +103,7 @@ fun FileContextMenuDialog(
     val scope = rememberCoroutineScope()
     val targetFile = targetItem?.let { File(it.path) }
     val apktoolCapable = targetFile?.let { isApkLike(it) || isApktoolProject(it) } == true
-    val apktoolTitle = if (targetFile?.isDirectory == true) "APK kompilieren" else "Apktool decodieren"
+    val apktoolBuild = targetFile?.let(::isApktoolProject) == true
 
     val addArrow = fun(text: String): String{
         return if (activePane == ActivePane.LEFT){
@@ -215,23 +216,38 @@ fun FileContextMenuDialog(
                         right = MenuAction(
                             "Share",
                             Icons.Default.Share,
-                            isEnabled = targetItem?.isDirectory == false,
+                            isEnabled = targetItem?.isDirectory == true,
                             onClick = onShare
                         )
                     )
 
                     ActionRow(
                         left = MenuAction(
-                            if (apktoolCapable) apktoolTitle else "Open with...",
-                            if (apktoolCapable) Icons.Default.Build else Icons.Default.Check,
-                            isEnabled = apktoolCapable,
-                            onClick = onApktool),
+                            "Open with...",
+                            Icons.Default.Check,
+                            isEnabled = false,
+                            onClick = {}), // Disabled / Unhighlighted
                         right = MenuAction(
                             "+ Bookmarks",
                             Icons.Outlined.BookmarkAdd,
                             isEnabled = false,
                             onClick = onAddBookmark
                         ) // Unhighlighted
+                    )
+
+                    ActionRow(
+                        left = MenuAction(
+                            if (apktoolBuild) "Apktool build" else "Apktool decode",
+                            if (apktoolBuild) Icons.Default.Build else Icons.Default.Android,
+                            isEnabled = apktoolCapable,
+                            onClick = onApktool,
+                        ),
+                        right = MenuAction(
+                            "",
+                            Icons.Default.Check,
+                            isEnabled = false,
+                            onClick = {},
+                        ),
                     )
                 }
             }

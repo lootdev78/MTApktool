@@ -31,13 +31,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -151,10 +151,7 @@ fun ClassicFilePane(
                                 item(key = "__mtapktool_build__${paneState.currentPath}") {
                                     ApktoolProjectBuildRow(
                                         project = currentProject,
-                                        onClick = {
-                                            onFocus()
-                                            onBuildProject(currentProject)
-                                        },
+                                        onClick = { onFocus(); onBuildProject(currentProject) },
                                     )
                                 }
                             }
@@ -206,36 +203,19 @@ fun ClassicFilePane(
 @Composable
 private fun ApktoolProjectBuildRow(project: File, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 7.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(ColorApk.copy(alpha = 0.15f)),
+            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(ColorApk.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Default.PlayArrow, contentDescription = null, tint = ColorApk, modifier = Modifier.size(25.dp))
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "Dieses Projekt kompilieren",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                "${project.name} • apktool.yml",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text("Dieses Projekt kompilieren", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Text("${project.name} • apktool.yml", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -394,11 +374,8 @@ private fun ClassicFileRow(
     ) {
         val isApktoolProject = item.isDirectory && File(item.path, "apktool.yml").isFile
         val (icon, iconColor) = when {
-            isApktoolProject ->
-                Icons.Default.Build to ColorApk
-
-            item.isDirectory ->
-                Icons.Default.Folder to ColorFolder
+            isApktoolProject -> Icons.Default.Build to ColorApk
+            item.isDirectory -> Icons.Default.Folder to ColorFolder
 
             item.isApkFile() ->
                 Icons.Default.Android to ColorApk
@@ -486,18 +463,7 @@ private fun ClassicFileRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
 
-                if (isApktoolProject) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Apktool project",
-                        fontSize = 11.sp,
-                        lineHeight = 12.sp,
-                        style = LocalTextStyle.current.copy(
-                            platformStyle = PlatformTextStyle(includeFontPadding = false)
-                        ),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                } else if (!item.isDirectory && item.sizeText.isNotEmpty()) {
+                if (!item.isDirectory && item.sizeText.isNotEmpty()) {
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = item.sizeText,

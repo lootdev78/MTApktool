@@ -16,7 +16,8 @@ dependencyResolutionManagement {
 
 rootProject.name = "MTApktool"
 include(
-    ":app", ":apktool-android",
+    ":app",
+    ":apktool-android",
     ":apksig-android",
     ":zipalign-android",
     ":smali-android",

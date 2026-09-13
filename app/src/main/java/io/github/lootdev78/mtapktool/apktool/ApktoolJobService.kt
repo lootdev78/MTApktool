@@ -7,11 +7,14 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import io.github.lootdev78.mtapktool.MainActivity
-import io.github.lootdev78.mtapktool.R
 import io.github.apktool.android.runtime.ApktoolCommandRunner
+import io.github.apktool.android.runtime.ShellTokenizer
 import io.github.apktool.android.runtime.Toolchain
 import java.io.File
 import java.io.FileWriter
@@ -26,8 +29,6 @@ import java.util.concurrent.Future
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-import org.json.JSONArray
-import org.json.JSONObject
 
 class ApktoolJobService : Service() {
     companion object {
@@ -61,20 +62,12 @@ class ApktoolJobService : Service() {
         private const val EXTRA_REMOVE_SPLIT = "remove_split"
         private const val EXTRA_REMOVE_PROPERTY = "remove_property"
 
-        private const val CHANNEL = "mtapktool_jobs"
-        private const val DONE_CHANNEL = "mtapktool_done"
+        private const val CHANNEL = "mtapktool_jobs_v2"
+        private const val DONE_CHANNEL = "mtapktool_done_v2"
         private const val NOTIFICATION_ID = 2317
-        private const val JOB_NOTIFICATION_BASE = 5000
-        private const val JOB_PREFS = "mtapktool_job_store"
-        private const val KEY_RECORDS = "records_json"
-        private const val MAX_STORED_JOBS = 50
 
-        @Volatile
-        private var appVisible = false
-
-        fun setAppVisible(visible: Boolean) {
-            appVisible = visible
-        }
+        @Volatile private var appVisible = false
+        fun setAppVisible(visible: Boolean) { appVisible = visible }
 
         fun enqueue(
             context: Context,
@@ -115,12 +108,9 @@ class ApktoolJobService : Service() {
         }
 
         fun cancel(context: Context, id: String) {
-            runCatching {
-                context.startService(Intent(context, ApktoolJobService::class.java).apply {
-                    action = ACTION_CANCEL
-                    putExtra(EXTRA_JOB_ID, id)
-                })
-            }
+            runCatching { context.startService(Intent(context, ApktoolJobService::class.java).apply {
+                action = ACTION_CANCEL; putExtra(EXTRA_JOB_ID, id)
+            }) }
         }
 
         fun cancelAll(context: Context) {
@@ -132,12 +122,9 @@ class ApktoolJobService : Service() {
         }
 
         fun setWorkerLimit(context: Context, workers: Int) {
-            runCatching {
-                context.startService(Intent(context, ApktoolJobService::class.java).apply {
-                    action = ACTION_SET_WORKERS
-                    putExtra(EXTRA_WORKERS, workers.coerceIn(1, 4))
-                })
-            }
+            runCatching { context.startService(Intent(context, ApktoolJobService::class.java).apply {
+                action = ACTION_SET_WORKERS; putExtra(EXTRA_WORKERS, workers.coerceIn(1, 4))
+            }) }
         }
     }
 
@@ -170,29 +157,27 @@ class ApktoolJobService : Service() {
     )
 
     private val records = ConcurrentHashMap<String, Record>()
-    private val persistLock = Any()
-    @Volatile private var lastPersistAt = 0L
     private lateinit var executor: ThreadPoolExecutor
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         createChannels()
-        restoreRecords()
         val n = ApktoolSettings.maxWorkers(this)
         executor = ThreadPoolExecutor(n, n, 30L, TimeUnit.SECONDS, LinkedBlockingQueue()) { runnable ->
             Thread(runnable, "mtapktool-worker").apply { priority = Thread.NORM_PRIORITY - 1 }
         }
         executor.allowCoreThreadTimeOut(false)
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MTApktool:ApktoolJobs")
+            .apply { setReferenceCounted(false) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_ENQUEUE -> enqueueInternal(intent, replaceExisting = flags and START_FLAG_REDELIVERY != 0)
+            ACTION_ENQUEUE -> enqueueInternal(intent)
             ACTION_CANCEL -> intent.getStringExtra(EXTRA_JOB_ID)?.let(::cancelInternal)
-            ACTION_CANCEL_ALL -> {
-                records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }
-                executor.purge()
-            }
+            ACTION_CANCEL_ALL -> { records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }; executor.purge() }
             ACTION_QUERY -> records.values.sortedBy { it.createdAt }.forEach(::broadcast)
             ACTION_SET_WORKERS -> resizePool(intent.getIntExtra(EXTRA_WORKERS, ApktoolSettings.maxWorkers(this)).coerceIn(1, 4))
         }
@@ -200,12 +185,10 @@ class ApktoolJobService : Service() {
         return START_REDELIVER_INTENT
     }
 
-    private fun enqueueInternal(intent: Intent, replaceExisting: Boolean = false) {
+    private fun enqueueInternal(intent: Intent) {
         val id = intent.getStringExtra(EXTRA_JOB_ID) ?: UUID.randomUUID().toString()
         val command = intent.getStringExtra(EXTRA_COMMAND)?.trim().orEmpty()
         if (command.isEmpty()) return
-        val previous = records[id]
-        if (!replaceExisting && previous?.future?.isDone == false) return
         val record = Record(
             id = id,
             title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "Apktool" },
@@ -223,62 +206,45 @@ class ApktoolJobService : Service() {
             createNomedia = intent.getBooleanExtra(EXTRA_CREATE_NOMEDIA, false),
             removeSplitTraces = intent.getBooleanExtra(EXTRA_REMOVE_SPLIT, false),
             removePropertyTags = intent.getBooleanExtra(EXTRA_REMOVE_PROPERTY, false),
-            createdAt = previous?.createdAt ?: System.currentTimeMillis(),
         )
         records[id] = record
-        startForeground(NOTIFICATION_ID, notification("Queued: ${record.title}", true))
-        persistRecords(force = true)
+        ensureForeground(notification("Queued: ${record.title}", true))
         broadcast(record)
-        notifyJob(record, force = true)
         record.future = executor.submit { runJob(record) }
     }
 
     private fun runJob(record: Record) {
-        if (record.cancelRequested || Thread.currentThread().isInterrupted) {
-            finishCancelled(record)
-            return
-        }
+        if (record.cancelRequested || Thread.currentThread().isInterrupted) { finishCancelled(record); return }
         record.status = Status.RUNNING
         record.line = "Starting…"
-        persistRecords(force = true)
         broadcast(record)
-        notifyJob(record, force = true)
         updateForegroundState()
-
         var log: PrintWriter? = null
         try {
             val toolchain = Toolchain(this)
-            toolchain.provision()
+            if (commandRequiresAapt2(record.command)) toolchain.provision() else toolchain.provisionDecode()
             checkCancelled(record)
             val logFile = File(toolchain.logsDir, "job-${stamp()}-${record.id.take(8)}.log")
             val writer = PrintWriter(FileWriter(logFile, true), true)
             log = writer
             writer.println("$ ${record.command}")
-
             val listener = ApktoolCommandRunner.Listener { line ->
                 checkCancelled(record)
                 record.line = line.takeLast(600)
                 writer.println(line)
                 broadcast(record)
-                persistRecords()
-                notifyJob(record)
+                maybeUpdateProgressNotification(record)
             }
             val runner = ApktoolCommandRunner(toolchain, listener)
             var result = if (SplitArchiveSupport.isSplitDecodeCommand(record.command)) {
                 SplitArchiveSupport.executeDecode(record.command, toolchain, listener)
-            } else {
-                runner.execute(record.command)
-            }
+            } else runner.execute(record.command)
             checkCancelled(record)
 
             if (result.isSuccess && !record.postDecodeRoot.isNullOrBlank()) {
                 ProjectPostProcessor.process(
                     File(record.postDecodeRoot),
-                    ProjectPostProcessor.Options(
-                        createNomedia = record.createNomedia,
-                        removeSplitTraces = record.removeSplitTraces,
-                        removePropertyTags = record.removePropertyTags,
-                    ),
+                    ProjectPostProcessor.Options(record.createNomedia, record.removeSplitTraces, record.removePropertyTags),
                     listener,
                 )
             }
@@ -286,238 +252,90 @@ class ApktoolJobService : Service() {
 
             if (result.isSuccess && (record.postAlign || record.postSign)) {
                 result = runner.postProcessBuild(
-                    result,
-                    record.postAlign,
-                    record.postSign,
+                    result, record.postAlign, record.postSign,
                     record.signKeystore.takeIf { it.isNotBlank() },
                     record.signPassword.ifBlank { "android" },
-                    record.signV1,
-                    record.signV2,
-                    record.signV3,
-                    record.signV4,
+                    record.signV1, record.signV2, record.signV3, record.signV4,
                 )
             }
             checkCancelled(record)
 
             if (result.isSuccess && !record.cleanBuildProject.isNullOrBlank()) {
-                val project = File(record.cleanBuildProject)
-                val buildDir = File(project, "build")
-                if (buildDir.exists()) {
-                    listener.onLine("I: Lösche Build-Ordner: ${buildDir.absolutePath}")
-                    deleteRecursivelyCancellable(buildDir)
-                }
+                val buildDir = File(record.cleanBuildProject, "build")
+                if (buildDir.exists()) deleteRecursivelyCancellable(buildDir)
             }
 
             record.output = result.output?.absolutePath
             record.status = if (result.isSuccess) Status.SUCCEEDED else Status.FAILED
             record.line = result.summary + (record.output?.let { "\n$it" } ?: "") + "\nLog: ${logFile.absolutePath}"
-        } catch (cancelled: CancellationException) {
+        } catch (_: CancellationException) {
             finishCancelled(record, false)
         } catch (interrupted: InterruptedException) {
-            Thread.currentThread().interrupt()
-            finishCancelled(record, false)
+            Thread.currentThread().interrupt(); finishCancelled(record, false)
         } catch (t: Throwable) {
-            if (record.cancelRequested || Thread.currentThread().isInterrupted || causedByInterruption(t)) {
-                finishCancelled(record, false)
-            } else {
-                record.status = Status.FAILED
-                record.line = stackMessage(t)
-                log?.println(record.line)
-            }
+            if (record.cancelRequested || Thread.currentThread().isInterrupted || causedByInterruption(t)) finishCancelled(record, false)
+            else { record.status = Status.FAILED; record.line = stackMessage(t); log?.println(record.line) }
         } finally {
             log?.close()
-            persistRecords(force = true)
             broadcast(record)
-            getSystemService(NotificationManager::class.java).cancel(jobNotificationId(record.id))
             maybeNotifyCompletion(record)
             updateForegroundState()
             Thread.interrupted()
         }
     }
 
+    private fun commandRequiresAapt2(command: String): Boolean {
+        val args = runCatching { ShellTokenizer.split(command.trim()) }.getOrDefault(emptyList())
+        if (args.isEmpty()) return false
+        var i = 0
+        val launcher = args.getOrNull(i)?.lowercase(Locale.ROOT).orEmpty()
+        if (launcher == "apktool" || launcher == "apktool-original") i++
+        val verb = args.getOrNull(i)?.lowercase(Locale.ROOT).orEmpty()
+        return verb == "b" || verb == "build"
+    }
+
     private fun checkCancelled(record: Record) {
-        if (record.cancelRequested || Thread.currentThread().isInterrupted) {
-            throw CancellationException("Cancelled")
-        }
+        if (record.cancelRequested || Thread.currentThread().isInterrupted) throw CancellationException("Cancelled")
     }
 
     private fun finishCancelled(record: Record, send: Boolean = true) {
-        record.status = Status.CANCELLED
-        record.line = "Cancelled"
-        persistRecords(force = true)
-        getSystemService(NotificationManager::class.java).cancel(jobNotificationId(record.id))
-        if (send) broadcast(record)
+        record.status = Status.CANCELLED; record.line = "Cancelled"; if (send) broadcast(record)
     }
 
     private fun cancelInternal(id: String) {
         val record = records[id] ?: return
         if (record.status.isTerminal()) return
         record.cancelRequested = true
-        val wasQueued = record.status == Status.QUEUED
+        val queued = record.status == Status.QUEUED
         record.future?.cancel(true)
         executor.purge()
-        if (wasQueued) finishCancelled(record)
-        else {
-            record.line = "Cancelling…"
-            persistRecords(force = true)
-            broadcast(record)
-            notifyJob(record, force = true)
-        }
+        if (queued) finishCancelled(record) else { record.line = "Cancelling…"; broadcast(record) }
     }
 
     private fun resizePool(workers: Int) {
         val n = workers.coerceIn(1, 4)
-        if (n > executor.maximumPoolSize) {
-            executor.maximumPoolSize = n
-            executor.corePoolSize = n
-        } else {
-            executor.corePoolSize = n
-            executor.maximumPoolSize = n
-        }
+        if (n > executor.maximumPoolSize) { executor.maximumPoolSize = n; executor.corePoolSize = n }
+        else { executor.corePoolSize = n; executor.maximumPoolSize = n }
         updateForegroundState()
     }
 
     private fun broadcast(record: Record) {
+        val snapshot = ApktoolJobInfo(
+            id = record.id,
+            title = record.title,
+            command = record.command,
+            status = record.status.name,
+            line = record.line,
+            output = record.output,
+            createdAt = record.createdAt,
+        )
+        ApktoolJobHistory.save(this, snapshot)
         sendBroadcast(Intent(ACTION_STATUS).apply {
             setPackage(packageName)
-            putExtra(EXTRA_JOB_ID, record.id)
-            putExtra(EXTRA_TITLE, record.title)
-            putExtra(EXTRA_COMMAND, record.command)
-            putExtra(EXTRA_STATUS, record.status.name)
-            putExtra(EXTRA_LINE, record.line)
-            putExtra(EXTRA_OUTPUT, record.output)
+            putExtra(EXTRA_JOB_ID, record.id); putExtra(EXTRA_TITLE, record.title); putExtra(EXTRA_COMMAND, record.command)
+            putExtra(EXTRA_STATUS, record.status.name); putExtra(EXTRA_LINE, record.line); putExtra(EXTRA_OUTPUT, record.output)
             putExtra(EXTRA_CREATED_AT, record.createdAt)
         })
-    }
-
-    private fun restoreRecords() {
-        val raw = getSharedPreferences(JOB_PREFS, Context.MODE_PRIVATE).getString(KEY_RECORDS, null) ?: return
-        runCatching {
-            val array = JSONArray(raw)
-            for (i in 0 until array.length()) {
-                val obj = array.optJSONObject(i) ?: continue
-                val id = obj.optString("id")
-                val command = obj.optString("command")
-                if (id.isBlank() || command.isBlank()) continue
-                val stored = runCatching { Status.valueOf(obj.optString("status", Status.FAILED.name)) }
-                    .getOrDefault(Status.FAILED)
-                val terminal = stored.isTerminal()
-                val restoredStatus = if (terminal) stored else Status.FAILED
-                val storedLine = obj.optString("line", "")
-                val restoredLine = if (terminal) storedLine else {
-                    "Android hat den laufenden Prozess beendet. Falls der Foreground-Service redelivert wird, startet der Auftrag automatisch neu."
-                }
-                val output = if (obj.has("output") && !obj.isNull("output")) obj.optString("output") else null
-                records[id] = Record(
-                    id = id,
-                    title = obj.optString("title", "Apktool"),
-                    command = command,
-                    postAlign = obj.optBoolean("postAlign", false),
-                    postSign = obj.optBoolean("postSign", false),
-                    signKeystore = "",
-                    signPassword = "",
-                    signV1 = obj.optBoolean("signV1", true),
-                    signV2 = obj.optBoolean("signV2", true),
-                    signV3 = obj.optBoolean("signV3", true),
-                    signV4 = obj.optBoolean("signV4", false),
-                    cleanBuildProject = obj.optStringOrNull("cleanBuildProject"),
-                    postDecodeRoot = obj.optStringOrNull("postDecodeRoot"),
-                    createNomedia = obj.optBoolean("createNomedia", false),
-                    removeSplitTraces = obj.optBoolean("removeSplitTraces", false),
-                    removePropertyTags = obj.optBoolean("removePropertyTags", false),
-                    createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
-                    status = restoredStatus,
-                    line = restoredLine,
-                    output = output,
-                )
-            }
-        }
-        // Do not leave stale RUNNING/QUEUED states after process death.
-        persistRecords(force = true)
-    }
-
-    private fun persistRecords(force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!force && now - lastPersistAt < 800L) return
-        synchronized(persistLock) {
-            val checkNow = System.currentTimeMillis()
-            if (!force && checkNow - lastPersistAt < 800L) return
-            val array = JSONArray()
-            records.values
-                .sortedBy { it.createdAt }
-                .takeLast(MAX_STORED_JOBS)
-                .forEach { record ->
-                    array.put(JSONObject().apply {
-                        put("id", record.id)
-                        put("title", record.title)
-                        put("command", record.command)
-                        put("status", record.status.name)
-                        put("line", record.line)
-                        record.output?.let { put("output", it) }
-                        put("createdAt", record.createdAt)
-                        put("postAlign", record.postAlign)
-                        put("postSign", record.postSign)
-                        put("signV1", record.signV1)
-                        put("signV2", record.signV2)
-                        put("signV3", record.signV3)
-                        put("signV4", record.signV4)
-                        record.cleanBuildProject?.let { put("cleanBuildProject", it) }
-                        record.postDecodeRoot?.let { put("postDecodeRoot", it) }
-                        put("createNomedia", record.createNomedia)
-                        put("removeSplitTraces", record.removeSplitTraces)
-                        put("removePropertyTags", record.removePropertyTags)
-                    })
-                }
-            getSharedPreferences(JOB_PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_RECORDS, array.toString())
-                .apply()
-            lastPersistAt = checkNow
-        }
-    }
-
-    private fun JSONObject.optStringOrNull(name: String): String? =
-        if (has(name) && !isNull(name)) optString(name).takeIf { it.isNotBlank() } else null
-
-    private fun jobNotificationId(id: String): Int = JOB_NOTIFICATION_BASE + (id.hashCode() and 0x3fff)
-
-    private fun notifyJob(record: Record, force: Boolean = false) {
-        if (record.status.isTerminal()) {
-            getSystemService(NotificationManager::class.java).cancel(jobNotificationId(record.id))
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (!force && now - record.lastNotificationAt < 500L) return
-        record.lastNotificationAt = now
-
-        val cancelIntent = PendingIntent.getService(
-            this,
-            jobNotificationId(record.id),
-            Intent(this, ApktoolJobService::class.java).apply {
-                action = ACTION_CANCEL
-                putExtra(EXTRA_JOB_ID, record.id)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val state = when (record.status) {
-            Status.QUEUED -> "Wartet"
-            Status.RUNNING -> "Läuft"
-            else -> record.status.name
-        }
-        val detail = record.line.lineSequence().lastOrNull { it.isNotBlank() }?.take(180).orEmpty()
-        val text = if (detail.isBlank()) state else "$state • $detail"
-        val notification = Notification.Builder(this, CHANNEL)
-            .setContentTitle(record.title)
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
-            .setSmallIcon(R.drawable.ic_stat_mtapktool)
-            .setContentIntent(openAppIntent())
-            .setOnlyAlertOnce(true)
-            .setOngoing(true)
-            .setProgress(0, 0, true)
-            .addAction(Notification.Action.Builder(R.drawable.ic_stat_mtapktool, "STOPP", cancelIntent).build())
-            .build()
-        runCatching { getSystemService(NotificationManager::class.java).notify(jobNotificationId(record.id), notification) }
     }
 
     private fun updateForegroundState() {
@@ -526,59 +344,89 @@ class ApktoolJobService : Service() {
         val running = records.values.count { it.status == Status.RUNNING }
         val queued = records.values.count { it.status == Status.QUEUED }
         if (active == 0) {
+            if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         } else {
-            val text = "$running running • $queued queued • ${executor.corePoolSize}/4 runner"
-            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text, true))
+            if (wakeLock?.isHeld != true) runCatching { wakeLock?.acquire() }
+            getSystemService(NotificationManager::class.java).notify(
+                NOTIFICATION_ID,
+                notification("$running running • $queued queued • ${executor.corePoolSize}/4 runner", true),
+            )
         }
     }
 
     private fun maybeNotifyCompletion(record: Record) {
         if (!record.status.isTerminal() || record.status == Status.CANCELLED) return
         val general = ApktoolSettings.generalDefaults(this)
-        if (!general.notifyOnCompletion) return
-        if (general.suppressCompletionWhileOpen && appVisible) return
-        val stateText = when (record.status) {
-            Status.SUCCEEDED -> "Abgeschlossen"
-            Status.FAILED -> "Fehlgeschlagen"
-            else -> return
+        if (!general.notifyOnCompletion || (general.suppressCompletionWhileOpen && appVisible)) return
+        val headline = if (record.status == Status.SUCCEEDED) "Dekompilierung/Build abgeschlossen" else "Apktool fehlgeschlagen"
+        val details = if (record.status == Status.SUCCEEDED) {
+            record.output ?: record.line.lineSequence().lastOrNull().orEmpty()
+        } else {
+            record.line.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(500)
         }
-        val detail = record.output?.let { "$stateText • $it" }
-            ?: record.line.lineSequence().lastOrNull { it.isNotBlank() }?.let { "$stateText • ${it.take(180)}" }
-            ?: stateText
         runCatching {
+            val builder = Notification.Builder(this, DONE_CHANNEL)
+                .setContentTitle(record.title)
+                .setContentText(headline)
+                .setStyle(Notification.BigTextStyle().bigText("$headline\n$details"))
+                .setSmallIcon(if (record.status == Status.SUCCEEDED) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
+                .setContentIntent(openAppIntent())
+                .setAutoCancel(true)
             getSystemService(NotificationManager::class.java).notify(
                 3000 + (record.id.hashCode() and 0x0fff),
-                Notification.Builder(this, DONE_CHANNEL)
-                    .setContentTitle(record.title)
-                    .setContentText(detail)
-                    .setStyle(Notification.BigTextStyle().bigText(detail))
-                    .setSmallIcon(R.drawable.ic_stat_mtapktool)
-                    .setContentIntent(openAppIntent())
-                    .setAutoCancel(true)
-                    .build(),
+                builder.build(),
             )
+        }
+    }
+
+    private fun maybeUpdateProgressNotification(record: Record, force: Boolean = false) {
+        if (record.status.isTerminal()) return
+        val now = System.currentTimeMillis()
+        if (!force && now - record.lastNotificationAt < 700L) return
+        record.lastNotificationAt = now
+        val line = record.line.lineSequence().lastOrNull().orEmpty().replace('\n', ' ').take(120)
+        val active = records.values.count { !it.status.isTerminal() }
+        val text = if (line.isBlank()) record.title else "${record.title}: $line"
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(
+                NOTIFICATION_ID,
+                notification("$text • $active aktiv", true),
+            )
+        }
+    }
+
+    private fun ensureForeground(value: Notification) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION_ID, value, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            @Suppress("DEPRECATION")
+            startForeground(NOTIFICATION_ID, value)
         }
     }
 
     private fun notification(text: String, ongoing: Boolean): Notification {
         val stopAll = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, ApktoolJobService::class.java).setAction(ACTION_CANCEL_ALL),
+            this, 1, Intent(this, ApktoolJobService::class.java).setAction(ACTION_CANCEL_ALL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return Notification.Builder(this, CHANNEL)
-            .setContentTitle("MTApktool")
+        val builder = Notification.Builder(this, CHANNEL)
+            .setContentTitle("MTApktool • Apktool")
             .setContentText(text)
-            .setSmallIcon(R.drawable.ic_stat_mtapktool)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentIntent(openAppIntent())
             .setOnlyAlertOnce(true)
             .setOngoing(ongoing)
+            .setShowWhen(true)
             .setProgress(0, 0, ongoing)
+            .setCategory(Notification.CATEGORY_PROGRESS)
             .addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Alle stoppen", stopAll).build())
-            .build()
+        if (Build.VERSION.SDK_INT >= 31 && ongoing) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return builder.build()
     }
 
     private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
@@ -593,63 +441,55 @@ class ApktoolJobService : Service() {
     private fun createChannels() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "MTApktool Jobs", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Decode, build, zipalign and signing jobs"
+            NotificationChannel(CHANNEL, "MTApktool Apktool-Jobs", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Fortschritt laufender Dekompilier-, Build-, Signatur- und Framework-Aufgaben"
+                setShowBadge(true)
             },
         )
         manager.createNotificationChannel(
-            NotificationChannel(DONE_CHANNEL, "MTApktool Ergebnisse", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Abschlussmeldungen für Apktool-Jobs"
+            NotificationChannel(DONE_CHANNEL, "MTApktool Apktool-Ergebnisse", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Erfolgreiche und fehlgeschlagene Apktool-Aufgaben"
+                setShowBadge(true)
             },
         )
     }
 
-    override fun onTimeout(startId: Int, fgsType: Int) {
-        if (::executor.isInitialized) {
-            records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }
-            executor.purge()
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Closing/swiping the UI must not cancel the foreground Apktool worker.
+        if (::executor.isInitialized && records.values.any { !it.status.isTerminal() }) {
+            updateForegroundState()
         }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf(startId)
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        if (::executor.isInitialized) { records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }; executor.purge() }
+        stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId)
     }
 
     override fun onDestroy() {
-        persistRecords(force = true)
+        if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
         if (::executor.isInitialized) executor.shutdownNow()
         super.onDestroy()
     }
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun Status.isTerminal() = this == Status.SUCCEEDED || this == Status.FAILED || this == Status.CANCELLED
-
     private fun stamp() = SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())
-
     private fun deleteRecursivelyCancellable(file: File) {
         if (Thread.currentThread().isInterrupted) throw CancellationException("Cancelled")
         if (!file.exists()) return
         if (file.isDirectory) file.listFiles()?.forEach(::deleteRecursivelyCancellable)
         if (!file.delete() && file.exists()) error("Kann nicht gelöscht werden: ${file.absolutePath}")
     }
-
     private fun causedByInterruption(t: Throwable): Boolean {
         var c: Throwable? = t
-        repeat(12) {
-            if (c is InterruptedException || c is CancellationException) return true
-            c = c?.cause
-            if (c == null) return false
-        }
+        repeat(12) { if (c is InterruptedException || c is CancellationException) return true; c = c?.cause; if (c == null) return false }
         return false
     }
-
     private fun stackMessage(t: Throwable): String {
-        val b = StringBuilder(t.toString())
-        var c = t.cause
-        repeat(6) {
-            if (c == null) return@repeat
-            b.append("\ncaused by: ").append(c)
-            c = c?.cause
-        }
+        val b = StringBuilder(t.toString()); var c = t.cause
+        repeat(6) { if (c == null) return@repeat; b.append("\ncaused by: ").append(c); c = c?.cause }
         return b.toString()
     }
 }

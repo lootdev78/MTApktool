@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,9 +62,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.navigation.NavHostController
-import androidx.core.content.FileProvider
+import io.github.lootdev78.mtapktool.apktool.ApktoolBuildDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolDecodeDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolJobsDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolJobsViewModel
+import io.github.lootdev78.mtapktool.apktool.ApktoolSettingsDialog
+import io.github.lootdev78.mtapktool.apktool.isApkLike
+import io.github.lootdev78.mtapktool.apktool.isApktoolProject
 import io.github.lootdev78.mtapktool.feature.editor.FileInfoDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.ClassicFilePane
 import io.github.lootdev78.mtapktool.feature.explorer.component.CustomCreateItemDialog
@@ -78,34 +89,40 @@ import io.github.lootdev78.mtapktool.feature.explorer.state.isImageFile
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
 import io.github.lootdev78.mtapktool.feature.explorer.util.FileOpener
-import io.github.lootdev78.mtapktool.apktool.ApktoolBuildDialog
-import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
-import io.github.lootdev78.mtapktool.apktool.ApktoolDecodeDialog
-import io.github.lootdev78.mtapktool.apktool.ApktoolJobsDialog
-import io.github.lootdev78.mtapktool.apktool.ApktoolJobsViewModel
-import io.github.lootdev78.mtapktool.apktool.ApktoolSettingsDialog
-import io.github.lootdev78.mtapktool.apktool.isApkLike
-import io.github.lootdev78.mtapktool.apktool.isApktoolProject
 import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
 fun ExplorerScreen(
     navController: NavHostController,
-    viewModel: ExplorerViewModel = viewModel()
+    viewModel: ExplorerViewModel = composeViewModel()
 ) {
     val leftState by viewModel.leftPaneState.collectAsState()
     val rightState by viewModel.rightPaneState.collectAsState()
     val activePane by viewModel.activePane.collectAsState()
-    val apktoolJobsViewModel: ApktoolJobsViewModel = viewModel()
+    val apktoolJobsViewModel: ApktoolJobsViewModel = composeViewModel()
     val apktoolJobs by apktoolJobsViewModel.jobs.collectAsState()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Returning from Android's storage/notification settings must refresh the panes
+    // instead of recreating the whole activity. Apktool jobs continue in the FGS.
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshDirectory(ActivePane.LEFT)
+                viewModel.refreshDirectory(ActivePane.RIGHT)
+                ApktoolJobService.query(navController.context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
     val activeState = if (activePane == ActivePane.LEFT) leftState else rightState
-    val activeApktoolJobCount = apktoolJobs.count { !it.isTerminal }
 
     // State Variables
     var showContextMenu by remember { mutableStateOf(false) }
@@ -114,14 +131,14 @@ fun ExplorerScreen(
     var showPropertyDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var targetItem by remember { mutableStateOf<FileItem?>(null) }
-    var apktoolTarget by remember { mutableStateOf<File?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
     var showApktoolDecode by remember { mutableStateOf(false) }
     var showApktoolBuild by remember { mutableStateOf(false) }
     var showApktoolSettings by remember { mutableStateOf(false) }
     var showApktoolJobs by remember { mutableStateOf(false) }
     var showApktoolCli by remember { mutableStateOf(false) }
-    var showMainMenu by remember { mutableStateOf(false) }
-    var isSearching by remember { mutableStateOf(false) }
+    var showApktoolOptions by remember { mutableStateOf(false) }
+    var apktoolTarget by remember { mutableStateOf<File?>(null) }
 
     val hasSelectedItems = activeState.selectedPaths.isNotEmpty()
     val canNavigateBack = activeState.currentPath != rootPath && activeState.currentPath != "/"
@@ -169,12 +186,7 @@ fun ExplorerScreen(
                     if (file.exists()) {
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = "*/*"
-                            val uri = FileProvider.getUriForFile(
-                                navController.context,
-                                "${navController.context.packageName}.fileprovider",
-                                file,
-                            )
-                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         navController.context.startActivity(Intent.createChooser(intent, "Share File"))
@@ -193,31 +205,6 @@ fun ExplorerScreen(
                 showContextMenu = false
             },
 
-        )
-    }
-
-    if (showApktoolDecode && apktoolTarget != null) {
-        ApktoolDecodeDialog(
-            file = apktoolTarget!!,
-            onDismiss = { showApktoolDecode = false },
-        )
-    }
-
-    if (showApktoolBuild && apktoolTarget != null) {
-        ApktoolBuildDialog(
-            project = apktoolTarget!!,
-            onDismiss = { showApktoolBuild = false },
-        )
-    }
-
-    if (showApktoolSettings) ApktoolSettingsDialog(onDismiss = { showApktoolSettings = false })
-    if (showApktoolCli) ApktoolCliDialog(onDismiss = { showApktoolCli = false })
-    if (showApktoolJobs) {
-        ApktoolJobsDialog(
-            jobs = apktoolJobs,
-            onCancel = apktoolJobsViewModel::cancel,
-            onCancelAll = apktoolJobsViewModel::cancelAll,
-            onDismiss = { showApktoolJobs = false },
         )
     }
 
@@ -262,6 +249,35 @@ fun ExplorerScreen(
         )
     }
 
+    if (showApktoolDecode) {
+        apktoolTarget?.takeIf(::isApkLike)?.let { file ->
+            ApktoolDecodeDialog(file = file, onDismiss = { showApktoolDecode = false })
+        } ?: run { showApktoolDecode = false }
+    }
+
+    if (showApktoolBuild) {
+        apktoolTarget?.takeIf(::isApktoolProject)?.let { project ->
+            ApktoolBuildDialog(project = project, onDismiss = { showApktoolBuild = false })
+        } ?: run { showApktoolBuild = false }
+    }
+
+    if (showApktoolSettings) {
+        ApktoolSettingsDialog(onDismiss = { showApktoolSettings = false })
+    }
+
+    if (showApktoolJobs) {
+        ApktoolJobsDialog(
+            jobs = apktoolJobs,
+            onCancel = apktoolJobsViewModel::cancel,
+            onCancelAll = apktoolJobsViewModel::cancelAll,
+            onDismiss = { showApktoolJobs = false },
+        )
+    }
+
+    if (showApktoolCli) {
+        ApktoolCliDialog(onDismiss = { showApktoolCli = false })
+    }
+
     BackHandler(enabled = canNavigateBack || isSearching) {
         if (isSearching) {
             isSearching = false
@@ -278,11 +294,15 @@ fun ExplorerScreen(
             drawerContent = {
                     SideBar(
                         drawerWidth = drawerWidth,
-                        viewModel = viewModel,
                         onClose = {
                             scope.launch { drawerState.close() }
                         },
-                        onSettings = { showApktoolSettings = true },
+                        onSettings = {
+                            showApktoolSettings = true
+                        },
+                        onJobs = {
+                            showApktoolJobs = true
+                        },
                     )
                 }
         ) {
@@ -336,8 +356,7 @@ fun ExplorerScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "Folder: ${activeState.folderCount} File: ${activeState.fileCount}" +
-                                        if (isApktoolProject(File(activeState.currentPath))) " • Apktool project" else "",
+                                    text = "Folder: ${activeState.folderCount} File: ${activeState.fileCount}",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
@@ -356,7 +375,7 @@ fun ExplorerScreen(
 
                             Box {
                                 IconButton(
-                                    onClick = { showMainMenu = true },
+                                    onClick = { showApktoolOptions = true },
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
@@ -366,30 +385,20 @@ fun ExplorerScreen(
                                     )
                                 }
                                 DropdownMenu(
-                                    expanded = showMainMenu,
-                                    onDismissRequest = { showMainMenu = false },
+                                    expanded = showApktoolOptions,
+                                    onDismissRequest = { showApktoolOptions = false }
                                 ) {
-                                    if (isApktoolProject(File(activeState.currentPath))) {
-                                        DropdownMenuItem(
-                                            text = { Text("APK kompilieren (Projekt)") },
-                                            onClick = {
-                                                showMainMenu = false
-                                                apktoolTarget = File(activeState.currentPath)
-                                                showApktoolBuild = true
-                                            },
-                                        )
-                                    }
                                     DropdownMenuItem(
-                                        text = { Text("Apktool Jobs${if (activeApktoolJobCount > 0) " ($activeApktoolJobCount)" else ""}") },
-                                        onClick = { showMainMenu = false; showApktoolJobs = true },
+                                        text = { Text("Erstellen & Dekodieren") },
+                                        onClick = { showApktoolOptions = false; showApktoolSettings = true }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Apktool Settings") },
-                                        onClick = { showMainMenu = false; showApktoolSettings = true },
+                                        text = { Text("Apktool Jobs (${apktoolJobs.count { !it.isTerminal }})") },
+                                        onClick = { showApktoolOptions = false; showApktoolJobs = true }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Apktool CLI") },
-                                        onClick = { showMainMenu = false; showApktoolCli = true },
+                                        onClick = { showApktoolOptions = false; showApktoolCli = true }
                                     )
                                 }
                             }
@@ -416,15 +425,15 @@ fun ExplorerScreen(
                                 viewModel.toggleSelection(ActivePane.LEFT, item.path, false)
                             } else {
                                 when {
-                                    item.isDirectory -> viewModel.loadDirectory(
-                                        ActivePane.LEFT,
-                                        item.path
-                                    )
-
                                     isApkLike(File(item.path)) -> {
                                         apktoolTarget = File(item.path)
                                         showApktoolDecode = true
                                     }
+
+                                    item.isDirectory -> viewModel.loadDirectory(
+                                        ActivePane.LEFT,
+                                        item.path
+                                    )
 
                                     item.isEditableTextFile() -> {
                                         navController.navigate(
@@ -486,15 +495,15 @@ fun ExplorerScreen(
                                 viewModel.toggleSelection(ActivePane.RIGHT, item.path, false)
                             } else {
                                 when {
-                                    item.isDirectory -> viewModel.loadDirectory(
-                                        ActivePane.RIGHT,
-                                        item.path
-                                    )
-
                                     isApkLike(File(item.path)) -> {
                                         apktoolTarget = File(item.path)
                                         showApktoolDecode = true
                                     }
+
+                                    item.isDirectory -> viewModel.loadDirectory(
+                                        ActivePane.RIGHT,
+                                        item.path
+                                    )
 
                                     item.isEditableTextFile() -> {
                                         navController.navigate(

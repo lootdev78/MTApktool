@@ -17,6 +17,7 @@ data class ApktoolDecodeDefaults(
     val ignoreRawValues: Boolean = false,
     val noAssets: Boolean = false,
     val resourceResolveMode: String = "default",
+    val additionalResourcesMode: String = "separate",
     val useRegisters: Boolean = true,
     val createNomedia: Boolean = false,
     val removeSplitTraces: Boolean = true,
@@ -49,7 +50,7 @@ data class ApktoolSignatureDefaults(
 
 data class ApktoolGeneralDefaults(
     val notifyOnCompletion: Boolean = true,
-    val suppressCompletionWhileOpen: Boolean = true,
+    val suppressCompletionWhileOpen: Boolean = false,
     val apkSuffix: String = "",
     val decodeIntoOutputDirectory: Boolean = false,
     val buildIntoOutputDirectory: Boolean = true,
@@ -57,7 +58,6 @@ data class ApktoolGeneralDefaults(
 
 object ApktoolSettings {
     private const val PREFS = "mtapktool_settings"
-
     private const val KEY_FRAMEWORK = "framework_tag"
     private const val KEY_AAPT = "aapt_variant"
     private const val KEY_CUSTOM_AAPT2 = "custom_aapt2_path"
@@ -65,7 +65,6 @@ object ApktoolSettings {
     private const val KEY_APKTOOL_THREADS = "apktool_threads"
     private const val KEY_PROJECTS = "projects_root"
     private const val KEY_OUTPUT = "output_root"
-
     private const val KEY_NOTIFY_DONE = "notify_done"
     private const val KEY_NOTIFY_HIDE_FOREGROUND = "notify_hide_foreground"
     private const val KEY_APK_SUFFIX = "apk_suffix"
@@ -84,6 +83,7 @@ object ApktoolSettings {
     private const val KEY_D_IGNORE_RAW = "decode_ignore_raw"
     private const val KEY_D_NO_ASSETS = "decode_no_assets"
     private const val KEY_D_RESOLVE_MODE = "decode_resolve_mode"
+    private const val KEY_D_ADDITIONAL_RESOURCES = "decode_additional_resources"
     private const val KEY_D_REGISTERS = "decode_use_registers"
     private const val KEY_D_NOMEDIA = "decode_create_nomedia"
     private const val KEY_D_REMOVE_SPLIT = "decode_remove_split_traces"
@@ -115,8 +115,7 @@ object ApktoolSettings {
     val frameworkOptions = listOf("default", "sdk36", "sdk35", "sdk34", "sdk33")
     val aaptOptions = listOf("default", "sdk36", "sdk35", "sdk33", "legacy", "custom")
     val resourceResolveModes = listOf("default", "greedy", "lazy")
-    val sourceDecodeModes = listOf("default", "all", "none")
-    val resourceDecodeModes = listOf("full", "manifest", "none")
+    val additionalResourcesModes = listOf("none", "main", "separate", "merge")
     val signatureProfiles = listOf("testkey", "custom")
 
     fun frameworkTag(context: Context): String =
@@ -125,27 +124,20 @@ object ApktoolSettings {
     fun aaptVariant(context: Context): String =
         prefs(context).getString(KEY_AAPT, DEFAULT_AAPT) ?: DEFAULT_AAPT
 
-    fun customAapt2Path(context: Context): String =
-        prefs(context).getString(KEY_CUSTOM_AAPT2, "").orEmpty()
-
+    fun customAapt2Path(context: Context): String = prefs(context).getString(KEY_CUSTOM_AAPT2, "").orEmpty()
     fun maxWorkers(context: Context): Int = prefs(context).getInt(KEY_WORKERS, 2).coerceIn(1, 4)
-
     fun apktoolThreads(context: Context): Int = prefs(context).getInt(KEY_APKTOOL_THREADS, 2).coerceIn(1, 4)
-
-    fun projectsRoot(context: Context): String =
-        prefs(context).getString(KEY_PROJECTS, defaultProjectsRoot()) ?: defaultProjectsRoot()
-
-    fun outputRoot(context: Context): String =
-        prefs(context).getString(KEY_OUTPUT, defaultOutputRoot()) ?: defaultOutputRoot()
+    fun projectsRoot(context: Context): String = prefs(context).getString(KEY_PROJECTS, defaultProjectsRoot()) ?: defaultProjectsRoot()
+    fun outputRoot(context: Context): String = prefs(context).getString(KEY_OUTPUT, defaultOutputRoot()) ?: defaultOutputRoot()
 
     fun generalDefaults(context: Context): ApktoolGeneralDefaults {
         val p = prefs(context)
         return ApktoolGeneralDefaults(
-            notifyOnCompletion = p.getBoolean(KEY_NOTIFY_DONE, true),
-            suppressCompletionWhileOpen = p.getBoolean(KEY_NOTIFY_HIDE_FOREGROUND, true),
-            apkSuffix = p.getString(KEY_APK_SUFFIX, "").orEmpty(),
-            decodeIntoOutputDirectory = p.getBoolean(KEY_DECODE_TO_OUTPUT, false),
-            buildIntoOutputDirectory = p.getBoolean(KEY_BUILD_TO_OUTPUT, true),
+            p.getBoolean(KEY_NOTIFY_DONE, true),
+            p.getBoolean(KEY_NOTIFY_HIDE_FOREGROUND, false),
+            p.getString(KEY_APK_SUFFIX, "").orEmpty(),
+            p.getBoolean(KEY_DECODE_TO_OUTPUT, false),
+            p.getBoolean(KEY_BUILD_TO_OUTPUT, true),
         )
     }
 
@@ -163,8 +155,8 @@ object ApktoolSettings {
             keepBrokenResources = p.getBoolean(KEY_D_KEEP_BROKEN, true),
             ignoreRawValues = p.getBoolean(KEY_D_IGNORE_RAW, false),
             noAssets = p.getBoolean(KEY_D_NO_ASSETS, false),
-            resourceResolveMode = p.getString(KEY_D_RESOLVE_MODE, "default")
-                ?.takeIf { it in resourceResolveModes } ?: "default",
+            resourceResolveMode = p.getString(KEY_D_RESOLVE_MODE, "default")?.takeIf { it in resourceResolveModes } ?: "default",
+            additionalResourcesMode = p.getString(KEY_D_ADDITIONAL_RESOURCES, "separate")?.takeIf { it in additionalResourcesModes } ?: "separate",
             useRegisters = p.getBoolean(KEY_D_REGISTERS, true),
             createNomedia = p.getBoolean(KEY_D_NOMEDIA, false),
             removeSplitTraces = p.getBoolean(KEY_D_REMOVE_SPLIT, true),
@@ -192,8 +184,7 @@ object ApktoolSettings {
     fun signatureDefaults(context: Context): ApktoolSignatureDefaults {
         val p = prefs(context)
         return ApktoolSignatureDefaults(
-            profile = p.getString(KEY_SIG_PROFILE, "testkey")
-                ?.takeIf { it in signatureProfiles } ?: "testkey",
+            profile = p.getString(KEY_SIG_PROFILE, "testkey")?.takeIf { it in signatureProfiles } ?: "testkey",
             customKeystorePath = p.getString(KEY_SIG_PATH, "").orEmpty(),
             customKeystorePassword = p.getString(KEY_SIG_PASSWORD, "").orEmpty(),
             v1 = p.getBoolean(KEY_SIG_V1, true),
@@ -211,23 +202,15 @@ object ApktoolSettings {
     fun availableFrameworkTags(context: Context): List<String> {
         val tags = linkedSetOf<String>()
         tags += frameworkOptions
-        File(frameworkDir()).listFiles { file -> file.isFile && file.name.endsWith(".apk", ignoreCase = true) }
-            ?.forEach { file ->
-                Regex("^\\d+-(.+)\\.apk$", RegexOption.IGNORE_CASE)
-                    .matchEntire(file.name)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.takeIf { isValidFrameworkTag(it) }
-                    ?.let(tags::add)
-            }
+        File(frameworkDir()).listFiles { file -> file.isFile && file.name.endsWith(".apk", true) }?.forEach { file ->
+            Regex("^\\d+-(.+)\\.apk$", RegexOption.IGNORE_CASE).matchEntire(file.name)
+                ?.groupValues?.getOrNull(1)?.takeIf { isValidFrameworkTag(it) }?.let(tags::add)
+        }
         frameworkTag(context).takeIf { isValidFrameworkTag(it) }?.let(tags::add)
         return tags.toList()
     }
 
     fun isBuiltInFramework(tag: String): Boolean = tag in frameworkOptions
-
-    private fun isValidFrameworkTag(tag: String): Boolean =
-        tag.isNotBlank() && tag.length <= 80 && tag.matches(Regex("[A-Za-z0-9._-]+"))
 
     fun setAapt2(context: Context, variant: String, customPath: String = customAapt2Path(context)) {
         prefs(context).edit()
@@ -240,51 +223,28 @@ object ApktoolSettings {
         prefs(context).edit()
             .putBoolean(KEY_NOTIFY_DONE, value.notifyOnCompletion)
             .putBoolean(KEY_NOTIFY_HIDE_FOREGROUND, value.suppressCompletionWhileOpen)
-            .putString(KEY_APK_SUFFIX, sanitizeSuffix(value.apkSuffix))
+            .putString(KEY_APK_SUFFIX, value.apkSuffix.trim().replace(Regex("[\\/\\x00-\\x1f]"), "_").take(48))
             .putBoolean(KEY_DECODE_TO_OUTPUT, value.decodeIntoOutputDirectory)
             .putBoolean(KEY_BUILD_TO_OUTPUT, value.buildIntoOutputDirectory)
             .apply()
     }
 
-    fun savePathsAndWorkers(
-        context: Context,
-        workers: Int,
-        projectsRoot: String,
-        outputRoot: String,
-        apktoolThreads: Int = apktoolThreads(context),
-    ) {
-        prefs(context).edit()
-            .putInt(KEY_WORKERS, workers.coerceIn(1, 4))
-            .putInt(KEY_APKTOOL_THREADS, apktoolThreads.coerceIn(1, 4))
-            .putString(KEY_PROJECTS, projectsRoot.ifBlank { defaultProjectsRoot() })
-            .putString(KEY_OUTPUT, outputRoot.ifBlank { defaultOutputRoot() })
-            .apply()
-        ApktoolJobService.setWorkerLimit(context, workers.coerceIn(1, 4))
-    }
-
-    fun setApktoolThreads(context: Context, threads: Int) {
-        prefs(context).edit().putInt(KEY_APKTOOL_THREADS, threads.coerceIn(1, 4)).apply()
-    }
-
     fun saveDecodeDefaults(context: Context, value: ApktoolDecodeDefaults) {
-        val noResources = value.noResources
-        val onlyManifest = value.onlyManifest && !noResources
-        val noSources = value.noSources
-        val allSources = value.allSources && !noSources
         prefs(context).edit()
             .putBoolean(KEY_D_FORCE, value.force)
-            .putBoolean(KEY_D_ALL_SRC, allSources)
-            .putBoolean(KEY_D_NO_SRC, noSources)
-            .putBoolean(KEY_D_NO_DEBUG, value.noDebugInfo && !noSources)
-            .putBoolean(KEY_D_NO_RES, noResources)
-            .putBoolean(KEY_D_ONLY_MANIFEST, onlyManifest)
+            .putBoolean(KEY_D_ALL_SRC, value.allSources && !value.noSources)
+            .putBoolean(KEY_D_NO_SRC, value.noSources)
+            .putBoolean(KEY_D_NO_DEBUG, value.noDebugInfo && !value.noSources)
+            .putBoolean(KEY_D_NO_RES, value.noResources)
+            .putBoolean(KEY_D_ONLY_MANIFEST, value.onlyManifest && !value.noResources)
             .putBoolean(KEY_D_MATCH_ORIGINAL, value.matchOriginal)
             .putBoolean(KEY_D_PRESERVE_STRUCTURE, value.preserveDirectoryStructure)
-            .putBoolean(KEY_D_KEEP_BROKEN, value.keepBrokenResources && !noResources && !onlyManifest)
-            .putBoolean(KEY_D_IGNORE_RAW, value.ignoreRawValues && !noResources)
+            .putBoolean(KEY_D_KEEP_BROKEN, value.keepBrokenResources)
+            .putBoolean(KEY_D_IGNORE_RAW, value.ignoreRawValues)
             .putBoolean(KEY_D_NO_ASSETS, value.noAssets)
             .putString(KEY_D_RESOLVE_MODE, value.resourceResolveMode.takeIf { it in resourceResolveModes } ?: "default")
-            .putBoolean(KEY_D_REGISTERS, value.useRegisters && !noSources)
+            .putString(KEY_D_ADDITIONAL_RESOURCES, value.additionalResourcesMode.takeIf { it in additionalResourcesModes } ?: "separate")
+            .putBoolean(KEY_D_REGISTERS, value.useRegisters && !value.noSources)
             .putBoolean(KEY_D_NOMEDIA, value.createNomedia)
             .putBoolean(KEY_D_REMOVE_SPLIT, value.removeSplitTraces)
             .putBoolean(KEY_D_REMOVE_PROPERTY, value.removePropertyTags)
@@ -319,11 +279,18 @@ object ApktoolSettings {
             .apply()
     }
 
-    /** Compatibility helper for the earlier single-page settings dialog. */
-    fun save(context: Context, framework: String, aapt: String, workers: Int, projectsRoot: String) {
-        setFrameworkTag(context, framework)
-        setAapt2(context, aapt)
-        savePathsAndWorkers(context, workers, projectsRoot, outputRoot(context))
+    fun savePathsAndWorkers(context: Context, workers: Int, projectsRoot: String, outputRoot: String, apktoolThreads: Int = apktoolThreads(context)) {
+        prefs(context).edit()
+            .putInt(KEY_WORKERS, workers.coerceIn(1, 4))
+            .putInt(KEY_APKTOOL_THREADS, apktoolThreads.coerceIn(1, 4))
+            .putString(KEY_PROJECTS, projectsRoot.ifBlank { defaultProjectsRoot() })
+            .putString(KEY_OUTPUT, outputRoot.ifBlank { defaultOutputRoot() })
+            .apply()
+        ApktoolJobService.setWorkerLimit(context, workers.coerceIn(1, 4))
+    }
+
+    fun setApktoolThreads(context: Context, threads: Int) {
+        prefs(context).edit().putInt(KEY_APKTOOL_THREADS, threads.coerceIn(1, 4)).apply()
     }
 
     fun resetDefaults(context: Context) {
@@ -331,17 +298,10 @@ object ApktoolSettings {
         ApktoolJobService.setWorkerLimit(context, 2)
     }
 
-    fun defaultProjectsRoot(): String =
-        Environment.getExternalStorageDirectory().absolutePath + "/apktool/projects"
-
-    fun defaultOutputRoot(): String =
-        Environment.getExternalStorageDirectory().absolutePath + "/apktool/output"
-
-    fun frameworkDir(): String =
-        Environment.getExternalStorageDirectory().absolutePath + "/apktool/frameworks"
-
-    fun aaptMirrorDir(): String =
-        Environment.getExternalStorageDirectory().absolutePath + "/apktool/bin/aapt2/arm64-v8a"
+    fun defaultProjectsRoot(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/projects"
+    fun defaultOutputRoot(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/output"
+    fun frameworkDir(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/frameworks"
+    fun aaptMirrorDir(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/bin/aapt2/arm64-v8a"
 
     fun aaptLabel(value: String): String = when (value) {
         "default" -> "Automatisch"
@@ -363,17 +323,10 @@ object ApktoolSettings {
     }
 
     fun signatureLabel(value: ApktoolSignatureDefaults): String = when (value.profile) {
-        "custom" -> FileName.label(value.customKeystorePath).ifBlank { "Benutzerdefinierte Signatur" }
+        "custom" -> value.customKeystorePath.substringAfterLast('/').substringAfterLast('\\').ifBlank { "Benutzerdefinierte Signatur" }
         else -> "Vorgabesignatur (testkey)"
     }
 
-    private fun sanitizeSuffix(value: String): String =
-        value.trim().replace(Regex("[\\/\\x00-\\x1f]"), "_").take(48)
-
-    private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
-    private object FileName {
-        fun label(path: String): String = path.substringAfterLast('/').substringAfterLast('\\')
-    }
+    private fun isValidFrameworkTag(tag: String): Boolean = tag.isNotBlank() && tag.length <= 80 && tag.matches(Regex("[A-Za-z0-9._-]+"))
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }

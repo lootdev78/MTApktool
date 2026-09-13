@@ -23,10 +23,14 @@ import androidx.navigation.compose.rememberNavController
 import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
 import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
-import io.github.lootdev78.mtapktool.apktool.ApktoolJobService
 import androidx.core.net.toUri
+import io.github.lootdev78.mtapktool.apktool.ApktoolJobService
 
 class MainActivity : ComponentActivity() {
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -36,10 +40,6 @@ class MainActivity : ComponentActivity() {
             // Permission granted, you might want to trigger a refresh in the ViewModel
         }
     }
-
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

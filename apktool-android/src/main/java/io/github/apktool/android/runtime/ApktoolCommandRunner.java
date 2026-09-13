@@ -19,8 +19,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.ErrorManager;
 import java.util.logging.Formatter;
 import java.util.logging.Handler;
@@ -62,12 +60,10 @@ public final class ApktoolCommandRunner {
 
     private static final Object ORIGINAL_CLI_LOCK = new Object();
     private static final InheritableThreadLocal<Listener> JOB_LISTENER = new InheritableThreadLocal<>();
-    private static final ReentrantReadWriteLock FRAMEWORK_ACCESS = new ReentrantReadWriteLock(true);
 
     private final Toolchain toolchain;
     private final Listener listener;
     private boolean quietMode;
-    private boolean verboseMode;
 
     public ApktoolCommandRunner(Toolchain toolchain, Listener listener) {
         this.toolchain = toolchain;
@@ -79,13 +75,7 @@ public final class ApktoolCommandRunner {
         if (args.isEmpty()) return new Result(0, usage(), null);
         if ("apktool-original".equalsIgnoreCase(args.get(0))) {
             args.remove(0);
-            Lock lock = FRAMEWORK_ACCESS.writeLock();
-            lock.lockInterruptibly();
-            try {
-                return originalCli(args.toArray(new String[0]));
-            } finally {
-                lock.unlock();
-            }
+            return originalCli(args.toArray(new String[0]));
         }
         if ("apktool".equalsIgnoreCase(args.get(0))) args.remove(0);
         if (args.isEmpty()) return new Result(0, usage(), null);
@@ -93,11 +83,7 @@ public final class ApktoolCommandRunner {
         boolean verboseRequested = args.contains("-v") || args.contains("--verbose");
         boolean quietRequested = args.contains("-q") || args.contains("--quiet");
         quietMode = quietRequested && !verboseRequested;
-        verboseMode = verboseRequested;
 
-        // Keep the process-global JUL threshold stable for concurrent jobs. Each
-        // handler below applies the per-job quiet/verbose filter instead.
-        Logger.getLogger("").setLevel(Level.ALL);
         JOB_LISTENER.set(listener);
         Handler bridge = installLogBridge();
         try {
@@ -106,29 +92,23 @@ public final class ApktoolCommandRunner {
             }
             String cmd = args.remove(0);
             String[] rest = args.toArray(new String[0]);
-            Lock frameworkLock = frameworkLockFor(cmd);
-            if (frameworkLock != null) frameworkLock.lockInterruptibly();
-            try {
-                switch (cmd) {
-                    case "d": case "decode": return decode(rest);
-                    case "b": case "build": return build(rest);
-                    case "if": case "install-framework": return installFramework(rest);
-                    case "cf": case "clean-frameworks": return cleanFrameworks(rest);
-                    case "lf": case "list-frameworks": return listFrameworks(rest);
-                    case "delete-frameworks": return deleteFrameworkFiles(rest);
-                    case "reset-frameworks": return resetFrameworks(rest);
-                    case "pr": case "publicize-resources": return publicizeResources(rest);
-                    case "zipalign": case "align": return zipalign(rest);
-                    case "apksigner": case "sign": return apksigner(rest);
-                    case "h": case "help": case "-help": case "--help":
-                        return new Result(0, usage(), null);
-                    case "v": case "version": case "-version": case "--version":
-                        return new Result(0, Toolchain.VERSION, null);
-                    default:
-                        throw new IllegalArgumentException("Unrecognized command: " + cmd + "\n\n" + usage());
-                }
-            } finally {
-                if (frameworkLock != null) frameworkLock.unlock();
+            switch (cmd) {
+                case "d": case "decode": return decode(rest);
+                case "b": case "build": return build(rest);
+                case "if": case "install-framework": return installFramework(rest);
+                case "cf": case "clean-frameworks": return cleanFrameworks(rest);
+                case "lf": case "list-frameworks": return listFrameworks(rest);
+                case "delete-frameworks": return deleteFrameworkFiles(rest);
+                case "reset-frameworks": return resetFrameworks(rest);
+                case "pr": case "publicize-resources": return publicizeResources(rest);
+                case "zipalign": case "align": return zipalign(rest);
+                case "apksigner": case "sign": return apksigner(rest);
+                case "h": case "help": case "-help": case "--help":
+                    return new Result(0, usage(), null);
+                case "v": case "version": case "-version": case "--version":
+                    return new Result(0, Toolchain.VERSION, null);
+                default:
+                    throw new IllegalArgumentException("Unrecognized command: " + cmd + "\n\n" + usage());
             }
         } finally {
             Logger.getLogger("").removeHandler(bridge);
@@ -138,24 +118,8 @@ public final class ApktoolCommandRunner {
     }
 
 
-    private static Lock frameworkLockFor(String cmd) {
-        if ("if".equals(cmd) || "install-framework".equals(cmd)
-                || "cf".equals(cmd) || "clean-frameworks".equals(cmd)
-                || "delete-frameworks".equals(cmd) || "reset-frameworks".equals(cmd)) {
-            return FRAMEWORK_ACCESS.writeLock();
-        }
-        if ("d".equals(cmd) || "decode".equals(cmd)
-                || "b".equals(cmd) || "build".equals(cmd)
-                || "lf".equals(cmd) || "list-frameworks".equals(cmd)) {
-            return FRAMEWORK_ACCESS.readLock();
-        }
-        return null;
-    }
-
     /** Executes the ported upstream brut.apktool.Main without allowing System.exit(). */
     private Result originalCli(String[] args) throws Exception {
-        // System.out/err are process-global. Keep only this compatibility fallback serialized;
-        // structured decode/build jobs remain safe to execute concurrently.
         synchronized (ORIGINAL_CLI_LOCK) {
             PrintStream oldOut = System.out;
             PrintStream oldErr = System.err;
@@ -207,10 +171,6 @@ public final class ApktoolCommandRunner {
         }
     }
 
-    private static void checkCancelled() {
-        if (Thread.currentThread().isInterrupted()) throw new CancellationException("Job cancelled");
-    }
-
     private Result decode(String[] args) throws Exception {
         Options o = new Options();
         addGeneral(o); addDecodeCommon(o);
@@ -222,6 +182,7 @@ public final class ApktoolCommandRunner {
         o.addOption(Option.builder("r").longOpt("no-res").build());
         o.addOption(Option.builder().longOpt("only-manifest").build());
         o.addOption(Option.builder().longOpt("res-resolve-mode").hasArg().argName("mode").build());
+        o.addOption(Option.builder().longOpt("decode-additional-resources").hasArg().argName("none|main|separate|merge").build());
         o.addOption(Option.builder().longOpt("keep-broken-res").build());
         o.addOption(Option.builder().longOpt("ignore-raw-values").build());
         o.addOption(Option.builder().longOpt("match-original").build());
@@ -234,7 +195,7 @@ public final class ApktoolCommandRunner {
         File apk = new File(positional.get(0));
         if (!apk.isFile()) throw new IOException("Input APK not found: " + apk);
 
-        Config c = baseConfig(cli);
+        Config c = baseConfig(cli, false);
         if (cli.hasOption("force")) c.setForced(true);
         if (cli.hasOption("all-src")) c.setDecodeSources(Config.DecodeSources.FULL);
         if (cli.hasOption("no-src")) {
@@ -267,6 +228,23 @@ public final class ApktoolCommandRunner {
                 else throw new IllegalArgumentException("Unknown resolve resources mode: " + mode + "; expected default, greedy or lazy");
             }
         }
+        if (cli.hasOption("decode-additional-resources")) {
+            if (cli.hasOption("no-res") || cli.hasOption("only-manifest")) {
+                optionConflict("--decode-additional-resources", cli.hasOption("no-res") ? "-r/--no-res" : "--only-manifest");
+            } else {
+                String mode = cli.getOptionValue("decode-additional-resources").toLowerCase(java.util.Locale.ROOT);
+                switch (mode) {
+                    case "none": c.setDecodeAdditionalResources(Config.DecodeAdditionalResources.NONE); break;
+                    case "main": c.setDecodeAdditionalResources(Config.DecodeAdditionalResources.MAIN); break;
+                    case "separate": c.setDecodeAdditionalResources(Config.DecodeAdditionalResources.SEPARATE); break;
+                    case "merge":
+                        c.setDecodeAdditionalResources(Config.DecodeAdditionalResources.MERGE);
+                        c.setDecodeResolve(Config.DecodeResolve.GREEDY);
+                        break;
+                    default: throw new IllegalArgumentException("Unknown additional resources mode: " + mode);
+                }
+            }
+        }
         if (cli.hasOption("keep-broken-res")) {
             if (cli.hasOption("no-res")) optionConflict("--keep-broken-res", "-r/--no-res");
             else if (cli.hasOption("only-manifest")) optionConflict("--keep-broken-res", "--only-manifest");
@@ -286,7 +264,14 @@ public final class ApktoolCommandRunner {
             out = new File(toolchain.getProjectsDir(), name);
         }
         checkCancelled();
-        line("Decoding: " + apk.getAbsolutePath());
+        File outParent = out.getParentFile();
+        if (outParent != null && !outParent.isDirectory() && !outParent.mkdirs()) {
+            throw new IOException("Cannot create decode output parent: " + outParent);
+        }
+        if (!apk.isFile() || !apk.canRead()) {
+            throw new IOException("APK is not readable: " + apk.getAbsolutePath());
+        }
+        line("Decoding with embedded Apktool-A source port: " + apk.getAbsolutePath());
         line("Framework path: " + c.getFrameworkDirectory() + (c.getFrameworkTag() == null ? "" : " tag=" + c.getFrameworkTag()));
         new ApkDecoder(apk, c).decode(out);
         checkCancelled();
@@ -314,7 +299,7 @@ public final class ApktoolCommandRunner {
         File project = new File(positional.isEmpty() ? "." : positional.get(0));
         if (!project.isDirectory()) throw new IOException("Project directory not found: " + project);
 
-        Config c = baseConfig(cli);
+        Config c = baseConfig(cli, true);
         if (cli.hasOption("force")) c.setForced(true);
         if (cli.hasOption("no-apk")) c.setNoApk(true);
         if (cli.hasOption("no-crunch")) c.setNoCrunch(true);
@@ -358,7 +343,7 @@ public final class ApktoolCommandRunner {
         o.addOption(Option.builder("t").longOpt("frame-tag").hasArg().build());
         CommandLine cli = parse(o, args);
         if (cli.getArgList().size() != 1) throw new IllegalArgumentException("install-framework requires one framework APK");
-        Config c = toolchain.newConfig();
+        Config c = toolchain.newDecodeConfig();
         applyGeneralAndFramework(c, cli);
         File apk = new File(cli.getArgList().get(0));
         if (!apk.isFile()) throw new IOException("Framework APK not found: " + apk);
@@ -370,7 +355,7 @@ public final class ApktoolCommandRunner {
         Options o = frameworkMaintenanceOptions();
         CommandLine cli = parse(o, args);
         if (!cli.getArgList().isEmpty()) throw new IllegalArgumentException("clean-frameworks accepts no positional arguments");
-        Config c = toolchain.newConfig();
+        Config c = toolchain.newDecodeConfig();
         applyGeneralAndFramework(c, cli);
         if (cli.hasOption("all")) {
             if (cli.hasOption("frame-tag")) optionConflict("-a/--all", "-t/--frame-tag");
@@ -384,7 +369,7 @@ public final class ApktoolCommandRunner {
         Options o = frameworkMaintenanceOptions();
         CommandLine cli = parse(o, args);
         if (!cli.getArgList().isEmpty()) throw new IllegalArgumentException("list-frameworks accepts no positional arguments");
-        Config c = toolchain.newConfig();
+        Config c = toolchain.newDecodeConfig();
         applyGeneralAndFramework(c, cli);
         if (cli.hasOption("all")) {
             if (cli.hasOption("frame-tag")) optionConflict("-a/--all", "-t/--frame-tag");
@@ -415,7 +400,7 @@ public final class ApktoolCommandRunner {
         CommandLine cli = parse(o, args);
         if (cli.getArgList().size() != 1) throw new IllegalArgumentException("publicize-resources requires one resources.arsc file");
         File arsc = new File(cli.getArgList().get(0));
-        Config c = toolchain.newConfig();
+        Config c = toolchain.newDecodeConfig();
         new Framework(c).publicizeResources(arsc);
         return new Result(0, "resources.arsc publicized", arsc);
     }
@@ -506,16 +491,8 @@ public final class ApktoolCommandRunner {
         return postProcessBuild(built, align, sign, null, "android", true, true, true, false);
     }
 
-    public Result postProcessBuild(
-            Result built,
-            boolean align,
-            boolean sign,
-            String keystorePath,
-            String keystorePassword,
-            boolean v1,
-            boolean v2,
-            boolean v3,
-            boolean v4) throws Exception {
+    public Result postProcessBuild(Result built, boolean align, boolean sign, String keystorePath,
+            String keystorePassword, boolean v1, boolean v2, boolean v3, boolean v4) throws Exception {
         if (built == null || !built.isSuccess() || built.output == null || (!align && !sign)) return built;
         File current = built.output;
         if (align) {
@@ -530,8 +507,7 @@ public final class ApktoolCommandRunner {
         if (sign) {
             File signed = sibling(current, "-signed.apk");
             if (signed.exists()) signed.delete();
-            File ks = keystorePath == null || keystorePath.trim().isEmpty()
-                    ? toolchain.getDebugKeystore() : new File(keystorePath);
+            File ks = keystorePath == null || keystorePath.trim().isEmpty() ? toolchain.getDebugKeystore() : new File(keystorePath);
             if (!ks.isFile()) throw new IOException("Signing keystore not found: " + ks);
             String pass = keystorePassword == null || keystorePassword.isEmpty() ? "android" : keystorePassword;
             line("Signing v1=" + v1 + " v2=" + v2 + " v3=" + v3 + " v4=" + v4 + ": " + current.getName());
@@ -546,8 +522,8 @@ public final class ApktoolCommandRunner {
         return new File(file.getParentFile(), base + suffix);
     }
 
-    private Config baseConfig(CommandLine cli) throws IOException {
-        Config c = toolchain.newConfig();
+    private Config baseConfig(CommandLine cli, boolean requireAapt2) throws IOException {
+        Config c = requireAapt2 ? toolchain.newConfig() : toolchain.newDecodeConfig();
         applyGeneralAndFramework(c, cli);
         if (cli.hasOption("jobs")) {
             int jobs = Integer.parseInt(cli.getOptionValue("jobs"));
@@ -566,7 +542,14 @@ public final class ApktoolCommandRunner {
     }
 
     private void applyGeneralAndFramework(Config c, CommandLine cli) {
-        if (cli.hasOption("verbose")) c.setVerbose(true);
+        if (cli.hasOption("verbose")) {
+            c.setVerbose(true);
+            Logger.getLogger("").setLevel(Level.FINE);
+        } else if (cli.hasOption("quiet")) {
+            Logger.getLogger("").setLevel(Level.SEVERE);
+        } else {
+            Logger.getLogger("").setLevel(Level.INFO);
+        }
         if (cli.hasOption("frame-path")) c.setFrameworkDirectory(cli.getOptionValue("frame-path"));
         if (cli.hasOption("frame-tag")) c.setFrameworkTag(cli.getOptionValue("frame-tag"));
     }
@@ -615,7 +598,6 @@ public final class ApktoolCommandRunner {
         Handler handler = new Handler() {
             @Override public void publish(LogRecord record) {
                 if (JOB_LISTENER.get() != listener || !isLoggable(record) || quietMode) return;
-                if (!verboseMode && record.getLevel().intValue() < Level.INFO.intValue()) return;
                 try { listener.onLine(getFormatter().format(record)); }
                 catch (RuntimeException ex) { reportError(null, ex, ErrorManager.WRITE_FAILURE); }
             }
@@ -636,6 +618,10 @@ public final class ApktoolCommandRunner {
         return handler;
     }
 
+    private static void checkCancelled() {
+        if (Thread.currentThread().isInterrupted()) throw new CancellationException("Job cancelled");
+    }
+
     private void line(String line) {
         if (!quietMode) listener.onLine(line);
     }
@@ -644,13 +630,14 @@ public final class ApktoolCommandRunner {
         return "Apktool Android " + Toolchain.VERSION + "\n"
                 + "\nOriginal Apktool commands:\n"
                 + "  apktool d|decode [options] <apk-file>\n"
+                + "    Android: --decode-additional-resources none|main|separate|merge\n"
                 + "    -f --force, -a --all-src, -s --no-src, --no-debug-info, -r --no-res,\n"
                 + "    --only-manifest, --res-resolve-mode default|greedy|lazy, --keep-broken-res,\n"
                 + "    --ignore-raw-values, --match-original, --no-assets, --use-registers, -o --output,\n"
                 + "    -j --jobs, -p --frame-path, -t --frame-tag, -l --lib, -v --verbose, -q --quiet\n"
                 + "  apktool b|build [options] <apk-dir>\n"
                 + "    -f --force, --no-apk, --no-crunch, --copy-original, --debuggable,\n"
-                + "    --net-sec-conf [--net-sec-conf-keep-existing], --aapt <file>, -o --output, -j, -p, -l, -v, -q\n"
+                + "    --net-sec-conf [--net-sec-conf-keep-existing], --aapt <file>, -o --output, -j, -p, -t, -l, -v, -q\n"
                 + "  apktool if|install-framework [-p dir] [-t tag] <framework.apk>\n"
                 + "  apktool cf|clean-frameworks [-a] [-p dir] [-t tag]\n"
                 + "  apktool lf|list-frameworks [-a] [-p dir] [-t tag]\n"

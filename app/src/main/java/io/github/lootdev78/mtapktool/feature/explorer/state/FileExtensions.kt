@@ -78,7 +78,6 @@ private val APK_EXTENSIONS = setOf(
     "apk",
     "apks",
     "xapk",
-    "apkm",
 )
 
 private val PDF_EXTENSIONS = setOf(

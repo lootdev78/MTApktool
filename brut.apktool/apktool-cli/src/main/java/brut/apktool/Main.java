@@ -128,6 +128,14 @@ public class Main {
         .argName("mode")
         .get();
 
+    private static final Option decodeAdditionalResourcesOption = Option.builder()
+        .longOpt("decode-additional-resources")
+        .desc("Decode resource packages in addition to the main package.\n"
+            + "Possible values: 'none', 'main', 'separate' or 'merge'.")
+        .hasArg()
+        .argName("mode")
+        .get();
+
     private static final Option decodeKeepBrokenResOption = Option.builder()
         .longOpt("keep-broken-res")
         .desc("Use if there was an error and some resources were dropped, e.g.\n"
@@ -260,6 +268,7 @@ public class Main {
                 decodeOptions.addOption(decodeUseRegistersOption);
                 decodeOptions.addOption(decodeOnlyManifestOption);
                 decodeOptions.addOption(decodeResResolveModeOption);
+                decodeOptions.addOption(decodeAdditionalResourcesOption);
             }
         }
 
@@ -533,6 +542,35 @@ public class Main {
                     default:
                         System.err.println("Unknown resolve resources mode: " + mode);
                         System.err.println("Expect: 'default', 'greedy' or 'lazy'.");
+                        exit(1);
+                        return;
+                }
+            }
+        }
+        if (cli.hasOption(decodeAdditionalResourcesOption)) {
+            if (cli.hasOption(decodeNoResOption)) {
+                printOptionConflict(decodeAdditionalResourcesOption, decodeNoResOption);
+            } else if (cli.hasOption(decodeOnlyManifestOption)) {
+                printOptionConflict(decodeAdditionalResourcesOption, decodeOnlyManifestOption);
+            } else {
+                String mode = cli.getOptionValue(decodeAdditionalResourcesOption);
+                switch (mode) {
+                    case "none":
+                        config.setDecodeAdditionalResources(Config.DecodeAdditionalResources.NONE);
+                        break;
+                    case "main":
+                        config.setDecodeAdditionalResources(Config.DecodeAdditionalResources.MAIN);
+                        break;
+                    case "separate":
+                        config.setDecodeAdditionalResources(Config.DecodeAdditionalResources.SEPARATE);
+                        break;
+                    case "merge":
+                        config.setDecodeAdditionalResources(Config.DecodeAdditionalResources.MERGE);
+                        config.setDecodeResolve(Config.DecodeResolve.GREEDY);
+                        break;
+                    default:
+                        System.err.println("Unknown additional resources mode: " + mode);
+                        System.err.println("Expect: 'none', 'main', 'separate' or 'merge'.");
                         exit(1);
                         return;
                 }

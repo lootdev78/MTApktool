@@ -47,6 +47,7 @@ class ApktoolJobsViewModel(application: Application) : AndroidViewModel(applicat
 
     init {
         val app = getApplication<Application>()
+        _jobs.value = ApktoolJobHistory.load(app)
         val filter = IntentFilter(ApktoolJobService.ACTION_STATUS)
         if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") app.registerReceiver(receiver, filter)

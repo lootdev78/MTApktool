@@ -86,7 +86,6 @@ public final class OS {
         File[] files = src.listFiles();
         if (files == null) return;
         for (File file : files) {
-            ensureNotInterrupted("copy directory");
             File destFile = new File(dest, file.getName());
             if (file.isDirectory()) cpdir(file, destFile);
             else cpfile(file, destFile);
@@ -137,7 +136,7 @@ public final class OS {
             executor.execute(collector);
             boolean finished = process.waitFor(15, TimeUnit.SECONDS);
             if (!finished) {
-                terminateProcess(process);
+                process.destroy();
                 return null;
             }
             if (process.exitValue() != 0) {
@@ -149,10 +148,10 @@ public final class OS {
             }
             return collector.get();
         } catch (IOException ignored) {
-            terminateProcess(process);
+            if (process != null) process.destroy();
             return null;
         } catch (InterruptedException ignored) {
-            terminateProcess(process);
+            if (process != null) process.destroy();
             Thread.currentThread().interrupt();
             return null;
         } finally {

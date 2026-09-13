@@ -1,71 +1,89 @@
 # MTApktool
 
-MTApktool combines the MTExplorer dual-pane file manager with the supplied Apktool-A Android port. Apktool-A stays as source/library modules; APK/APKS/APKM/XAPK handling, project detection, Material3 dialogs and job UI live in `app/src`.
+MTApktool combines the MTExplorer dual-pane file manager with the supplied Apktool-A Android source port. Apktool is not started as an external desktop process: the app calls the vendored Java sources in-process through `ApktoolJobService -> ApktoolCommandRunner -> brut.androlib.ApkDecoder.decode()`.
 
-## Android / Gradle baseline
+## Build baseline
 
-The Android build baseline is intentionally taken from the supplied **Apktool-A.zip**, not from the newer MTExplorer Gradle setup. This matters because the vendored Apktool Android module build scripts use AGP 8 source-set APIs and are not compatible with AGP 9.x.
-
-- App: **MTApktool**
-- Package / applicationId: **`io.github.lootdev78.mtapktool`**
-- `compileSdk = 36`
-- `targetSdk = 36`
-- `minSdk = 29`
-- `ndkVersion = "29.0.14033849"` where an Android/native module needs the NDK
-- Bundled native ABI: `arm64-v8a`
-- JDK used by Gradle: 17
-- Apktool/smali Java compatibility: Java 8
-- MTApktool app Kotlin/Java target: JVM 17
-- Gradle wrapper: **8.11.1**
+- Package/applicationId: `io.github.lootdev78.mtapktool`
 - Android Gradle Plugin: **8.10.1**
-- Kotlin / Compose plugin: 2.4.10
+- Gradle wrapper: **8.11.1**
+- JDK: **17**
+- compileSdk/targetSdk: **36**
+- minSdk: **29**
+- NDK: **29.0.14033849**
+- ABI: `arm64-v8a`
+- AndroidX Core: **1.18.0**
+- Lifecycle Compose: **2.10.0**
 
-AGP 8 does not provide AGP 9's built-in Kotlin support, therefore the MTExplorer app applies `org.jetbrains.kotlin.android` explicitly. The Apktool-A Gradle wrapper and Android-library build files are kept on their known-good AGP 8.10.1 / Gradle 8.11.1 baseline.
+The AndroidX pins keep the project on SDK 36 / AGP 8.10.1 instead of pulling dependencies that require API 37 and AGP 9.1+.
 
-## Source modules
+## Real Apktool source runtime
 
-`:app` depends on `:apktool-android`. That adapter then connects the vendored source modules rather than copying Apktool into the explorer app:
+The source-module chain is:
 
-- `:brut.apktool:apktool-lib`
-- `:brut.apktool:apktool-cli`
-- `:brut.j.common`, `:brut.j.util`, `:brut.j.dir`, `:brut.j.xml`, `:brut.j.yaml`
-- `:smali-android`
-- `:apksig-android`
-- `:zipalign-android`
+`app -> apktool-android -> brut.apktool:apktool-lib / brut.apktool:apktool-cli / apksig-android / zipalign-android`
 
-The original Apktool-A Android runtime, framework assets and bundled AAPT2 binaries are retained under the module/source tree. Split-container handling from the explorer side remains in `app/src`.
+The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and framework/AAPT2 payloads remain connected. Normal decode uses `new ApkDecoder(apk, config).decode(output)` directly from the vendored Apktool sources.
 
-## Explorer and Apktool-M-style UI
+Decode provisioning is intentionally separate from build provisioning. **APK decoding does not require the native AAPT2 payload.** AAPT2 is provisioned only for build/repack commands. This prevents an AAPT2 extraction/ABI problem from blocking APK decompilation.
 
-- Tap or context action on `.apk` opens the Apktool decode dialog.
-- `.apks`, `.apkm` and `.xapk` are inspected as split containers with base/universal selection and an all-splits path.
-- Directories containing `apktool.yml` are recognized automatically as Apktool projects.
-- Inside such a project MTApktool shows **Dieses Projekt kompilieren** above the file list and exposes the build action in the file-manager workflow.
-- Decode/build dialog ordering follows the supplied Apktool M screenshots while using MTApktool's Material3 theme.
-- Decode quick settings include resources, DEX selection, debug info, registers/locals, directory preservation, broken resources, split traces, property removal and threads.
-- Build dialog includes AAPT2, framework, signature, build settings, threads and output. **AAPT1 is intentionally not exposed.**
-- Signature options expose v1/v2/v3/v4.
-- The full **Erstellen & Dekodieren** settings screen follows the screenshot ordering and links to Framework Manager, AAPT2 Manager, signature, paths/jobs and runtime information.
+The Settings -> Runtime page performs a real self-test of the embedded source port, provisions the decode framework files and executes the in-process runner's `apktool --version` command.
 
-Default decode project root: `/storage/emulated/0/apktool/projects`  
+## Decode workflow
+
+Tapping `.apk`, `.apks`, `.apkm` or `.xapk` in either explorer pane opens the Apktool decode dialog. `.apks/.apkm/.xapk` containers are inspected for base/universal and split APK entries.
+
+The decode dialog includes:
+
+- resources, `classes*.dex`, all DEX and `.nomedia`
+- framework selection
+- additional resource packages with the four Apktool-M-style choices:
+  - `Nicht dekompilieren`
+  - `Dekompilieren in das Hauptverzeichnis`
+  - `Dekompilieren in ein separates Verzeichnis`
+  - `Versuche, Pakete zusammenzuführen`
+- the additional-resource choices are disabled when **Ressourcen dekompilieren** is disabled or manifest-only mode is active
+- editable output directory
+- Android system folder picker (`OpenDocumentTree`) with the system's create-folder action
+- automatic creation/writeability validation of a typed output directory
+- runtime readiness/error information before the job is queued
+- quick decode settings and 1-4 Apktool threads
+
+Additional resource packages are implemented in the vendored Apktool source (`Config.DecodeAdditionalResources` + `ResDecoder`), not as UI-only placeholders.
+
+## Explorer / project workflow
+
+- Folders containing `apktool.yml` are recognized automatically as Apktool projects.
+- Inside such a project the pane shows **Dieses Projekt kompilieren**.
+- Build uses AAPT2 only; AAPT1 is intentionally not exposed.
+- Framework Manager, AAPT2 Manager, signing v1-v4, 1-4 top-level jobs and 1-4 Apktool threads are included.
+- The left navigation **Settings** item opens the real **Erstellen & Dekodieren** settings screen.
+- The left navigation also exposes **Apktool Jobs**.
+
+## Background jobs and notifications
+
+Apktool work runs in `ApktoolJobService`, not in the Activity. The service is a foreground `specialUse` service and holds a partial wake lock while jobs are active. Closing/swiping the UI does not deliberately cancel active jobs. The service uses `START_REDELIVER_INTENT`, per-job futures and cooperative interruption/cancellation.
+
+The Activity is `singleTask`/`alwaysRetainTaskState`; explorer paths and active pane are kept through `SavedStateHandle`, and job snapshots are persisted so reopening the UI does not reset the explorer to the storage root or lose the last job state.
+
+Android notification channels are created for:
+
+- ongoing Apktool job/progress notifications
+- completed/failed job notifications
+
+POST_NOTIFICATIONS is requested on Android 13+, and notification permission/state is visible in Settings. Completion notifications are enabled by default even while MTApktool is open unless the user enables suppression.
+
+## Storage
+
+MTApktool requests all-files access because the file manager and Apktool operate on raw `java.io.File` paths. The decode output picker uses Android's folder chooser, persists its read/write URI grant, and resolves external-storage tree URIs back to raw storage paths needed by Apktool.
+
+Default project root: `/storage/emulated/0/apktool/projects`  
 Default build output root: `/storage/emulated/0/apktool/output`
-
-## Jobs
-
-`ApktoolJobService` supports 1-4 concurrent top-level jobs. Each job has an ID, queue/running/final state and its own log; a job can be stopped individually or all active jobs can be stopped. AAPT2 child processes are interrupt-aware. Framework mutation and provisioning are synchronized so multiple decode/build jobs do not corrupt shared state. Apktool's internal worker count is also bounded to avoid multiplying four top-level runners into uncontrolled CPU usage.
-
-## Framework / AAPT2
-
-Framework Manager can list, import, select, delete and reset installed frameworks, including tagged framework files. The supplied SDK33/34/35/36 framework payloads remain connected to the runtime. AAPT2 Manager can select the supplied variants or a custom AAPT2 executable. AAPT1 is not part of the MTApktool UI.
 
 ## GitHub Actions
 
-`.github/workflows/build-debug.yml` builds `:app:assembleDebug` on pushes to `main` or `master` and on manual dispatch. It installs JDK 17, Android SDK 36, build-tools 36.0.0 and NDK `29.0.14033849`, uses the repository's Gradle **8.11.1** wrapper, and uploads `app/build/outputs/apk/debug/*.apk` as `MTApktool-debug`.
+`.github/workflows/build-debug.yml` installs Android SDK 36, build-tools 36.0.0 and NDK 29.0.14033849, checks the SDK-36 dependency pins and source-module/runtime wiring, runs `:app:checkDebugAarMetadata`, builds `:app:assembleDebug`, and uploads the debug APK.
 
-## Local validation note
+## Validation note
 
-This execution environment has no usable downloaded Gradle distribution and cannot resolve `services.gradle.org`, so a full Android Gradle build cannot be completed here. The project/module graph, source roots, Android/resource XML, version catalog, wrapper/configuration files and bundled runtime payload paths are validated statically. The included GitHub Actions workflow is the intended real build check with network access.
-
-## Licenses
-
-MTExplorer-derived application code is covered by `LICENSE`. Apktool-derived code and notices are covered by `APKTOOL_LICENSE.md` and the vendored upstream notices. AntiSplit-M-derived split-container logic is covered by `ANTISPLIT_LICENSE.md`.
+This execution container has no usable Gradle distribution/network access for a complete Android build. Source/module paths, XML/TOML/YAML, runtime wiring and parser-level Java/Kotlin checks are performed locally; GitHub Actions remains the authoritative full Android compile/package test.

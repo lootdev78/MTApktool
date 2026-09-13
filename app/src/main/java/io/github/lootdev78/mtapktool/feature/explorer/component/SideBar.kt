@@ -46,6 +46,7 @@ fun SideBar(
     viewModel: ExplorerViewModel = viewModel(),
     onClose: () -> Unit,
     onSettings: () -> Unit,
+    onJobs: () -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -64,7 +65,7 @@ fun SideBar(
             .width(drawerWidth)
     ) {
         Text(
-            text = "MTApktool",
+            text = "MT Explorer",
             modifier = Modifier.padding(16.dp),
             style = MaterialTheme.typography.titleLarge
         )
@@ -92,6 +93,22 @@ fun SideBar(
             onClick = {
                 onClose()
                 onSettings()
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null
+                )
+            }
+        )
+
+
+        NavigationDrawerItem(
+            label = { Text("Apktool Jobs") },
+            selected = false,
+            onClick = {
+                onClose()
+                onJobs()
             },
             icon = {
                 Icon(

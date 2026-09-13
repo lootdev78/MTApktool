@@ -56,9 +56,7 @@ android {
         resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
     }
 
-    buildFeatures {
-        compose = true
-    }
+    buildFeatures { compose = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -66,10 +64,24 @@ android {
     }
 }
 
-// AGP 8.x does not provide AGP 9's built-in Kotlin plugin. Apply Kotlin Android
-// explicitly above and keep Kotlin/Java on the same JVM target.
-kotlin {
-    jvmToolchain(17)
+kotlin { jvmToolchain(17) }
+
+// Keep all transitive AndroidX variants on the SDK-36/AGP-8 compatible line.
+// Without this, a newer transitive KMP Android artifact can reintroduce
+// core 1.19 / lifecycle 2.11 and fail checkDebugAarMetadata.
+configurations.configureEach {
+    resolutionStrategy.force(
+        "androidx.core:core:1.18.0",
+        "androidx.core:core-ktx:1.18.0",
+        "androidx.lifecycle:lifecycle-runtime:2.10.0",
+        "androidx.lifecycle:lifecycle-runtime-android:2.10.0",
+        "androidx.lifecycle:lifecycle-runtime-compose:2.10.0",
+        "androidx.lifecycle:lifecycle-runtime-compose-android:2.10.0",
+        "androidx.lifecycle:lifecycle-viewmodel:2.10.0",
+        "androidx.lifecycle:lifecycle-viewmodel-android:2.10.0",
+        "androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0",
+        "androidx.lifecycle:lifecycle-viewmodel-compose-android:2.10.0",
+    )
 }
 
 dependencies {
