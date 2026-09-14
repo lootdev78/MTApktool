@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="modder.hub.editor.MainActivity"
+            android:label="Text Editor"
+            android:theme="@style/AppTheme"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="false" />
+        <activity
+            android:name="modder.hub.editor.DebugActivity"
+            android:theme="@style/AppTheme.DebugActivity"
+            android:exported="false" />
+    </application>
+</manifest>

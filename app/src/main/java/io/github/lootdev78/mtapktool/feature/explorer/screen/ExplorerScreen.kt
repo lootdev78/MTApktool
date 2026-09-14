@@ -122,6 +122,7 @@ import io.github.lootdev78.mtapktool.feature.explorer.util.FileOpener
 import io.github.lootdev78.mtapktool.settings.ApktoolCliActivity
 import io.github.lootdev78.mtapktool.settings.ApktoolSettingsActivity
 import io.github.lootdev78.mtapktool.settings.SettingsActivity
+import io.github.lootdev78.mtapktool.tools.ApkExtractorActivity
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -1087,6 +1088,7 @@ fun ExplorerScreen(
                         context.startActivity(Intent(context, SafTreeBrowserActivity::class.java).putExtra(SafTreeBrowserActivity.EXTRA_TREE_URI, uri.toString()))
                     },
                     onAddLocation = { addLocationLauncher.launch(null) },
+                    onOpenApkExtractor = { context.startActivity(Intent(context, ApkExtractorActivity::class.java)) },
                     onOpenSettings = { context.startActivity(Intent(context, SettingsActivity::class.java)) },
                     onClose = {
                         leftDrawerDragging = false

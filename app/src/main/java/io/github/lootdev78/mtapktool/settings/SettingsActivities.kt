@@ -72,15 +72,20 @@ import io.github.lootdev78.mtapktool.apktool.ApkModulePreferences
 import io.github.lootdev78.mtapktool.archive.ArchiveFormat
 import io.github.lootdev78.mtapktool.archive.ArchiveLevel
 import io.github.lootdev78.mtapktool.archive.ArchiveSettings
-import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
+import io.github.lootdev78.mtapktool.core.theme.MTApktoolTheme
 import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
 import io.github.lootdev78.mtapktool.feature.explorer.model.CustomLocationStore
+import io.github.lootdev78.mtapktool.tools.ApkExtractorPreferences
+import io.github.lootdev78.mtapktool.tools.ApkClonerPreferences
+import io.github.lootdev78.mtapktool.tools.ApkExtractorOptions
+import io.github.lootdev78.mtapktool.tools.ApkClonerOptions
 import kotlinx.coroutines.launch
 import java.io.File
+import org.json.JSONArray
 
 private fun ComponentActivity.composePage(content: @Composable () -> Unit) {
-    setContent { MTExplorerTheme { content() } }
+    setContent { MTApktoolTheme { content() } }
 }
 
 class SettingsActivity : ComponentActivity() {
@@ -107,6 +112,15 @@ class Aapt2SettingsActivity : ComponentActivity() {
 class ApkModulesSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); composePage { ApkModulesSettingsPage(::finish) } }
 }
+class ApkExtractorSettingsActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); composePage { ApkExtractorSettingsPage(::finish) } }
+}
+class ApkClonerSettingsActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); composePage { ApkClonerSettingsPage(::finish) } }
+}
+class TextEditorSettingsActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); composePage { TextEditorSettingsPage(::finish) } }
+}
 class ApktoolCliActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); composePage { ApktoolCliPage(::finish) } }
 }
@@ -130,7 +144,10 @@ private fun SettingsHome(onBack: () -> Unit, start: (Intent) -> Unit) {
         PageEntry("Erstellen & Dekodieren", "Apktool für Erstellen, Dekodieren, Frameworks und AAPT2 konfigurieren.", Icons.Default.Build, ApktoolSettingsActivity::class.java),
         PageEntry("Signatur", "Signaturdatei und APK-Signaturschemata konfigurieren.", Icons.Default.VpnKey, SignatureSettingsActivity::class.java),
         PageEntry("Archivierung", "Format, Kompressionsstufe und Standardoptionen festlegen.", Icons.Default.Archive, ArchiveSettingsActivity::class.java),
-        PageEntry("APK-Module", "Antisplit-M/APKS→APK, APKX→APK und zipalign konfigurieren.", Icons.Default.Tune, ApkModulesSettingsActivity::class.java),
+        PageEntry("APK-Module", "AntiSplit-M/APKS→APK, APKX→APK und zipalign konfigurieren.", Icons.Default.Tune, ApkModulesSettingsActivity::class.java),
+        PageEntry("APK Extractor", "Installierte APKs/APKS extrahieren; Standardziel /apktool/apks.", Icons.Default.Archive, ApkExtractorSettingsActivity::class.java),
+        PageEntry("APK Cloner", "Paketnamen-Klonen und Standardausgabe konfigurieren.", Icons.Default.Tune, ApkClonerSettingsActivity::class.java),
+        PageEntry("Text Editor", "Eingebetteten MH-TextEditor und Anzeigeoptionen konfigurieren.", Icons.Default.Code, TextEditorSettingsActivity::class.java),
         PageEntry("Frameworks", "Framework-Verzeichnis und Standard-Framework konfigurieren.", Icons.Default.FolderOpen, FrameworkSettingsActivity::class.java),
         PageEntry("AAPT2", "Mitgelieferte oder benutzerdefinierte AAPT2 Variante wählen.", Icons.Default.Code, Aapt2SettingsActivity::class.java),
         PageEntry("Apktool CLI", "Vollständige Apktool-Kommandos direkt als Job ausführen.", Icons.Default.Code, ApktoolCliActivity::class.java),
@@ -376,6 +393,8 @@ private fun ApkModulesSettingsPage(onBack: () -> Unit) {
         SwitchRow("Feature-Splits übernehmen", value = value.includeFeatureSplits) { checked -> save { it.copy(includeFeatureSplits = checked) } }
         SwitchRow("Extrahierte Splits zusätzlich behalten", value = value.keepExtractedSplits) { checked -> save { it.copy(keepExtractedSplits = checked) } }
         SwitchRow("Ungültige META-INF Signaturen entfernen", value = value.cleanMetaInf) { checked -> save { it.copy(cleanMetaInf = checked) } }
+        SwitchRow("Force Merge bei abweichenden Versionscodes", value = value.antiSplitForceMerge) { checked -> save { it.copy(antiSplitForceMerge = checked) } }
+        SwitchRow("Split-Metadaten aus Manifest entfernen", value = value.antiSplitStripMetadata) { checked -> save { it.copy(antiSplitStripMetadata = checked) } }
         OutlinedTextField(
             compression,
             {
@@ -392,6 +411,156 @@ private fun ApkModulesSettingsPage(onBack: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun ApkExtractorSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var value by remember { mutableStateOf(ApkExtractorPreferences.load(context)) }
+    var compression by remember { mutableStateOf(value.compressionLevel.toString()) }
+    fun save(updated: ApkExtractorOptions) { value = updated; ApkExtractorPreferences.save(context, updated) }
+    PageScaffold("APK Extractor", onBack) {
+        OutlinedTextField(
+            value = value.outputRoot,
+            onValueChange = { save(value.copy(outputRoot = it)) },
+            label = { Text("Standard-Ausgabeordner") },
+            supportingText = { Text("Standard: /storage/emulated/0/apktool/apks/<app>.apk bzw. <app>.apks") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        SwitchRow("System-Apps anzeigen", value.includeSystemApps) { save(value.copy(includeSystemApps = it)) }
+
+        Text("Sortierung", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp), fontWeight = FontWeight.SemiBold)
+        listOf(
+            "name" to "Name",
+            "last_update" to "Letzte Aktualisierung",
+            "first_install" to "Erstinstallation",
+        ).forEach { (mode, label) ->
+            Row(
+                Modifier.fillMaxWidth().clickable { save(value.copy(sortMode = mode)) }.padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(value.sortMode == mode, onClick = { save(value.copy(sortMode = mode)) })
+                Text(label)
+            }
+        }
+
+        Text("Anzeigeinformationen", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp), fontWeight = FontWeight.SemiBold)
+        SwitchRow("App-Icon anzeigen", value.showIcon) { save(value.copy(showIcon = it)) }
+        SwitchRow("App-Name anzeigen", value.showAppName) { save(value.copy(showAppName = it)) }
+        SwitchRow("Paketname anzeigen", value.showPackageName) { save(value.copy(showPackageName = it)) }
+        SwitchRow("Versionsname anzeigen", value.showVersionName) { save(value.copy(showVersionName = it)) }
+        SwitchRow("Versionscode anzeigen", value.showVersionCode) { save(value.copy(showVersionCode = it)) }
+        SwitchRow("Erstinstallation anzeigen", value.showFirstInstall) { save(value.copy(showFirstInstall = it)) }
+        SwitchRow("Letzte Aktualisierung anzeigen", value.showLastUpdate) { save(value.copy(showLastUpdate = it)) }
+
+        Text("Zusatzfunktionen im App-Dialog", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp), fontWeight = FontWeight.SemiBold)
+        SwitchRow("App-Icon extrahieren", value.showExtractIcon) { save(value.copy(showExtractIcon = it)) }
+        SwitchRow("Ressourcen extrahieren", value.showExtractResources) { save(value.copy(showExtractResources = it)) }
+        SwitchRow("DEX extrahieren", value.showExtractDex) { save(value.copy(showExtractDex = it)) }
+        SwitchRow("AndroidManifest.xml extrahieren", value.showExtractManifest) { save(value.copy(showExtractManifest = it)) }
+        SwitchRow("Base APK extrahieren", value.showExtractBase) { save(value.copy(showExtractBase = it)) }
+        SwitchRow("Einzelnen Split extrahieren", value.showExtractSplit) { save(value.copy(showExtractSplit = it)) }
+        SwitchRow("Native Libraries extrahieren", value.showExtractLibs) { save(value.copy(showExtractLibs = it)) }
+
+        Text("Split-Apps standardmäßig", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp), fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth().clickable { save(value.copy(defaultSplitMode = "apks")) }.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(value.defaultSplitMode == "apks", onClick = { save(value.copy(defaultSplitMode = "apks")) }); Text("als .apks speichern")
+        }
+        Row(Modifier.fillMaxWidth().clickable { save(value.copy(defaultSplitMode = "merge")) }.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(value.defaultSplitMode == "merge", onClick = { save(value.copy(defaultSplitMode = "merge")) }); Text("mit AntiSplit-M zu .apk zusammenführen")
+        }
+        OutlinedTextField(
+            value = compression,
+            onValueChange = {
+                compression = it.filter(Char::isDigit).take(1)
+                save(value.copy(compressionLevel = (compression.toIntOrNull() ?: 6).coerceIn(0, 9)))
+            },
+            label = { Text("Kompression 0–9") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun ApkClonerSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var value by remember { mutableStateOf(ApkClonerPreferences.load(context)) }
+    fun save(updated: ApkClonerOptions) { value = updated; ApkClonerPreferences.save(context, updated) }
+    PageScaffold("APK Cloner", onBack) {
+        OutlinedTextField(
+            value = value.suffix,
+            onValueChange = { save(value.copy(suffix = it.ifBlank { "_clone" })) },
+            label = { Text("Dateinamensuffix") },
+            supportingText = { Text("Beispiel: app${value.suffix}.apk") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        SwitchRow("Klon standardmäßig im Quellordner speichern", value.outputSameFolder) { save(value.copy(outputSameFolder = it)) }
+        Text(
+            "APK Cloner ändert Paketname, Manifest-Permissions/Provider und resources.arsc. Der erzeugte Klon ist nach der Änderung nicht mehr original signiert und kann anschließend über die MTApktool-Signaturfunktion signiert werden.",
+            modifier = Modifier.padding(20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun TextEditorSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("editor_pref", Context.MODE_PRIVATE) }
+    var wordWrap by remember { mutableStateOf(prefs.getBoolean("word_wrap", false)) }
+    var autoComplete by remember { mutableStateOf(prefs.getBoolean("auto_complete", true)) }
+    var lineNumbers by remember { mutableStateOf(prefs.getBoolean("show_line_numbers", true)) }
+    var stickyLineNumbers by remember { mutableStateOf(prefs.getBoolean("sticky_line_numbers", true)) }
+    var indentGuides by remember { mutableStateOf(prefs.getBoolean("show_indent_guides", true)) }
+    var wrapArrows by remember { mutableStateOf(prefs.getBoolean("show_wrap_arrows", true)) }
+    var autoIndent by remember { mutableStateOf(prefs.getBoolean("auto_indent", true)) }
+    var menuStyle by remember { mutableStateOf(prefs.getInt("menu_style", 0).coerceIn(0, 2)) }
+    var syntaxPosition by remember { mutableStateOf(prefs.getInt("syntax_position", 0).coerceAtLeast(0)) }
+    var syntaxMenuOpen by remember { mutableStateOf(false) }
+    val syntaxChoices = remember(context) {
+        runCatching {
+            val text = context.assets.open("availableSyntax.json").bufferedReader().use { it.readText() }
+            val array = JSONArray(text)
+            buildList {
+                add("Text")
+                for (index in 0 until array.length()) add(array.getJSONObject(index).optString("Syntax", "Syntax ${index + 1}"))
+            }
+        }.getOrElse { listOf("Text") }
+    }
+    val safeSyntaxPosition = syntaxPosition.takeIf { it in syntaxChoices.indices } ?: 0
+    fun bool(key: String, value: Boolean) { prefs.edit().putBoolean(key, value).apply() }
+    PageScaffold("Text Editor", onBack) {
+        SwitchRow("Zeilenumbruch", wordWrap) { wordWrap = it; bool("word_wrap", it) }
+        SwitchRow("Autovervollständigung", autoComplete) { autoComplete = it; bool("auto_complete", it) }
+        SwitchRow("Zeilennummern", lineNumbers) { lineNumbers = it; bool("show_line_numbers", it) }
+        SwitchRow("Sticky Zeilennummern", stickyLineNumbers) { stickyLineNumbers = it; bool("sticky_line_numbers", it) }
+        SwitchRow("Einrückungslinien", indentGuides) { indentGuides = it; bool("show_indent_guides", it) }
+        SwitchRow("Wrap-Pfeile", wrapArrows) { wrapArrows = it; bool("show_wrap_arrows", it) }
+        SwitchRow("Auto-Indent", autoIndent) { autoIndent = it; bool("auto_indent", it) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { syntaxMenuOpen = true }, modifier = Modifier.weight(1f)) { Text("Syntax: ${syntaxChoices.getOrElse(safeSyntaxPosition) { "Text" }}") }
+            DropdownMenu(expanded = syntaxMenuOpen, onDismissRequest = { syntaxMenuOpen = false }) {
+                syntaxChoices.forEachIndexed { index, label ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            syntaxPosition = index
+                            prefs.edit().putInt("syntax_position", index).apply()
+                            syntaxMenuOpen = false
+                        },
+                    )
+                }
+            }
+        }
+        Text("Auswahlmenü", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp), fontWeight = FontWeight.SemiBold)
+        listOf("Icon + Text", "Nur Text", "Nur Icon").forEachIndexed { index, label ->
+            Row(Modifier.fillMaxWidth().clickable { menuStyle = index; prefs.edit().putInt("menu_style", index).apply() }.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(menuStyle == index, onClick = { menuStyle = index; prefs.edit().putInt("menu_style", index).apply() }); Text(label)
+            }
+        }
     }
 }
 

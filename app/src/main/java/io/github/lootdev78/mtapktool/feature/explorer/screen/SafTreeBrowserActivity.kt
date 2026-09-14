@@ -40,7 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
+import io.github.lootdev78.mtapktool.core.theme.MTApktoolTheme
 import io.github.lootdev78.mtapktool.feature.explorer.model.CustomLocationStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,7 +50,7 @@ class SafTreeBrowserActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val tree = intent.getStringExtra(EXTRA_TREE_URI)?.let(Uri::parse) ?: run { finish(); return }
         setContent {
-            MTExplorerTheme {
+            MTApktoolTheme {
                 SafTreeBrowser(treeUri = tree, onClose = ::finish, onOpenFile = ::openFile)
             }
         }

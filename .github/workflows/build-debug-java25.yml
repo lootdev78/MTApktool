@@ -39,7 +39,7 @@ jobs:
           yes | sdkmanager --licenses || true
 
       - name: Make Java 25 wrapper executable
-        run: chmod +x ./gradlew25
+        run: chmod +x ./gradlew17 ./gradlew25
 
       - name: Verify pure Java 25 profile
         run: |
@@ -71,6 +71,11 @@ jobs:
             apktool-android \
             apksig-android \
             zipalign-android \
+            antisplit-m \
+            apkextractor \
+            apkcloner \
+            mh-editview \
+            mh-editor \
             brut.apktool/apktool-lib \
             brut.apktool/apktool-cli
           do

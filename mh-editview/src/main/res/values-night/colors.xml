@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="mt_editor_primary">#9ECAFF</color>
+    <color name="mt_editor_surface">#191C20</color>
+    <color name="mt_editor_surface_variant">#2C2C2C</color>
+    <color name="mt_editor_on_surface">#E2E2E6</color>
+    <color name="mt_editor_on_surface_variant">#C4C6D0</color>
+    <color name="mt_editor_popup_scrim">#33000000</color>
+</resources>

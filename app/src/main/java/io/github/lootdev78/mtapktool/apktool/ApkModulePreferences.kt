@@ -12,6 +12,8 @@ data class ApkModuleOptions(
     val includeFeatureSplits: Boolean = true,
     val keepExtractedSplits: Boolean = false,
     val cleanMetaInf: Boolean = true,
+    val antiSplitForceMerge: Boolean = false,
+    val antiSplitStripMetadata: Boolean = true,
     val compressionLevel: Int = 6,
 )
 
@@ -30,6 +32,8 @@ object ApkModulePreferences {
             includeFeatureSplits = p.getBoolean("antisplit_features", true),
             keepExtractedSplits = p.getBoolean("antisplit_keep_splits", false),
             cleanMetaInf = p.getBoolean("antisplit_clean_meta", true),
+            antiSplitForceMerge = p.getBoolean("antisplit_force_merge", false),
+            antiSplitStripMetadata = p.getBoolean("antisplit_strip_metadata", true),
             compressionLevel = p.getInt("antisplit_compression", 6).coerceIn(0, 9),
         )
     }
@@ -45,6 +49,8 @@ object ApkModulePreferences {
             .putBoolean("antisplit_features", value.includeFeatureSplits)
             .putBoolean("antisplit_keep_splits", value.keepExtractedSplits)
             .putBoolean("antisplit_clean_meta", value.cleanMetaInf)
+            .putBoolean("antisplit_force_merge", value.antiSplitForceMerge)
+            .putBoolean("antisplit_strip_metadata", value.antiSplitStripMetadata)
             .putInt("antisplit_compression", value.compressionLevel.coerceIn(0, 9))
             .apply()
     }

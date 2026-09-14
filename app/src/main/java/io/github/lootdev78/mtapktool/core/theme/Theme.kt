@@ -8,6 +8,9 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
@@ -70,4 +73,13 @@ fun MTExplorerTheme(
         typography = Typography,
         content = content
     )
+}
+
+/** Keeps every standalone MTApktool screen on the same persisted host theme. */
+@Composable
+fun MTApktoolTheme(content: @Composable () -> Unit) {
+    val context = LocalContext.current.applicationContext
+    val manager = remember(context) { ThemeManager(context) }
+    val mode by manager.themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
+    MTExplorerTheme(themeMode = mode, content = content)
 }

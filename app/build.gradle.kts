@@ -104,6 +104,10 @@ configurations.configureEach {
 
 dependencies {
     implementation(project(":apktool-android"))
+    implementation(project(":antisplit-m"))
+    implementation(project(":apkextractor"))
+    implementation(project(":apkcloner"))
+    implementation(project(":mh-editor"))
 
     implementation("io.coil-kt.coil3:coil:3.5.0")
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
@@ -113,6 +117,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)

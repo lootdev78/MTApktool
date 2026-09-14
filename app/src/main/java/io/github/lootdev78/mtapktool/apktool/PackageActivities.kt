@@ -63,10 +63,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
+import io.github.lootdev78.mtapktool.core.theme.MTApktoolTheme
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveInfo
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveReader
 import io.github.lootdev78.mtapktool.feature.explorer.util.sdkLabel
+import io.github.lootdev78.mtapktool.tools.ApkClonerPreferences
+import mt.modder.hub.apkCloner.util.ApkCloner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,7 +85,7 @@ class ApkInfoActivity : ComponentActivity() {
         val rightPath = intent.getStringExtra(EXTRA_RIGHT_PATH)
         val sourcePane = intent.getStringExtra(EXTRA_SOURCE_PANE)
         setContent {
-            MTExplorerTheme {
+            MTApktoolTheme {
                 ApkInfoPage(
                     file = file,
                     leftPath = leftPath,
@@ -127,6 +129,7 @@ private fun ApkInfoPage(
     var decode by remember { mutableStateOf(false) }
     var framework by remember { mutableStateOf(false) }
     var zipalign by remember { mutableStateOf(false) }
+    var clone by remember { mutableStateOf(false) }
 
     Scaffold(topBar = {
         TopAppBar(
@@ -182,6 +185,7 @@ private fun ApkInfoPage(
                     FunctionRow(Icons.Default.Build, "Dekompilieren") { functions = false; decode = true }
                     FunctionRow(Icons.Default.FolderOpen, "Als Framework importieren") { functions = false; framework = true }
                     FunctionRow(Icons.Default.Tune, "Zipalign") { functions = false; zipalign = true }
+                    FunctionRow(Icons.Default.ContentCopy, "APK klonen") { functions = false; clone = true }
                     FunctionRow(Icons.Default.Share, "Teilen") { share(context, file) }
                 }
             },
@@ -196,6 +200,13 @@ private fun ApkInfoPage(
     )
     if (framework) ApktoolFrameworkImportDialog(file, onDismiss = { framework = false })
     if (zipalign) ZipalignDialog(file, onDismiss = { zipalign = false })
+    if (clone && info != null) ApkCloneDialog(
+        file = file,
+        oldPackageName = info!!.packageName,
+        leftPath = leftPath,
+        rightPath = rightPath,
+        onDismiss = { clone = false },
+    )
 }
 
 @Composable
@@ -212,6 +223,111 @@ private fun FunctionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, l
         Icon(icon, null); Spacer(Modifier.width(14.dp)); Text(label, style = MaterialTheme.typography.titleMedium)
     }
 }
+
+@Composable
+private fun ApkCloneDialog(
+    file: File,
+    oldPackageName: String,
+    leftPath: String?,
+    rightPath: String?,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val prefs = remember(context) { ApkClonerPreferences.load(context) }
+    var newPackage by remember(oldPackageName) { mutableStateOf(suggestClonePackage(oldPackageName)) }
+    var output by remember(file.absolutePath, prefs.outputSameFolder, prefs.suffix) {
+        mutableStateOf(
+            if (prefs.outputSameFolder) ApkClonerPreferences.defaultOutput(file, prefs.suffix).absolutePath
+            else File(ApktoolSettings.outputRoot(context), file.nameWithoutExtension + prefs.suffix + ".apk").absolutePath
+        )
+    }
+    var running by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    fun chooseDirectory(path: String?) {
+        if (path.isNullOrBlank()) return
+        val dir = File(path).apply { if (!isDirectory) mkdirs() }
+        output = File(dir, file.nameWithoutExtension + prefs.suffix + ".apk").absolutePath
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!running) onDismiss() },
+        title = { Text("APK klonen") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Original: $oldPackageName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value = newPackage,
+                    onValueChange = { newPackage = it.trim() },
+                    label = { Text("Neuer Paketname") },
+                    supportingText = { Text("Manifest, eigene Permissions/Provider und resources.arsc werden angepasst") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                Text("Ausgabeort", modifier = Modifier.padding(top = 10.dp), fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { chooseDirectory(file.parentFile?.absolutePath) }, enabled = !running) { Text("GLEICHER") }
+                    if (!leftPath.isNullOrBlank()) TextButton(onClick = { chooseDirectory(leftPath) }, enabled = !running) { Text("LINKS") }
+                    if (!rightPath.isNullOrBlank()) TextButton(onClick = { chooseDirectory(rightPath) }, enabled = !running) { Text("RECHTS") }
+                }
+                OutlinedTextField(output, { output = it }, label = { Text("Ausgabe-APK") }, singleLine = true, enabled = !running, modifier = Modifier.fillMaxWidth())
+                if (running) Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(24.dp)); Spacer(Modifier.width(10.dp)); Text(status.ifBlank { "Verarbeitung …" })
+                } else if (status.isNotBlank()) {
+                    Text(status, modifier = Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !running) { Text("ABBRECHEN") } },
+        confirmButton = {
+            TextButton(
+                enabled = !running && isValidPackageName(newPackage) && output.isNotBlank(),
+                onClick = {
+                    running = true
+                    status = "APK Cloner …"
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val out = File(output)
+                                out.parentFile?.mkdirs()
+                                val cloner = ApkCloner(context, object : ApkCloner.ApkClonerCallBack {
+                                    override fun onProgress(progress: Int, total: Int) {
+                                        val message = if (total > 0) "${(progress * 100 / total).coerceIn(0, 100)} %" else "Verarbeitung …"
+                                        scope.launch(Dispatchers.Main) { status = message }
+                                    }
+                                    override fun onMessage(name: String) {
+                                        scope.launch(Dispatchers.Main) { status = name }
+                                    }
+                                })
+                                cloner.setPath(file.absolutePath, oldPackageName, newPackage, out.absolutePath)
+                                cloner.ProcessApk()
+                                if (!out.isFile) error("APK Cloner hat keine Ausgabedatei erzeugt")
+                                out
+                            }
+                        }
+                        running = false
+                        status = result.fold(
+                            { "Fertig: ${it.absolutePath} – anschließend signieren." },
+                            { it.message ?: it.toString() },
+                        )
+                    }
+                },
+            ) { Text("KLONEN") }
+        },
+    )
+}
+
+private fun suggestClonePackage(value: String): String = when {
+    value.isBlank() -> "clone.app"
+    value.endsWith(".clone") -> value + "2"
+    else -> value + ".clone"
+}
+
+private fun isValidPackageName(value: String): Boolean =
+    value.length in 3..220 && value.split('.').size >= 2 && value.split('.').all { part ->
+        part.isNotBlank() && (part[0].isLetter() || part[0] == '_') && part.all { it.isLetterOrDigit() || it == '_' }
+    }
 
 @Composable
 private fun ZipalignDialog(file: File, onDismiss: () -> Unit) {
@@ -278,7 +394,7 @@ class SplitPackageActivity : ComponentActivity() {
         val leftPath = intent.getStringExtra(EXTRA_LEFT_PATH)
         val rightPath = intent.getStringExtra(EXTRA_RIGHT_PATH)
         val sourcePane = intent.getStringExtra(EXTRA_SOURCE_PANE)
-        setContent { MTExplorerTheme { SplitPackagePage(file, leftPath, rightPath, sourcePane, ::finish) } }
+        setContent { MTApktoolTheme { SplitPackagePage(file, leftPath, rightPath, sourcePane, ::finish) } }
     }
     companion object {
         const val EXTRA_PATH = "path"
@@ -446,6 +562,8 @@ private fun SplitConvertDialog(
     var includeFeatures by remember { mutableStateOf(initial.includeFeatureSplits) }
     var keepSplits by remember { mutableStateOf(initial.keepExtractedSplits) }
     var cleanMeta by remember { mutableStateOf(initial.cleanMetaInf) }
+    var antiSplitForce by remember { mutableStateOf(initial.antiSplitForceMerge) }
+    var stripSplitMetadata by remember { mutableStateOf(initial.antiSplitStripMetadata) }
     var compression by remember { mutableStateOf(initial.compressionLevel.toString()) }
     var zipAlign by remember { mutableStateOf(true) }
     var force by remember { mutableStateOf(initial.zipForce) }
@@ -475,6 +593,8 @@ private fun SplitConvertDialog(
                 Row(Modifier.fillMaxWidth().clickable { includeOptional = !includeOptional }, verticalAlignment = Alignment.CenterVertically) { Checkbox(includeOptional, { includeOptional = it }); Text("Optionale Ressourcen/Assets übernehmen") }
                 Row(Modifier.fillMaxWidth().clickable { includeFeatures = !includeFeatures }, verticalAlignment = Alignment.CenterVertically) { Checkbox(includeFeatures, { includeFeatures = it }); Text("Feature-Splits übernehmen") }
                 Row(Modifier.fillMaxWidth().clickable { cleanMeta = !cleanMeta }, verticalAlignment = Alignment.CenterVertically) { Checkbox(cleanMeta, { cleanMeta = it }); Text("Ungültige META-INF Signaturen entfernen") }
+                Row(Modifier.fillMaxWidth().clickable { antiSplitForce = !antiSplitForce }, verticalAlignment = Alignment.CenterVertically) { Checkbox(antiSplitForce, { antiSplitForce = it }); Text("Force Merge bei abweichenden Versionscodes") }
+                Row(Modifier.fillMaxWidth().clickable { stripSplitMetadata = !stripSplitMetadata }, verticalAlignment = Alignment.CenterVertically) { Checkbox(stripSplitMetadata, { stripSplitMetadata = it }); Text("Split-Metadaten aus Manifest entfernen") }
                 Row(Modifier.fillMaxWidth().clickable { keepSplits = !keepSplits }, verticalAlignment = Alignment.CenterVertically) { Checkbox(keepSplits, { keepSplits = it }); Text("Extrahierte Splits zusätzlich behalten") }
                 OutlinedTextField(compression, { compression = it.filter(Char::isDigit).take(1) }, label = { Text("ZIP-Kompression (0–9)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
@@ -503,6 +623,8 @@ private fun SplitConvertDialog(
                         includeFeatureSplits = includeFeatures,
                         keepExtractedSplits = keepSplits,
                         cleanMetaInf = cleanMeta,
+                        antiSplitForceMerge = antiSplitForce,
+                        antiSplitStripMetadata = stripSplitMetadata,
                         compressionLevel = (compression.toIntOrNull() ?: 6).coerceIn(0, 9),
                     )
                     ApkModulePreferences.save(context, updated)
@@ -514,6 +636,8 @@ private fun SplitConvertDialog(
                             includeFeatureSplits = includeFeatures,
                             keepExtractedSplits = keepSplits,
                             cleanMetaInf = cleanMeta,
+                            antiSplitForceMerge = antiSplitForce,
+                            antiSplitStripMetadata = stripSplitMetadata,
                             compressionLevel = (compression.toIntOrNull() ?: 6).coerceIn(0, 9),
                             zipAlign = zipAlign,
                             alignment = alignment.toIntOrNull() ?: 4,

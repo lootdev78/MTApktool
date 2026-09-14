@@ -7,21 +7,19 @@ import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.DisplayMetrics
 import io.github.muntashirakon.zipalign.ZipAlign
-import java.io.BufferedOutputStream
+import io.github.lootdev78.mtapktool.antisplit.AntiSplitEngine
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
-import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
-import java.util.zip.ZipOutputStream
 
 /**
  * APKS/APKM/XAPK/APKX operations used by the explorer.
  *
  * Installation keeps the original split APKs and writes the selected entries into one
  * PackageInstaller session. Conversion prefers an existing universal APK. If a universal APK
- * is unavailable, a conservative AntiSplit compatibility merge is performed from the base APK.
+ * is unavailable, the integrated AntiSplit-M engine merges the selected base/config/feature APKs.
  */
 object SplitPackageTools {
     data class ConvertOptions(
@@ -30,6 +28,8 @@ object SplitPackageTools {
         val includeFeatureSplits: Boolean = true,
         val keepExtractedSplits: Boolean = false,
         val cleanMetaInf: Boolean = true,
+        val antiSplitForceMerge: Boolean = false,
+        val antiSplitStripMetadata: Boolean = true,
         val compressionLevel: Int = 6,
         val zipAlign: Boolean = true,
         val alignment: Int = 4,
@@ -149,7 +149,19 @@ object SplitPackageTools {
             if (universal != null) {
                 extractEntry(container, universal.path, work)
             } else {
-                mergeCompatibility(container, selected, work, options)
+                val antiSplitOptions = AntiSplitEngine.Options().apply {
+                    compressionLevel = options.compressionLevel.coerceIn(0, 9)
+                    forceMerge = options.antiSplitForceMerge
+                    stripSplitMetadata = options.antiSplitStripMetadata
+                    removeMetaInf = options.cleanMetaInf
+                }
+                AntiSplitEngine.mergeContainer(
+                    container,
+                    work,
+                    selected.map { it.path },
+                    antiSplitOptions,
+                    null,
+                )
             }
 
             if (options.zipAlign) {
@@ -236,68 +248,6 @@ object SplitPackageTools {
             zip.getInputStream(entry).use { input -> FileOutputStream(output).buffered().use { outputStream -> input.copyTo(outputStream) } }
         }
         return output
-    }
-
-    /**
-     * Conservative fallback merger used when no universal APK exists. The base APK owns the
-     * manifest/resource table. Code, native libraries and non-conflicting payload files from
-     * selected splits are folded into it. META-INF signing entries are removed by default because
-     * any merge invalidates the original signatures.
-     */
-    private fun mergeCompatibility(container: File, apks: List<SplitArchiveSupport.ApkEntry>, output: File, options: ConvertOptions) {
-        val base = apks.firstOrNull { it.preferred } ?: apks.first()
-        val tempDir = uniqueDirectory(output.parentFile ?: container.parentFile, ".split-merge-${System.nanoTime()}")
-        if (!tempDir.mkdirs()) throw IOException("Cannot create merge workspace")
-        try {
-            val extracted = mutableListOf<Pair<SplitArchiveSupport.ApkEntry, File>>()
-            ZipFile(container).use { outer ->
-                apks.forEachIndexed { index, item ->
-                    val temp = File(tempDir, "split-$index.apk")
-                    val outerEntry = outer.getEntry(item.path) ?: return@forEachIndexed
-                    outer.getInputStream(outerEntry).use { input -> temp.outputStream().buffered().use { out -> input.copyTo(out) } }
-                    extracted += item to temp
-                }
-            }
-            val baseFile = extracted.first { it.first.path == base.path }.second
-            val used = hashSetOf<String>()
-            val dexNames = hashSetOf<String>()
-            var nextDex = 2
-            ZipOutputStream(BufferedOutputStream(FileOutputStream(output))).use { zout ->
-                zout.setLevel(options.compressionLevel.coerceIn(0, 9))
-                fun copyZip(source: File, isBase: Boolean) {
-                    ZipFile(source).use { zin ->
-                        zin.entries().asSequence().filter { !it.isDirectory }.forEach { e ->
-                            var name = e.name
-                            val lower = name.lowercase(Locale.ROOT)
-                            if (options.cleanMetaInf && lower.startsWith("meta-inf/")) return@forEach
-                            if (!isBase) {
-                                if (lower == "androidmanifest.xml" || lower == "resources.arsc") return@forEach
-                                val always = lower.startsWith("lib/") || lower.matches(Regex("classes(\\d+)?\\.dex"))
-                                val optional = lower.startsWith("assets/") || lower.startsWith("res/") || lower.startsWith("unknown/") || lower.startsWith("kotlin/")
-                                if (!always && !(options.includeOptionalSplits && optional)) return@forEach
-                                if (lower.matches(Regex("classes(\\d+)?\\.dex"))) {
-                                    if (name in dexNames || name in used) {
-                                        while ("classes${nextDex}.dex" in used) nextDex++
-                                        name = "classes${nextDex++}.dex"
-                                    }
-                                    dexNames += name
-                                } else if (name in used) return@forEach
-                            }
-                            if (name in used) return@forEach
-                            used += name
-                            val outEntry = ZipEntry(name).apply { time = e.time }
-                            zout.putNextEntry(outEntry)
-                            zin.getInputStream(e).use { it.copyTo(zout, 1024 * 1024) }
-                            zout.closeEntry()
-                        }
-                    }
-                }
-                copyZip(baseFile, true)
-                extracted.filterNot { it.second == baseFile }.forEach { copyZip(it.second, false) }
-            }
-        } finally {
-            tempDir.deleteRecursively()
-        }
     }
 
     private fun isConfigurationSplit(name: String): Boolean =

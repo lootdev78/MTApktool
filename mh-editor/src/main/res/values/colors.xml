@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Exact light palette used by MTApktool Compose theme. -->
+    <color name="mt_primary">#0061A4</color>
+    <color name="mt_primary_variant">#00497D</color>
+    <color name="mt_on_primary">#FFFFFF</color>
+    <color name="mt_secondary">#535F70</color>
+    <color name="mt_on_secondary">#FFFFFF</color>
+    <color name="mt_background">#F0F0F0</color>
+    <color name="mt_surface">#FFFFFF</color>
+    <color name="mt_surface_variant">#D6D6D6</color>
+    <color name="mt_on_surface">#1F1F1F</color>
+    <color name="mt_on_surface_variant">#44474E</color>
+</resources>

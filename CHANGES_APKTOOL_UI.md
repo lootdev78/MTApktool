@@ -91,3 +91,11 @@ The code was statically checked in the provided environment. A complete Android 
 - Long-press file actions now expose Extract for supported archives.
 - Archive virtual paths are shown as `<archive>!/path` while browsing; Jump to path understands the same virtual path.
 - ZIP, 7z, tar, tar.gz, tar.xz, tar.zst, tar.bz2, tar.lz4, gzip and xz are wired through the existing archive dependencies. No new Gradle dependency or shell helper script was added.
+
+## 2026-09-15 integrated source modules
+
+- Added real AntiSplit-M source module and wired APKS/APKM/XAPK/APKX conversion to it.
+- Added APK Extractor to the left navigation with default `/apktool/apks` output and centralized settings.
+- Added APK Cloner as an `.apk` function with pane-aware/custom output selection.
+- Added MH TextEditor source modules and MTApktool theme/settings integration.
+- New modules use the same shared compile SDK/min SDK/NDK and Java 17/Java 25 build profiles as the existing project.

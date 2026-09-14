@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Close
@@ -59,6 +60,7 @@ fun SideBar(
     onRemoveBookmark: (String) -> Unit = {},
     onCustomLocationClick: (Uri) -> Unit = {},
     onAddLocation: () -> Unit = {},
+    onOpenApkExtractor: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onClose: () -> Unit
 ) {
@@ -166,6 +168,14 @@ fun SideBar(
             }
             HorizontalDivider()
         }
+
+        NavigationDrawerItem(
+            label = { Text("APK Extractor") },
+            selected = false,
+            onClick = { onClose(); onOpenApkExtractor() },
+            icon = { Icon(Icons.Default.Archive, contentDescription = null) }
+        )
+
 
         NavigationDrawerItem(
             label = {

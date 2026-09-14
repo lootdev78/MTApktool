@@ -6,14 +6,33 @@ import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
+import modder.hub.editor.MainActivity as TextEditorActivity
 
 object FileOpener {
+
+    private val editableExtensions = setOf(
+        "txt", "xml", "json", "json5", "yaml", "yml", "properties", "gradle", "kts",
+        "kt", "java", "smali", "md", "html", "htm", "css", "js", "ts", "sh", "bat",
+        "ini", "cfg", "conf", "toml", "csv", "log", "pro", "rules", "aidl"
+    )
 
     fun openFile(
         context: Context,
         file: File
     ) {
         val extension = file.extension.lowercase()
+
+        if (extension in editableExtensions) {
+            try {
+                context.startActivity(
+                    Intent(context, TextEditorActivity::class.java)
+                        .putExtra("path", file.absolutePath)
+                )
+                return
+            } catch (_: Exception) {
+                // Fall through to Android's external chooser if the embedded editor cannot open.
+            }
+        }
 
         val mimeType =
             MimeTypeMap
