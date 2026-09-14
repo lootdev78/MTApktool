@@ -142,9 +142,9 @@ public class MainActivity extends AppCompatActivity {
         editView.setShowIndentGuides(editor_pref.getBoolean("show_indent_guides", true));
         editView.setShowWrapArrows(editor_pref.getBoolean("show_wrap_arrows", true));
         editView.setAutoIndentEnabled(editor_pref.getBoolean("auto_indent", true));
-        boolean dark = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        editView.setSyntaxDarkMode(dark);
+        //boolean dark = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+        //        == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        //editView.setSyntaxDarkMode(dark);
     }
 
     private void initializeLogic() {
