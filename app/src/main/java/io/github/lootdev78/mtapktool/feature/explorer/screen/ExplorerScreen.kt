@@ -69,9 +69,12 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.navigation.NavHostController
+import io.github.lootdev78.mtapktool.apktool.ApkFileActionDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolBuildDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolDecodeDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolFrameworkImportDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolJobOutputDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolJobsViewModel
 import io.github.lootdev78.mtapktool.apktool.ApktoolSettingsDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolTaskPanel
@@ -135,11 +138,14 @@ fun ExplorerScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var targetItem by remember { mutableStateOf<FileItem?>(null) }
     var isSearching by remember { mutableStateOf(false) }
+    var showApkFileActions by remember { mutableStateOf(false) }
     var showApktoolDecode by remember { mutableStateOf(false) }
+    var showFrameworkImport by remember { mutableStateOf(false) }
     var showApktoolBuild by remember { mutableStateOf(false) }
     var showApktoolSettings by remember { mutableStateOf(false) }
     var showAppSettings by remember { mutableStateOf(false) }
     var showTaskPanel by remember { mutableStateOf(false) }
+    var selectedJobId by remember { mutableStateOf<String?>(null) }
     var showApktoolCli by remember { mutableStateOf(false) }
     var showApktoolOptions by remember { mutableStateOf(false) }
     var apktoolTarget by remember { mutableStateOf<File?>(null) }
@@ -243,8 +249,12 @@ fun ExplorerScreen(
                 targetItem?.let { item ->
                     val file = File(item.path)
                     apktoolTarget = file
-                    if (isApktoolProject(file)) showApktoolBuild = true
-                    else if (isApkLike(file)) showApktoolDecode = true
+                    if (isApktoolProject(file)) {
+                        showApktoolBuild = true
+                    } else if (isApkLike(file)) {
+                        if (file.extension.equals("apk", ignoreCase = true)) showApkFileActions = true
+                        else showApktoolDecode = true
+                    }
                 }
                 showContextMenu = false
             },
@@ -312,15 +322,42 @@ fun ExplorerScreen(
         )
     }
 
+    if (showApkFileActions) {
+        apktoolTarget?.takeIf { it.isFile && it.extension.equals("apk", ignoreCase = true) }?.let { file ->
+            ApkFileActionDialog(
+                file = file,
+                onDismiss = { showApkFileActions = false },
+                onDecode = {
+                    showApkFileActions = false
+                    showApktoolDecode = true
+                },
+                onImportFramework = {
+                    showApkFileActions = false
+                    showFrameworkImport = true
+                },
+            )
+        } ?: run { showApkFileActions = false }
+    }
+
+    if (showFrameworkImport) {
+        apktoolTarget?.takeIf { it.isFile && it.extension.equals("apk", ignoreCase = true) }?.let { file ->
+            ApktoolFrameworkImportDialog(
+                file = file,
+                onDismiss = { showFrameworkImport = false },
+                onJobQueued = { jobId -> selectedJobId = jobId },
+            )
+        } ?: run { showFrameworkImport = false }
+    }
+
     if (showApktoolDecode) {
         apktoolTarget?.takeIf(::isApkLike)?.let { file ->
-            ApktoolDecodeDialog(file = file, onDismiss = { showApktoolDecode = false }, onJobQueued = { showTaskPanel = true })
+            ApktoolDecodeDialog(file = file, onDismiss = { showApktoolDecode = false }, onJobQueued = { jobId -> selectedJobId = jobId })
         } ?: run { showApktoolDecode = false }
     }
 
     if (showApktoolBuild) {
         apktoolTarget?.takeIf(::isApktoolProject)?.let { project ->
-            ApktoolBuildDialog(project = project, onDismiss = { showApktoolBuild = false }, onJobQueued = { showTaskPanel = true })
+            ApktoolBuildDialog(project = project, onDismiss = { showApktoolBuild = false }, onJobQueued = { jobId -> selectedJobId = jobId })
         } ?: run { showApktoolBuild = false }
     }
 
@@ -331,16 +368,27 @@ fun ExplorerScreen(
     if (showAppSettings) {
         AppSettingsDialog(
             onDismiss = { showAppSettings = false },
-            onJobQueued = { showTaskPanel = true },
+            onJobQueued = { jobId -> selectedJobId = jobId },
         )
     }
 
     if (showApktoolCli) {
-        ApktoolCliDialog(onDismiss = { showApktoolCli = false }, onJobQueued = { showTaskPanel = true })
+        ApktoolCliDialog(onDismiss = { showApktoolCli = false }, onJobQueued = { jobId -> selectedJobId = jobId })
     }
 
-    BackHandler(enabled = showTaskPanel || canNavigateBack || isSearching) {
-        if (showTaskPanel) {
+    selectedJobId?.let { jobId ->
+        ApktoolJobOutputDialog(
+            jobId = jobId,
+            job = apktoolJobs.firstOrNull { it.id == jobId },
+            onHide = { selectedJobId = null },
+            onCancel = apktoolJobsViewModel::cancel,
+        )
+    }
+
+    BackHandler(enabled = showTaskPanel || selectedJobId != null || canNavigateBack || isSearching) {
+        if (selectedJobId != null) {
+            selectedJobId = null
+        } else if (showTaskPanel) {
             showTaskPanel = false
         } else if (isSearching) {
             isSearching = false
@@ -500,8 +548,10 @@ fun ExplorerScreen(
                             } else {
                                 when {
                                     isApkLike(File(item.path)) -> {
-                                        apktoolTarget = File(item.path)
-                                        showApktoolDecode = true
+                                        val apk = File(item.path)
+                                        apktoolTarget = apk
+                                        if (apk.extension.equals("apk", ignoreCase = true)) showApkFileActions = true
+                                        else showApktoolDecode = true
                                     }
 
                                     item.isDirectory -> viewModel.loadDirectory(
@@ -571,8 +621,10 @@ fun ExplorerScreen(
                             } else {
                                 when {
                                     isApkLike(File(item.path)) -> {
-                                        apktoolTarget = File(item.path)
-                                        showApktoolDecode = true
+                                        val apk = File(item.path)
+                                        apktoolTarget = apk
+                                        if (apk.extension.equals("apk", ignoreCase = true)) showApkFileActions = true
+                                        else showApktoolDecode = true
                                     }
 
                                     item.isDirectory -> viewModel.loadDirectory(
@@ -683,6 +735,10 @@ fun ExplorerScreen(
     ApktoolTaskPanel(
         visible = showTaskPanel,
         jobs = apktoolJobs,
+        onOpenJob = { jobId ->
+            showTaskPanel = false
+            selectedJobId = jobId
+        },
         onCancel = apktoolJobsViewModel::cancel,
         onCancelAll = apktoolJobsViewModel::cancelAll,
         onDismiss = { showTaskPanel = false },

@@ -77,7 +77,7 @@ public class AaptInvoker {
             cmd.add("--dir");
             cmd.add(resDir.getPath());
 
-            // Treats error that used to be valid in aapt1 as warnings in aapt2.
+            // Treats errors accepted by older packaging tools as warnings in aapt2.
             cmd.add("--legacy");
 
             if (mConfig.isNoCrunch()) {

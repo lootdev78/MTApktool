@@ -26,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +51,99 @@ fun isApkLike(file: File): Boolean =
     file.isFile && file.extension.lowercase() in setOf("apk", "apks", "xapk", "apkm")
 
 fun isApktoolProject(file: File): Boolean = file.isDirectory && File(file, "apktool.yml").isFile
+
+@Composable
+fun ApkFileActionDialog(
+    file: File,
+    onDismiss: () -> Unit,
+    onDecode: () -> Unit,
+    onImportFramework: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onDecode),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Dekompilieren", fontWeight = FontWeight.SemiBold)
+                        Text("APK mit Apktool in ein Projekt dekompilieren", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onImportFramework),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Als Framework importieren", fontWeight = FontWeight.SemiBold)
+                        Text("Diese APK über den vorhandenen Apktool-Frameworkpfad installieren", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
+    )
+}
+
+@Composable
+fun ApktoolFrameworkImportDialog(
+    file: File,
+    onDismiss: () -> Unit,
+    onJobQueued: (String) -> Unit = {},
+) {
+    val context = LocalContext.current
+    var tag by remember(file) { mutableStateOf("") }
+    val validTag = tag.isBlank() || tag.matches(Regex("[A-Za-z0-9._-]{1,80}"))
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Framework importieren") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(file.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "Ziel: ${ApktoolSettings.frameworkDir()}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                )
+                OutlinedTextField(
+                    value = tag,
+                    onValueChange = { tag = it.trim() },
+                    label = { Text("Tag (optional)") },
+                    supportingText = {
+                        Text(if (validTag) "Leer = Standard-Framework" else "Erlaubt: A-Z, a-z, 0-9, Punkt, _ und -")
+                    },
+                    isError = !validTag,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
+        confirmButton = {
+            Button(
+                enabled = file.isFile && file.extension.equals("apk", ignoreCase = true) && validTag,
+                onClick = {
+                    val command = buildString {
+                        append("apktool install-framework -p ")
+                        append(ShellTokenizer.quote(ApktoolSettings.frameworkDir()))
+                        if (tag.isNotBlank()) {
+                            append(" -t ").append(ShellTokenizer.quote(tag))
+                        }
+                        append(' ').append(ShellTokenizer.quote(file.absolutePath))
+                    }
+                    val jobId = ApktoolJobService.enqueue(
+                        context = context,
+                        title = "Framework ${file.name}",
+                        command = command,
+                    )
+                    onJobQueued(jobId)
+                    onDismiss()
+                },
+            ) { Text("IMPORTIEREN") }
+        },
+    )
+}
 
 @Composable
 fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
@@ -214,7 +306,6 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                     }
                     CheckRow("Rohwerte in XML ignorieren", ignoreRaw, enabled = resources) { ignoreRaw = it }
                     CheckRow("Assets nicht dekompilieren", noAssets) { noAssets = it }
-                    CheckRow("Hinzufügen \"APKTOOL_DUMMY\"", true, enabled = false) { }
                     CheckRow("Gebrochene Ressourcen beibehalten", keepBroken) { keepBroken = it }
                     CheckRow("Gespaltene Spuren entfernen", removeSplit) { removeSplit = it }
                     CheckRow("<Eigenschaft> entfernen", removeProperty) { removeProperty = it }
@@ -290,13 +381,12 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
         title = { Text("Projekt kompilieren \"${project.name}\"?") },
         text = {
             Column(modifier = Modifier.heightIn(max = 590.dp).verticalScroll(rememberScrollState())) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    RadioButton(selected = true, onClick = null)
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("aapt2 verwenden")
-                        Text(ApktoolSettings.aaptLabel(aapt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                SectionTitle("AAPT2")
+                Text(
+                    "AAPT2 ist immer aktiv. Wähle Automatisch für die empfohlene Gerätevariante.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 ChoicePicker(aapt, ApktoolSettings.aaptOptions, { ApktoolSettings.aaptLabel(it) }) { aapt = it }
                 if (aapt == "custom") {
                     OutlinedTextField(customAapt, { customAapt = it }, label = { Text("Custom AAPT2") }, singleLine = true, modifier = Modifier.fillMaxWidth())

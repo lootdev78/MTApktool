@@ -20,6 +20,7 @@ data class ApktoolJobInfo(
     val line: String,
     val output: String?,
     val createdAt: Long,
+    val log: String = "",
 ) {
     val isTerminal: Boolean get() = status in setOf("SUCCEEDED", "FAILED", "CANCELLED")
 }
@@ -40,16 +41,23 @@ class ApktoolJobsViewModel(application: Application) : AndroidViewModel(applicat
                 line = intent.getStringExtra(ApktoolJobService.EXTRA_LINE).orEmpty(),
                 output = intent.getStringExtra(ApktoolJobService.EXTRA_OUTPUT),
                 createdAt = intent.getLongExtra(ApktoolJobService.EXTRA_CREATED_AT, System.currentTimeMillis()),
+                log = intent.getStringExtra(ApktoolJobService.EXTRA_LOG).orEmpty(),
             )
-            _jobs.update { old -> (old.filterNot { it.id == id } + update).sortedByDescending { it.createdAt } }
+            _jobs.update { old ->
+                (old.filterNot { it.id == id } + update).sortedByDescending { it.createdAt }
+            }
         }
     }
 
     init {
         val app = getApplication<Application>()
         val filter = IntentFilter(ApktoolJobService.ACTION_STATUS)
-        if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        else @Suppress("DEPRECATION") app.registerReceiver(receiver, filter)
+        if (Build.VERSION.SDK_INT >= 33) {
+            app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            app.registerReceiver(receiver, filter)
+        }
         ApktoolJobService.query(app)
     }
 

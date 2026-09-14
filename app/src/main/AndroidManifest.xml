@@ -32,7 +32,9 @@
         <service
             android:name=".apktool.ApktoolJobService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync"
+            android:process=":apktool"
+            android:stopWithTask="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

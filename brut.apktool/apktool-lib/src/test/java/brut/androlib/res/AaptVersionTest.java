@@ -17,6 +17,7 @@
 package brut.androlib.res;
 
 import brut.androlib.BaseTest;
+import brut.androlib.exceptions.AndrolibException;
 
 import org.junit.*;
 import static org.junit.Assert.*;
@@ -27,7 +28,13 @@ public class AaptVersionTest extends BaseTest {
     public void testAapt2Iterations() throws Exception {
         assertEquals(2, AaptManager.getVersionFromString("Android Asset Packaging Tool (aapt) 2:17"));
         assertEquals(2, AaptManager.getVersionFromString("Android Asset Packaging Tool (aapt) 2.17"));
-        assertEquals(1, AaptManager.getVersionFromString("Android Asset Packaging Tool, v0.9"));
-        assertEquals(1, AaptManager.getVersionFromString("Android Asset Packaging Tool, v0.2-2679779"));
+
+        AndrolibException first = assertThrows(AndrolibException.class, () ->
+            AaptManager.getVersionFromString("Android Asset Packaging Tool, v0.9"));
+        assertTrue(first.getMessage().contains("AAPT2"));
+
+        AndrolibException second = assertThrows(AndrolibException.class, () ->
+            AaptManager.getVersionFromString("Android Asset Packaging Tool, v0.2-2679779"));
+        assertTrue(second.getMessage().contains("AAPT2"));
     }
 }

@@ -632,10 +632,7 @@ public class Main {
         if (cli.hasOption(buildAaptOption)) {
             try {
                 String aaptBinary = cli.getOptionValue(buildAaptOption);
-                if (AaptManager.getBinaryVersion(new File(aaptBinary)) == 1) {
-                    throw new AndrolibException("Legacy aapt is no longer supported.");
-                }
-
+                AaptManager.getBinaryVersion(new File(aaptBinary));
                 config.setAaptBinary(aaptBinary);
             } catch (AndrolibException ex) {
                 System.err.println(ex.getMessage());

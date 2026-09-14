@@ -289,7 +289,7 @@ public final class ApktoolCommandRunner {
         if (cli.hasOption("aapt")) {
             File aapt = new File(cli.getOptionValue("aapt"));
             if (!aapt.isFile()) throw new IOException("AAPT2 not found: " + aapt);
-            if (AaptManager.getBinaryVersion(aapt) == 1) throw new AndrolibException("Legacy aapt is no longer supported");
+            AaptManager.getBinaryVersion(aapt);
             c.setAaptBinary(aapt.getAbsolutePath());
         }
 

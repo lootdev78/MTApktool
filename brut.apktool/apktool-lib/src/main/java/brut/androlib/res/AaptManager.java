@@ -107,8 +107,8 @@ public final class AaptManager {
             return 2; // Prior to Android SDK 26.0.2
         }
         if (versionStr.startsWith("Android Asset Packaging Tool, v0.")) {
-            return 1;
+            throw new AndrolibException("Legacy AAPT is not supported. AAPT2 is required.");
         }
-        throw new AndrolibException("Could not identify aapt binary version: " + versionStr);
+        throw new AndrolibException("Could not identify AAPT2 binary version: " + versionStr);
     }
 }

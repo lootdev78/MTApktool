@@ -5,7 +5,7 @@ This update wires the file-manager UI to the bundled Apktool runtime instead of 
 ## Apktool runtime and frameworks
 
 - Decode/build/CLI jobs are enqueued through `ApktoolJobService` and executed by the bundled `ApktoolCommandRunner`.
-- Bundled SDK 33/34/35/36 framework APK bytes are stored as trackable `.bin` assets and copied to normal `.apk` framework names at runtime. This avoids both missing ignored APK assets and missing `R.raw` IDs in CI builds.
+- Bundled SDK 33/34/35/36 frameworks are stored as their real `.apk` assets under `apktool-android/src/main/assets/apktool/frameworks/`; `.gitignore` explicitly keeps those source APKs tracked.
 - The default framework mirror `1.apk` is provisioned from SDK 36 and tagged framework files remain available as `1-sdk33.apk` … `1-sdk36.apk`.
 - Framework manager, AAPT2 manager, signatures, job/threads paths, runtime info and the complete original Apktool CLI remain reachable from **Einstellungen > Erstellen & Dekodieren** / **Apktool CLI**.
 
@@ -62,5 +62,23 @@ The code was statically checked in the provided environment. A complete Android 
 - Restored the original two GitHub Actions workflow files; no `.github/scripts` helper is required.
 - Java 17 and Java 25 verify the same SDK 36 / NDK 29 profile inline, including the pinned `libs.versions.toml` values.
 - All Android application/library modules are checked for the shared `mtapktool.compileSdk` / `mtapktool.minSdk` wiring.
-- Bundled framework APK bytes now use tracked `.bin` asset names and are copied to normal `.apk` framework names at runtime. This avoids both the repository `*.apk` ignore rule and missing `R.raw.apktool_framework_sdk_*` symbols.
+- Bundled framework files use their real `.apk` asset names. The repository exception keeps them tracked while `Toolchain` reads them directly from assets, so no generated `R.raw.apktool_framework_sdk_*` symbols are required.
 - The bundled debug keystore is likewise stored as a `.bin` asset so the `*.keystore` ignore rule cannot remove it in CI checkouts.
+## AAPT2-only / build-script cleanup
+
+- Removed the obsolete AAPT toggle and every AAPT1 reference from the app UI.
+- Removed the `APKTOOL_DUMMY` switches from both decode/settings UIs; Apktool's internal unresolved-resource handling remains internal.
+- The AAPT2 Manager now exposes only meaningful AAPT2 choices, validates custom binaries as AAPT2, and migrates the old `sdk36` alias to the automatic recommended selection.
+- Core CLI and Android runner reject legacy AAPT binaries instead of carrying an AAPT1 execution branch.
+- Removed accidental Git merge markers from `app/build.gradle.kts`; Compose and `BuildConfig` are enabled in one clean `buildFeatures` block.
+- The JDK 17 legacy Gradle profile keeps Gradle 8.11.1/AGP 8.10.1 and suppresses only the Kotlin plugin's future Gradle-deprecation warning; the separate JDK 25 workflow remains on Gradle 9.1/AGP 9.0.
+
+
+## Job-Output / responsive Apktool runtime
+- Apktool jobs run in a dedicated Android process (`:apktool`) so decode/build cannot block the Compose UI process.
+- Worker threads use background priority and UI status broadcasts are throttled; the complete on-device log file is still written without throttling.
+- A bounded live output tail is shown in a hideable job dialog. Hiding the dialog does not stop the task.
+- Jobs can be reopened by swiping the bottom navigation from the right edge toward the center and tapping `OUTPUT` on a task.
+- Tapping a normal `.apk` now opens an action chooser: `Dekompilieren` or `Als Framework importieren`.
+- Framework import uses the same `/apktool/frameworks` directory/`install-framework` command as the existing Framework Manager and runs as a background Apktool job.
+- `.apks`, `.xapk` and `.apkm` continue directly to the split/container decode dialog.

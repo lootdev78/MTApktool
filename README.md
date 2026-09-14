@@ -39,7 +39,7 @@ The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and its fram
 - Inside an Apktool project the pane shows **Dieses Projekt kompilieren**.
 - Build/decode/settings dialogs follow the Apktool-M screenshot ordering with the MTExplorer Material3 theme.
 - Framework Manager, AAPT2 Manager, signing v1-v4, 1-4 top-level workers and 1-4 Apktool threads are included.
-- AAPT1 is intentionally not exposed.
+- AAPT2 is the only supported Android resource packager; the UI and custom-binary validation are AAPT2-only.
 
 ## GitHub Actions
 
@@ -62,3 +62,6 @@ The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and its fram
 - Decode/build dialogs now expose previously unreachable Apktool flags such as only-manifest, resource resolve mode, ignore-raw-values, no-assets, force and no-crunch.
 - AAPT2 selections are validated before saving; custom binaries must execute and identify as AAPT2.
 - APK signing rejects an all-disabled scheme configuration and v4 signatures use the conventional `<output.apk>.idsig` path.
+
+### Apktool jobs
+Heavy Apktool operations are executed by the foreground `ApktoolJobService` in the dedicated `:apktool` process. Live output can be hidden without cancelling a task and reopened from the right-side Task panel. A plain APK click offers both decode and framework installation.

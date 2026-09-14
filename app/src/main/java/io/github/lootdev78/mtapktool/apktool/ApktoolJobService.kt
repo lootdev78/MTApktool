@@ -1,5 +1,6 @@
 package io.github.lootdev78.mtapktool.apktool
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.Process
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import io.github.lootdev78.mtapktool.MainActivity
 import io.github.apktool.android.runtime.ApktoolCommandRunner
@@ -26,6 +29,11 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
+/**
+ * Runs Apktool outside the UI process. Heavy resource/dex decoding therefore
+ * cannot block Compose or cause UI GC pauses. Status is streamed back through
+ * package-scoped broadcasts and intentionally throttled.
+ */
 class ApktoolJobService : Service() {
     companion object {
         const val ACTION_ENQUEUE = "io.github.lootdev78.mtapktool.apktool.ENQUEUE"
@@ -40,6 +48,7 @@ class ApktoolJobService : Service() {
         const val EXTRA_COMMAND = "command"
         const val EXTRA_STATUS = "status"
         const val EXTRA_LINE = "line"
+        const val EXTRA_LOG = "log"
         const val EXTRA_OUTPUT = "output"
         const val EXTRA_CREATED_AT = "created_at"
         const val EXTRA_POST_ALIGN = "post_align"
@@ -57,13 +66,14 @@ class ApktoolJobService : Service() {
         private const val EXTRA_CREATE_NOMEDIA = "create_nomedia"
         private const val EXTRA_REMOVE_SPLIT = "remove_split"
         private const val EXTRA_REMOVE_PROPERTY = "remove_property"
+        private const val EXTRA_NOTIFY_DONE = "notify_done"
+        private const val EXTRA_SUPPRESS_NOTIFY_WHILE_OPEN = "suppress_notify_while_open"
 
         private const val CHANNEL = "mtapktool_jobs"
         private const val DONE_CHANNEL = "mtapktool_done"
         private const val NOTIFICATION_ID = 2317
-
-        @Volatile private var appVisible = false
-        fun setAppVisible(visible: Boolean) { appVisible = visible }
+        private const val MAX_UI_LOG_CHARS = 64 * 1024
+        private const val UI_UPDATE_INTERVAL_MS = 180L
 
         fun enqueue(
             context: Context,
@@ -80,6 +90,7 @@ class ApktoolJobService : Service() {
         ): String {
             val id = UUID.randomUUID().toString()
             val sign = signature ?: ApktoolSignatureDefaults(v3 = true)
+            val general = ApktoolSettings.generalDefaults(context)
             val intent = Intent(context, ApktoolJobService::class.java).apply {
                 action = ACTION_ENQUEUE
                 putExtra(EXTRA_JOB_ID, id)
@@ -98,15 +109,23 @@ class ApktoolJobService : Service() {
                 putExtra(EXTRA_CREATE_NOMEDIA, createNomedia)
                 putExtra(EXTRA_REMOVE_SPLIT, removeSplitTraces)
                 putExtra(EXTRA_REMOVE_PROPERTY, removePropertyTags)
+                // Settings are snapshotted in the UI process. This keeps the
+                // dedicated :apktool process independent from multi-process prefs.
+                putExtra(EXTRA_WORKERS, ApktoolSettings.maxWorkers(context))
+                putExtra(EXTRA_NOTIFY_DONE, general.notifyOnCompletion)
+                putExtra(EXTRA_SUPPRESS_NOTIFY_WHILE_OPEN, general.suppressCompletionWhileOpen)
             }
             ContextCompat.startForegroundService(context, intent)
             return id
         }
 
         fun cancel(context: Context, id: String) {
-            runCatching { context.startService(Intent(context, ApktoolJobService::class.java).apply {
-                action = ACTION_CANCEL; putExtra(EXTRA_JOB_ID, id)
-            }) }
+            runCatching {
+                context.startService(Intent(context, ApktoolJobService::class.java).apply {
+                    action = ACTION_CANCEL
+                    putExtra(EXTRA_JOB_ID, id)
+                })
+            }
         }
 
         fun cancelAll(context: Context) {
@@ -118,9 +137,12 @@ class ApktoolJobService : Service() {
         }
 
         fun setWorkerLimit(context: Context, workers: Int) {
-            runCatching { context.startService(Intent(context, ApktoolJobService::class.java).apply {
-                action = ACTION_SET_WORKERS; putExtra(EXTRA_WORKERS, workers.coerceIn(1, 4))
-            }) }
+            runCatching {
+                context.startService(Intent(context, ApktoolJobService::class.java).apply {
+                    action = ACTION_SET_WORKERS
+                    putExtra(EXTRA_WORKERS, workers.coerceIn(1, 4))
+                })
+            }
         }
     }
 
@@ -143,12 +165,16 @@ class ApktoolJobService : Service() {
         val createNomedia: Boolean,
         val removeSplitTraces: Boolean,
         val removePropertyTags: Boolean,
+        val notifyOnCompletion: Boolean,
+        val suppressCompletionWhileOpen: Boolean,
         val createdAt: Long = System.currentTimeMillis(),
         @Volatile var status: Status = Status.QUEUED,
         @Volatile var line: String = "Queued",
         @Volatile var output: String? = null,
         @Volatile var cancelRequested: Boolean = false,
         @Volatile var future: Future<*>? = null,
+        @Volatile var lastBroadcastAt: Long = 0L,
+        val logTail: StringBuilder = StringBuilder(),
     )
 
     private val records = ConcurrentHashMap<String, Record>()
@@ -157,9 +183,10 @@ class ApktoolJobService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannels()
-        val n = ApktoolSettings.maxWorkers(this)
-        executor = ThreadPoolExecutor(n, n, 30L, TimeUnit.SECONDS, LinkedBlockingQueue()) { runnable ->
-            Thread(runnable, "mtapktool-worker").apply { priority = Thread.NORM_PRIORITY - 1 }
+        // Do not read SharedPreferences in this secondary process. A job carries
+        // the current worker setting and resizes the pool before it is submitted.
+        executor = ThreadPoolExecutor(1, 1, 30L, TimeUnit.SECONDS, LinkedBlockingQueue()) { runnable ->
+            Thread(runnable, "mtapktool-worker").apply { priority = Thread.MIN_PRIORITY }
         }
         executor.allowCoreThreadTimeOut(false)
     }
@@ -168,9 +195,12 @@ class ApktoolJobService : Service() {
         when (intent?.action) {
             ACTION_ENQUEUE -> enqueueInternal(intent)
             ACTION_CANCEL -> intent.getStringExtra(EXTRA_JOB_ID)?.let(::cancelInternal)
-            ACTION_CANCEL_ALL -> { records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }; executor.purge() }
-            ACTION_QUERY -> records.values.sortedBy { it.createdAt }.forEach(::broadcast)
-            ACTION_SET_WORKERS -> resizePool(intent.getIntExtra(EXTRA_WORKERS, ApktoolSettings.maxWorkers(this)).coerceIn(1, 4))
+            ACTION_CANCEL_ALL -> {
+                records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }
+                executor.purge()
+            }
+            ACTION_QUERY -> records.values.sortedBy { it.createdAt }.forEach { broadcast(it, force = true) }
+            ACTION_SET_WORKERS -> resizePool(intent.getIntExtra(EXTRA_WORKERS, 1).coerceIn(1, 4))
         }
         updateForegroundState()
         return START_NOT_STICKY
@@ -197,18 +227,28 @@ class ApktoolJobService : Service() {
             createNomedia = intent.getBooleanExtra(EXTRA_CREATE_NOMEDIA, false),
             removeSplitTraces = intent.getBooleanExtra(EXTRA_REMOVE_SPLIT, false),
             removePropertyTags = intent.getBooleanExtra(EXTRA_REMOVE_PROPERTY, false),
+            notifyOnCompletion = intent.getBooleanExtra(EXTRA_NOTIFY_DONE, true),
+            suppressCompletionWhileOpen = intent.getBooleanExtra(EXTRA_SUPPRESS_NOTIFY_WHILE_OPEN, true),
         )
+        appendLog(record, "$ ${record.command}")
+        appendLog(record, "Queued")
         records[id] = record
         startForeground(NOTIFICATION_ID, notification("Queued: ${record.title}", true))
-        broadcast(record)
+        resizePool(intent.getIntExtra(EXTRA_WORKERS, 1).coerceIn(1, 4))
+        broadcast(record, force = true)
         record.future = executor.submit { runJob(record) }
     }
 
     private fun runJob(record: Record) {
-        if (record.cancelRequested || Thread.currentThread().isInterrupted) { finishCancelled(record); return }
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND) }
+        if (record.cancelRequested || Thread.currentThread().isInterrupted) {
+            finishCancelled(record)
+            return
+        }
         record.status = Status.RUNNING
         record.line = "Starting…"
-        broadcast(record)
+        appendLog(record, record.line)
+        broadcast(record, force = true)
         updateForegroundState()
         var log: PrintWriter? = null
         try {
@@ -223,12 +263,15 @@ class ApktoolJobService : Service() {
                 checkCancelled(record)
                 record.line = line.takeLast(600)
                 writer.println(line)
+                appendLog(record, line)
                 broadcast(record)
             }
             val runner = ApktoolCommandRunner(toolchain, listener)
             var result = if (SplitArchiveSupport.isSplitDecodeCommand(record.command)) {
                 SplitArchiveSupport.executeDecode(record.command, toolchain, listener)
-            } else runner.execute(record.command)
+            } else {
+                runner.execute(record.command)
+            }
             checkCancelled(record)
 
             if (result.isSuccess && !record.postDecodeRoot.isNullOrBlank()) {
@@ -242,10 +285,15 @@ class ApktoolJobService : Service() {
 
             if (result.isSuccess && (record.postAlign || record.postSign)) {
                 result = runner.postProcessBuild(
-                    result, record.postAlign, record.postSign,
+                    result,
+                    record.postAlign,
+                    record.postSign,
                     record.signKeystore.takeIf { it.isNotBlank() },
                     record.signPassword.ifBlank { "android" },
-                    record.signV1, record.signV2, record.signV3, record.signV4,
+                    record.signV1,
+                    record.signV2,
+                    record.signV3,
+                    record.signV4,
                 )
             }
             checkCancelled(record)
@@ -258,19 +306,38 @@ class ApktoolJobService : Service() {
             record.output = result.output?.absolutePath
             record.status = if (result.isSuccess) Status.SUCCEEDED else Status.FAILED
             record.line = result.summary + (record.output?.let { "\n$it" } ?: "") + "\nLog: ${logFile.absolutePath}"
+            appendLog(record, result.summary)
+            record.output?.let { appendLog(record, "Output: $it") }
+            appendLog(record, "Log: ${logFile.absolutePath}")
         } catch (_: CancellationException) {
-            finishCancelled(record, false)
+            finishCancelled(record, send = false)
         } catch (interrupted: InterruptedException) {
-            Thread.currentThread().interrupt(); finishCancelled(record, false)
+            Thread.currentThread().interrupt()
+            finishCancelled(record, send = false)
         } catch (t: Throwable) {
-            if (record.cancelRequested || Thread.currentThread().isInterrupted || causedByInterruption(t)) finishCancelled(record, false)
-            else { record.status = Status.FAILED; record.line = stackMessage(t); log?.println(record.line) }
+            if (record.cancelRequested || Thread.currentThread().isInterrupted || causedByInterruption(t)) {
+                finishCancelled(record, send = false)
+            } else {
+                record.status = Status.FAILED
+                record.line = stackMessage(t)
+                appendLog(record, record.line)
+                log?.println(record.line)
+            }
         } finally {
             log?.close()
-            broadcast(record)
+            broadcast(record, force = true)
             maybeNotifyCompletion(record)
             updateForegroundState()
             Thread.interrupted()
+        }
+    }
+
+    private fun appendLog(record: Record, text: String) {
+        if (text.isBlank()) return
+        synchronized(record.logTail) {
+            record.logTail.append(text).append('\n')
+            val extra = record.logTail.length - MAX_UI_LOG_CHARS
+            if (extra > 0) record.logTail.delete(0, extra)
         }
     }
 
@@ -279,7 +346,10 @@ class ApktoolJobService : Service() {
     }
 
     private fun finishCancelled(record: Record, send: Boolean = true) {
-        record.status = Status.CANCELLED; record.line = "Cancelled"; if (send) broadcast(record)
+        record.status = Status.CANCELLED
+        record.line = "Cancelled"
+        appendLog(record, record.line)
+        if (send) broadcast(record, force = true)
     }
 
     private fun cancelInternal(id: String) {
@@ -289,21 +359,40 @@ class ApktoolJobService : Service() {
         val queued = record.status == Status.QUEUED
         record.future?.cancel(true)
         executor.purge()
-        if (queued) finishCancelled(record) else { record.line = "Cancelling…"; broadcast(record) }
+        if (queued) {
+            finishCancelled(record)
+        } else {
+            record.line = "Cancelling…"
+            appendLog(record, record.line)
+            broadcast(record, force = true)
+        }
     }
 
     private fun resizePool(workers: Int) {
         val n = workers.coerceIn(1, 4)
-        if (n > executor.maximumPoolSize) { executor.maximumPoolSize = n; executor.corePoolSize = n }
-        else { executor.corePoolSize = n; executor.maximumPoolSize = n }
-        updateForegroundState()
+        if (n > executor.maximumPoolSize) {
+            executor.maximumPoolSize = n
+            executor.corePoolSize = n
+        } else {
+            executor.corePoolSize = n
+            executor.maximumPoolSize = n
+        }
     }
 
-    private fun broadcast(record: Record) {
+    private fun broadcast(record: Record, force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - record.lastBroadcastAt < UI_UPDATE_INTERVAL_MS) return
+        record.lastBroadcastAt = now
+        val logTail = synchronized(record.logTail) { record.logTail.toString() }
         sendBroadcast(Intent(ACTION_STATUS).apply {
             setPackage(packageName)
-            putExtra(EXTRA_JOB_ID, record.id); putExtra(EXTRA_TITLE, record.title); putExtra(EXTRA_COMMAND, record.command)
-            putExtra(EXTRA_STATUS, record.status.name); putExtra(EXTRA_LINE, record.line); putExtra(EXTRA_OUTPUT, record.output)
+            putExtra(EXTRA_JOB_ID, record.id)
+            putExtra(EXTRA_TITLE, record.title)
+            putExtra(EXTRA_COMMAND, record.command)
+            putExtra(EXTRA_STATUS, record.status.name)
+            putExtra(EXTRA_LINE, record.line)
+            putExtra(EXTRA_LOG, logTail)
+            putExtra(EXTRA_OUTPUT, record.output)
             putExtra(EXTRA_CREATED_AT, record.createdAt)
         })
     }
@@ -313,43 +402,67 @@ class ApktoolJobService : Service() {
         val active = records.values.count { !it.status.isTerminal() }
         val running = records.values.count { it.status == Status.RUNNING }
         val queued = records.values.count { it.status == Status.QUEUED }
-        if (active == 0) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
-        else getSystemService(NotificationManager::class.java).notify(
-            NOTIFICATION_ID,
-            notification("$running running • $queued queued • ${executor.corePoolSize}/4 runner", true),
-        )
+        if (active == 0) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else {
+            getSystemService(NotificationManager::class.java).notify(
+                NOTIFICATION_ID,
+                notification("$running running • $queued queued • ${executor.corePoolSize}/4 runner", true),
+            )
+        }
     }
 
     private fun maybeNotifyCompletion(record: Record) {
         if (!record.status.isTerminal() || record.status == Status.CANCELLED) return
-        val general = ApktoolSettings.generalDefaults(this)
-        if (!general.notifyOnCompletion || (general.suppressCompletionWhileOpen && appVisible)) return
+        if (!record.notifyOnCompletion || (record.suppressCompletionWhileOpen && isUiProcessVisible())) return
         val text = if (record.status == Status.SUCCEEDED) "Abgeschlossen" else "Fehlgeschlagen"
         runCatching {
             getSystemService(NotificationManager::class.java).notify(
                 3000 + (record.id.hashCode() and 0x0fff),
                 Notification.Builder(this, DONE_CHANNEL)
-                    .setContentTitle(record.title).setContentText(text)
+                    .setContentTitle(record.title)
+                    .setContentText(text)
                     .setSmallIcon(if (record.status == Status.SUCCEEDED) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
-                    .setContentIntent(openAppIntent()).setAutoCancel(true).build(),
+                    .setContentIntent(openAppIntent())
+                    .setAutoCancel(true)
+                    .build(),
             )
+        }
+    }
+
+    private fun isUiProcessVisible(): Boolean {
+        val manager = getSystemService(ActivityManager::class.java) ?: return false
+        return manager.runningAppProcesses.orEmpty().any { process ->
+            process.processName == packageName &&
+                process.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
         }
     }
 
     private fun notification(text: String, ongoing: Boolean): Notification {
         val stopAll = PendingIntent.getService(
-            this, 1, Intent(this, ApktoolJobService::class.java).setAction(ACTION_CANCEL_ALL),
+            this,
+            1,
+            Intent(this, ApktoolJobService::class.java).setAction(ACTION_CANCEL_ALL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL)
-            .setContentTitle("MTApktool").setContentText(text).setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentIntent(openAppIntent()).setOnlyAlertOnce(true).setOngoing(ongoing).setProgress(0, 0, ongoing)
+            .setContentTitle("MTApktool")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentIntent(openAppIntent())
+            .setOnlyAlertOnce(true)
+            .setOngoing(ongoing)
+            .setProgress(0, 0, ongoing)
             .addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Alle stoppen", stopAll).build())
             .build()
     }
 
     private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
-        this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        this,
+        0,
+        Intent(this, MainActivity::class.java),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
     private fun createChannels() {
@@ -359,29 +472,49 @@ class ApktoolJobService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        if (::executor.isInitialized) { records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }; executor.purge() }
-        stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId)
+        if (::executor.isInitialized) {
+            records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }
+            executor.purge()
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf(startId)
     }
 
-    override fun onDestroy() { if (::executor.isInitialized) executor.shutdownNow(); super.onDestroy() }
+    override fun onDestroy() {
+        if (::executor.isInitialized) executor.shutdownNow()
+        super.onDestroy()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun Status.isTerminal() = this == Status.SUCCEEDED || this == Status.FAILED || this == Status.CANCELLED
     private fun stamp() = SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())
+
     private fun deleteRecursivelyCancellable(file: File) {
         if (Thread.currentThread().isInterrupted) throw CancellationException("Cancelled")
         if (!file.exists()) return
         if (file.isDirectory) file.listFiles()?.forEach(::deleteRecursivelyCancellable)
         if (!file.delete() && file.exists()) error("Kann nicht gelöscht werden: ${file.absolutePath}")
     }
+
     private fun causedByInterruption(t: Throwable): Boolean {
         var c: Throwable? = t
-        repeat(12) { if (c is InterruptedException || c is CancellationException) return true; c = c?.cause; if (c == null) return false }
+        repeat(12) {
+            if (c is InterruptedException || c is CancellationException) return true
+            c = c?.cause
+            if (c == null) return false
+        }
         return false
     }
+
     private fun stackMessage(t: Throwable): String {
-        val b = StringBuilder(t.toString()); var c = t.cause
-        repeat(6) { if (c == null) return@repeat; b.append("\ncaused by: ").append(c); c = c?.cause }
+        val b = StringBuilder(t.toString())
+        var c = t.cause
+        repeat(6) {
+            if (c == null) return@repeat
+            b.append("\ncaused by: ").append(c)
+            c = c?.cause
+        }
         return b.toString()
     }
 }

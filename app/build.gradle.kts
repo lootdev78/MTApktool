@@ -67,6 +67,7 @@ android {
 
         versionCode = 1
         versionName = "1.0"
+<<<<<<< HEAD
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -80,6 +81,10 @@ android {
             "VERSION_NAME",
             "\"1.0\""
         )
+=======
+        ndk { abiFilters += "arm64-v8a" }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+>>>>>>> b8d7c0e (fix(ci))
     }
 
     buildTypes {

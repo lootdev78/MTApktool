@@ -146,16 +146,14 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
                     item { SettingSwitchRow("Assets nicht dekompilieren", "Apktool --no-assets", decode.noAssets) { saveDecode(decode.copy(noAssets = it)) } }
                     item { SettingSwitchRow("Vorhandenes Projekt überschreiben", "Apktool decode --force", decode.force) { saveDecode(decode.copy(force = it)) } }
                     item { SettingNavigationRow("Verwaltung von Rahmenwerken", "Installierte Frameworks auswählen/importieren/löschen", ApktoolSettings.frameworkLabel(framework)) { overlay = SettingsOverlay.FRAMEWORKS } }
-                    item { SettingNavigationRow("Austausch von Werkzeugen", "AAPT2 auswählen oder benutzerdefiniertes AAPT2 verwenden", ApktoolSettings.aaptLabel(aapt)) { overlay = SettingsOverlay.AAPT2 } }
+                    item { SettingNavigationRow("AAPT2 Manager", "AAPT2-Variante auswählen, prüfen oder benutzerdefiniertes AAPT2 verwenden", ApktoolSettings.aaptLabel(aapt)) { overlay = SettingsOverlay.AAPT2 } }
                     item { SettingValueRow("Ausgabeverzeichnis", "Vorgabe-Ausgabeverzeichnis", ApktoolSettings.outputRoot(context)) { outputDialog = true } }
-                    item { SettingSwitchRow("aapt2 verwenden", "AAPT1 ist absichtlich nicht verfügbar", true, false) {} }
                     item { SettingSwitchRow("Debug-Informationen schreiben", "Smali-Debugdaten (.local, .param, .line)", !decode.noDebugInfo, !decode.noSources) { saveDecode(decode.copy(noDebugInfo = !it)) } }
                     item { SettingSwitchRow("apk als debuggingfähig einstellen", "android:debuggable beim Build aktivieren", build.debuggable) { saveBuild(build.copy(debuggable = it)) } }
                     item { SettingSwitchRow("Verwenden Sie \"Register\" statt \"Lokale\".", "Smali mit .registers statt .locals ausgeben", decode.useRegisters, !decode.noSources) { saveDecode(decode.copy(useRegisters = it)) } }
                     item { SettingSwitchRow("Ausführlich", "Verbose-Modus für Decode/Build", decode.verbose || build.verbose) { saveDecode(decode.copy(verbose = it)); saveBuild(build.copy(verbose = it)) } }
                     item { SettingSwitchRow("Original anpassen", "Apktool --match-original", decode.matchOriginal) { saveDecode(decode.copy(matchOriginal = it)) } }
                     item { SettingSwitchRow("Beibehaltung der Ordnerstruktur", "Ordnerstruktur soweit Apktool möglich erhalten", decode.preserveDirectoryStructure) { saveDecode(decode.copy(preserveDirectoryStructure = it)) } }
-                    item { SettingSwitchRow("Hinzufügen \"APKTOOL_DUMMY\"", "Wird vom Apktool-3.x-Kern automatisch behandelt", true, false) {} }
                     item { SettingSwitchRow("Gebrochene Ressourcen beibehalten", "Apktool --keep-broken-res", decode.keepBrokenResources, !decode.noResources && !decode.onlyManifest) { saveDecode(decode.copy(keepBrokenResources = it)) } }
                     item { SettingSwitchRow("Gespaltene Spuren entfernen", "Split-Metadaten nach Decode aus dem Manifest entfernen", decode.removeSplitTraces) { saveDecode(decode.copy(removeSplitTraces = it)) } }
                     item { SettingSwitchRow("<Eigenschaft> entfernen", "<property>-Tags nach Decode entfernen", decode.removePropertyTags) { saveDecode(decode.copy(removePropertyTags = it)) } }
@@ -296,7 +294,7 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
                 if (selected == "custom") {
                     val f = File(custom)
                     if (!f.isFile) error("Benutzerdefiniertes AAPT2 nicht gefunden")
-                    if (AaptManager.getBinaryVersion(f) != 2) error("Datei ist kein AAPT2")
+                    AaptManager.getBinaryVersion(f)
                     "${f.absolutePath}\n%.2f MiB • AAPT2 geprüft".format(f.length() / 1024.0 / 1024.0)
                 } else {
                     val tc = Toolchain(context); tc.provision(); val f = tc.getAaptBinary(selected)
@@ -313,7 +311,7 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
         title = { Text("AAPT2 Manager") },
         text = {
             Column(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
-                Text("AAPT1 ist absichtlich nicht verfügbar.", style = MaterialTheme.typography.bodySmall)
+                Text("AAPT2 ist fest aktiviert. Automatisch wählt die passende mitgelieferte Android-Binärdatei für die Seitengröße des Geräts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 CompactPicker(selected, ApktoolSettings.aaptOptions, { ApktoolSettings.aaptLabel(it) }) { selected = it }
                 if (selected == "custom") {
                     OutlinedTextField(custom, { custom = it }, label = { Text("AAPT2 Pfad") }, supportingText = { Text("Muss auf Android ausführbar sein") }, singleLine = true, modifier = Modifier.fillMaxWidth())

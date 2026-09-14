@@ -24,7 +24,6 @@ import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
 import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
 import androidx.core.net.toUri
-import io.github.lootdev78.mtapktool.apktool.ApktoolJobService
 
 class MainActivity : ComponentActivity() {
 
@@ -69,15 +68,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        ApktoolJobService.setAppVisible(true)
-    }
-
-    override fun onStop() {
-        ApktoolJobService.setAppVisible(false)
-        super.onStop()
-    }
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

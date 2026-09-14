@@ -111,7 +111,7 @@ object ApktoolSettings {
     const val DEFAULT_AAPT = "default"
 
     val frameworkOptions = listOf("default", "sdk36", "sdk35", "sdk34", "sdk33")
-    val aaptOptions = listOf("default", "sdk36", "sdk35", "sdk33", "legacy", "custom")
+    val aaptOptions = listOf("default", "sdk35", "sdk33", "legacy", "custom")
     val resourceResolveModes = listOf("default", "greedy", "lazy")
     val signatureProfiles = listOf("testkey", "custom")
 
@@ -119,9 +119,17 @@ object ApktoolSettings {
         prefs(context).getString(KEY_FRAMEWORK, DEFAULT_FRAMEWORK)
             ?.takeIf(::isValidFrameworkTag) ?: DEFAULT_FRAMEWORK
 
-    fun aaptVariant(context: Context): String =
-        prefs(context).getString(KEY_AAPT, DEFAULT_AAPT)
-            ?.takeIf { it in aaptOptions } ?: DEFAULT_AAPT
+    fun aaptVariant(context: Context): String {
+        val stored = prefs(context).getString(KEY_AAPT, DEFAULT_AAPT).orEmpty()
+        // Older builds exposed an sdk36 alias that selected the same automatic
+        // bundled AAPT2. Keep existing preferences valid without showing a
+        // duplicate option in the manager.
+        return when {
+            stored == "sdk36" -> DEFAULT_AAPT
+            stored in aaptOptions -> stored
+            else -> DEFAULT_AAPT
+        }
+    }
 
     fun customAapt2Path(context: Context): String = prefs(context).getString(KEY_CUSTOM_AAPT2, "").orEmpty()
     fun maxWorkers(context: Context): Int = prefs(context).getInt(KEY_WORKERS, 2).coerceIn(1, 4)
@@ -301,11 +309,11 @@ object ApktoolSettings {
     fun aaptMirrorDir(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/bin/aapt2/arm64-v8a"
 
     fun aaptLabel(value: String): String = when (value) {
-        "default" -> "Automatisch"
-        "sdk36" -> "SDK 36 kompatibel"
-        "sdk35" -> "Bundled SDK 35"
-        "sdk33" -> "Bundled SDK 33 (16K)"
-        "legacy" -> "Originales AAPT2"
+        "default" -> "Automatisch (empfohlen)"
+        "sdk36" -> "Automatisch (Kompatibilitätsalias)"
+        "sdk35" -> "AAPT2 SDK 35"
+        "sdk33" -> "AAPT2 SDK 33 (16 KiB)"
+        "legacy" -> "Mitgeliefertes AAPT2 (Basis)"
         "custom" -> "Benutzerdefiniertes AAPT2"
         else -> value
     }
