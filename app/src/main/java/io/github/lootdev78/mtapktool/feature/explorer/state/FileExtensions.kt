@@ -61,23 +61,28 @@ private val AUDIO_EXTENSIONS = setOf(
     "wma",
 )
 
-private val ARCHIVE_EXTENSIONS = setOf(
-    "zip",
-    "rar",
-    "7z",
-    "tar",
-    "gz",
-    "bz2",
-    "xz",
-    "tar.gz",
-    "tar.bz2",
-    "tar.xz",
+private val ARCHIVE_SUFFIXES = setOf(
+    ".zip",
+    ".7z",
+    ".tar",
+    ".tar.gz",
+    ".tar.xz",
+    ".tar.zst",
+    ".tar.bz2",
+    ".tar.lz4",
+    ".gz",
+    ".xz",
+    ".rar",
+    ".jar",
+    ".apk",
 )
 
 private val APK_EXTENSIONS = setOf(
     "apk",
     "apks",
     "xapk",
+    "apkm",
+    "apkx",
 )
 
 private val PDF_EXTENSIONS = setOf(
@@ -141,7 +146,8 @@ fun FileItem.isAudioFile(): Boolean {
 
 fun FileItem.isArchiveFile(): Boolean {
     if (isDirectory) return false
-    return extension() in ARCHIVE_EXTENSIONS
+    val lower = name.lowercase()
+    return ARCHIVE_SUFFIXES.any(lower::endsWith)
 }
 
 fun FileItem.isApkFile(): Boolean {

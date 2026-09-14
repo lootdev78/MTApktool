@@ -82,3 +82,12 @@ The code was statically checked in the provided environment. A complete Android 
 - Tapping a normal `.apk` now opens an action chooser: `Dekompilieren` or `Als Framework importieren`.
 - Framework import uses the same `/apktool/frameworks` directory/`install-framework` command as the existing Framework Manager and runs as a background Apktool job.
 - `.apks`, `.xapk` and `.apkm` continue directly to the split/container decode dialog.
+
+## Archive panel integration (2026-09-14)
+
+- Supported archives can now be opened in the panel they were selected from instead of being handed directly to another app.
+- Added editable temporary archive workspaces with automatic write-back to the original archive after explorer mutations and when returning from the editor.
+- Added MT-style Extract dialog: current directory, custom relative output path, opposite panel destination, delete source after extraction, and ZIP/7z password field.
+- Long-press file actions now expose Extract for supported archives.
+- Archive virtual paths are shown as `<archive>!/path` while browsing; Jump to path understands the same virtual path.
+- ZIP, 7z, tar, tar.gz, tar.xz, tar.zst, tar.bz2, tar.lz4, gzip and xz are wired through the existing archive dependencies. No new Gradle dependency or shell helper script was added.

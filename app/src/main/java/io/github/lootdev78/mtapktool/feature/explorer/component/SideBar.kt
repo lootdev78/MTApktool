@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
@@ -38,11 +40,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.lootdev78.mtapktool.feature.explorer.model.CustomLocationStore
 import io.github.lootdev78.mtapktool.feature.explorer.model.StorageInfo
 import io.github.lootdev78.mtapktool.feature.explorer.model.formatSize
 import io.github.lootdev78.mtapktool.feature.explorer.model.getStorageRoots
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
 import java.io.File
+import android.net.Uri
 
 
 @Composable
@@ -50,8 +54,11 @@ fun SideBar(
     drawerWidth: Dp,
     viewModel: ExplorerViewModel = viewModel(),
     bookmarks: List<String> = emptyList(),
+    customLocations: List<Uri> = emptyList(),
     onBookmarkClick: (String) -> Unit = {},
     onRemoveBookmark: (String) -> Unit = {},
+    onCustomLocationClick: (Uri) -> Unit = {},
+    onAddLocation: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onClose: () -> Unit
 ) {
@@ -88,6 +95,35 @@ fun SideBar(
                     storage.path
                 )
             }
+        )
+
+        HorizontalDivider()
+
+        if (customLocations.isNotEmpty()) {
+            Text(
+                text = "Locations",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            customLocations.forEach { uri ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { onClose(); onCustomLocationClick(uri) }.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(CustomLocationStore.displayName(uri), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            HorizontalDivider()
+        }
+
+        NavigationDrawerItem(
+            label = { Text("Add location") },
+            selected = false,
+            onClick = { onClose(); onAddLocation() },
+            icon = { Icon(Icons.Default.Add, contentDescription = null) }
         )
 
         HorizontalDivider()

@@ -12,10 +12,19 @@ enum class ArchiveFormat(val label: String, val extension: String) {
     TAR_BZ2("tar.bz2", ".tar.bz2"),
     TAR_LZ4("tar.lz4", ".tar.lz4"),
     GZIP("gzip", ".gz"),
-    XZ("xz", ".xz");
+    XZ("xz", ".xz"),
+    RAR("rar (read-only)", ".rar");
 
     companion object {
         fun fromLabel(value: String?): ArchiveFormat = entries.firstOrNull { it.label == value } ?: ZIP
+
+        /** Longest suffix wins so .tar.gz is not mistaken for plain .gz. */
+        fun fromFile(file: File): ArchiveFormat? {
+            val name = file.name.lowercase()
+            if (name.endsWith(".apk") || name.endsWith(".jar")) return ZIP
+            return entries.sortedByDescending { it.extension.length }
+                .firstOrNull { name.endsWith(it.extension) }
+        }
     }
 }
 
@@ -43,4 +52,11 @@ data class ArchiveRequest(
     val splitLengthBytes: Long = 0L,
     val compressEachIndependently: Boolean = false,
     val deleteSourcesAfterCompression: Boolean = false,
+)
+
+data class ArchiveExtractRequest(
+    val archive: File,
+    val outputDirectory: File,
+    val password: String = "",
+    val deleteSourceAfterExtraction: Boolean = false,
 )

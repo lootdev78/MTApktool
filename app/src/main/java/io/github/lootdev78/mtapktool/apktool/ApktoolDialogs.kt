@@ -1,5 +1,8 @@
 package io.github.lootdev78.mtapktool.apktool
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,12 +46,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.apktool.android.runtime.ShellTokenizer
+import io.github.lootdev78.mtapktool.settings.SignatureSettingsActivity
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 fun isApkLike(file: File): Boolean =
-    file.isFile && file.extension.lowercase() in setOf("apk", "apks", "xapk", "apkm")
+    file.isFile && file.extension.lowercase() in setOf("apk", "apks", "xapk", "apkm", "apkx")
 
 fun isApktoolProject(file: File): Boolean = file.isDirectory && File(file, "apktool.yml").isFile
 
@@ -146,14 +150,27 @@ fun ApktoolFrameworkImportDialog(
 }
 
 @Composable
-fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
+fun ApktoolDecodeDialog(
+    file: File,
+    leftPanelPath: String? = null,
+    rightPanelPath: String? = null,
+    onDismiss: () -> Unit,
+    onJobQueued: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val defaults = remember(file) { ApktoolSettings.decodeDefaults(context) }
-    val general = remember(file) { ApktoolSettings.generalDefaults(context) }
     val isSplitArchive = SplitArchiveSupport.isSplitArchive(file)
-    val baseName = file.name.replace(Regex("(?i)\\.(apk|apks|xapk|apkm)$"), "")
-    val root = if (general.decodeIntoOutputDirectory) ApktoolSettings.outputRoot(context) else ApktoolSettings.projectsRoot(context)
-
+    val baseName = file.name.replace(Regex("(?i)\\.(apk|apks|xapk|apkm|apkx)$"), "")
+    // Explicit App-Standard always means /apktool/projects/<project> for decoded sources.
+    val root = ApktoolSettings.projectsRoot(context)
+    val outputModes = buildList {
+        add("same")
+        if (!leftPanelPath.isNullOrBlank()) add("left")
+        if (!rightPanelPath.isNullOrBlank()) add("right")
+        add("default")
+        add("custom")
+    }
+    var outputMode by remember(file) { mutableStateOf("default") }
     var output by remember(file) { mutableStateOf(uniquePath(root, baseName)) }
     var framework by remember(file) { mutableStateOf(ApktoolSettings.frameworkTag(context)) }
     var resources by remember { mutableStateOf(!defaults.noResources) }
@@ -163,7 +180,6 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
     var createNomedia by remember { mutableStateOf(defaults.createNomedia) }
     var noDebug by remember { mutableStateOf(defaults.noDebugInfo) }
     var useRegisters by remember { mutableStateOf(defaults.useRegisters) }
-    var preserveStructure by remember { mutableStateOf(defaults.preserveDirectoryStructure) }
     var keepBroken by remember { mutableStateOf(defaults.keepBrokenResources) }
     var removeSplit by remember { mutableStateOf(defaults.removeSplitTraces) }
     var removeProperty by remember { mutableStateOf(defaults.removePropertyTags) }
@@ -173,6 +189,9 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
     var noAssets by remember { mutableStateOf(defaults.noAssets) }
     var resolveMode by remember { mutableStateOf(defaults.resourceResolveMode) }
     var verbose by remember { mutableStateOf(defaults.verbose) }
+    var quiet by remember { mutableStateOf(false) }
+    var framePath by remember { mutableStateOf(ApktoolSettings.frameworkDir()) }
+    var sharedLibraries by remember { mutableStateOf("") }
     var threads by remember { mutableIntStateOf(ApktoolSettings.apktoolThreads(context)) }
     var showSettings by remember { mutableStateOf(false) }
     var showThreads by remember { mutableStateOf(false) }
@@ -221,6 +240,28 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                     }
                 }
 
+                SectionTitle("Ausgabe")
+                ChoicePicker(
+                    value = outputMode,
+                    options = outputModes,
+                    label = { mode -> when (mode) {
+                        "same" -> "Im selben Ordner"
+                        "left" -> "Linkes Panel"
+                        "right" -> "Rechtes Panel"
+                        "default" -> "App-Standard /apktool/projects/<project>"
+                        else -> "Benutzerdefiniert"
+                    } },
+                ) { mode ->
+                    outputMode = mode
+                    val parent = when (mode) {
+                        "same" -> file.parentFile?.absolutePath ?: root
+                        "left" -> leftPanelPath ?: root
+                        "right" -> rightPanelPath ?: root
+                        "default" -> ApktoolSettings.projectsRoot(context)
+                        else -> null
+                    }
+                    if (parent != null) output = uniquePath(parent, baseName)
+                }
                 OutlinedTextField(
                     value = output,
                     onValueChange = { output = it },
@@ -242,15 +283,17 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                 onClick = {
                     val flags = mutableListOf<String>()
                     if (framework != "default") flags += listOf("-t", framework)
+                    if (framePath.isNotBlank()) flags += listOf("-p", framePath.trim())
+                    sharedLibraries.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { flags += listOf("-l", it) }
                     flags += listOf("-j", threads.coerceIn(1, 4).toString())
-                    if (verbose) flags += "-v"
+                    if (quiet) flags += "-q" else if (verbose) flags += "-v"
                     if (force) flags += "-f"
                     if (!classesDex) flags += "-s" else if (allDex) flags += "-a"
                     if (classesDex && noDebug) flags += "--no-debug-info"
                     if (classesDex && useRegisters) flags += "--use-registers"
                     if (!resources) flags += "-r" else if (onlyManifest) flags += "--only-manifest"
                     if (resources && !onlyManifest && resolveMode != "default") flags += listOf("--res-resolve-mode", resolveMode)
-                    if (matchOriginal || preserveStructure) flags += "--match-original"
+                    if (matchOriginal) flags += "--match-original"
                     if (resources && !onlyManifest && keepBroken) flags += "--keep-broken-res"
                     if (resources && ignoreRaw) flags += "--ignore-raw-values"
                     if (noAssets) flags += "--no-assets"
@@ -290,10 +333,11 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
             title = { Text("Einstellungen") },
             text = {
                 Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                    CheckRow("Debug-Informationen schreiben", !noDebug) { noDebug = !it }
+                    CheckRow("Debug-Informationen schreiben", !noDebug, enabled = classesDex) { noDebug = !it }
                     CheckRow("Nur AndroidManifest.xml dekompilieren", onlyManifest, enabled = resources) { onlyManifest = it }
-                    CheckRow("Verwenden Sie \"Register\" statt \"Lokale\".", useRegisters) { useRegisters = it }
-                    CheckRow("Beibehaltung der Ordnerstruktur", preserveStructure) { preserveStructure = it }
+                    CheckRow("Verwenden Sie \"Register\" statt \"Lokale\".", useRegisters, enabled = classesDex) { useRegisters = it }
+                    OutlinedTextField(framePath, { framePath = it }, label = { Text("Framework-Pfad (-p)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(sharedLibraries, { sharedLibraries = it }, label = { Text("Shared Libraries (-l), eine pro Zeile") }, minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth())
                     if (resources && !onlyManifest) {
                         Text("Ressourcen-Auflösung", style = MaterialTheme.typography.labelLarge)
                         ChoicePicker(resolveMode, ApktoolSettings.resourceResolveModes, { mode ->
@@ -306,12 +350,13 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                     }
                     CheckRow("Rohwerte in XML ignorieren", ignoreRaw, enabled = resources) { ignoreRaw = it }
                     CheckRow("Assets nicht dekompilieren", noAssets) { noAssets = it }
-                    CheckRow("Gebrochene Ressourcen beibehalten", keepBroken) { keepBroken = it }
+                    CheckRow("Gebrochene Ressourcen beibehalten", keepBroken, enabled = resources && !onlyManifest) { keepBroken = it }
                     CheckRow("Gespaltene Spuren entfernen", removeSplit) { removeSplit = it }
                     CheckRow("<Eigenschaft> entfernen", removeProperty) { removeProperty = it }
                     CheckRow("Original anpassen", matchOriginal) { matchOriginal = it }
                     CheckRow("Vorhandenes Projekt überschreiben", force) { force = it }
-                    CheckRow("Ausführlich", verbose) { verbose = it }
+                    CheckRow("Ausführlich", verbose, enabled = !quiet) { verbose = it; if (it) quiet = false }
+                    CheckRow("Leise (--quiet)", quiet, enabled = !verbose) { quiet = it; if (it) verbose = false }
                 }
             },
             dismissButton = {
@@ -327,7 +372,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                         ApktoolDecodeDefaults(
                             force = force, allSources = allDex, noSources = !classesDex, noDebugInfo = noDebug,
                             noResources = !resources, onlyManifest = onlyManifest, matchOriginal = matchOriginal,
-                            preserveDirectoryStructure = preserveStructure, keepBrokenResources = keepBroken,
+                            preserveDirectoryStructure = false, keepBrokenResources = keepBroken,
                             ignoreRawValues = ignoreRaw, noAssets = noAssets, resourceResolveMode = resolveMode,
                             useRegisters = useRegisters, createNomedia = createNomedia, removeSplitTraces = removeSplit,
                             removePropertyTags = removeProperty, verbose = verbose,
@@ -348,7 +393,13 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
 }
 
 @Composable
-fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
+fun ApktoolBuildDialog(
+    project: File,
+    leftPanelPath: String? = null,
+    rightPanelPath: String? = null,
+    onDismiss: () -> Unit,
+    onJobQueued: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val defaults = remember(project) { ApktoolSettings.buildDefaults(context) }
     val general = remember(project) { ApktoolSettings.generalDefaults(context) }
@@ -368,12 +419,20 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
     var sign by remember { mutableStateOf(defaults.sign) }
     var deleteBuild by remember { mutableStateOf(defaults.deleteBuildDirectory) }
     var verbose by remember { mutableStateOf(defaults.verbose) }
+    var quiet by remember { mutableStateOf(false) }
+    var noApk by remember { mutableStateOf(false) }
+    var framePath by remember { mutableStateOf(ApktoolSettings.frameworkDir()) }
+    var sharedLibraries by remember { mutableStateOf("") }
+    val signatureSettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        signature = ApktoolSettings.signatureDefaults(context)
+    }
     var showSettings by remember { mutableStateOf(false) }
     var showThreads by remember { mutableStateOf(false) }
-    var showSignature by remember { mutableStateOf(false) }
 
     val suffix = general.apkSuffix
     val outputRoot = if (general.buildIntoOutputDirectory) ApktoolSettings.outputRoot(context) else File(project, "dist").absolutePath
+    val outputModes = buildList { add("same"); if (!leftPanelPath.isNullOrBlank()) add("left"); if (!rightPanelPath.isNullOrBlank()) add("right"); add("default"); add("custom") }
+    var outputMode by remember(project) { mutableStateOf("default") }
     var output by remember(project, suffix, outputRoot) { mutableStateOf(uniqueFilePath(outputRoot, project.name + suffix + ".apk")) }
 
     AlertDialog(
@@ -398,10 +457,29 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                 SectionTitle("Wähle eine Signaturdatei aus")
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(ApktoolSettings.signatureLabel(signature), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    IconButton(onClick = { showSignature = true }) { Icon(Icons.Default.Settings, contentDescription = "Signatur") }
+                    IconButton(onClick = { signatureSettingsLauncher.launch(Intent(context, SignatureSettingsActivity::class.java)) }) { Icon(Icons.Default.Settings, contentDescription = "Signatur") }
                 }
 
-                OutlinedTextField(output, { output = it }, label = { Text("Ausgabe-APK") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                SectionTitle("Ausgabe")
+                ChoicePicker(outputMode, outputModes, { mode -> when (mode) {
+                    "same" -> "Im selben Ordner"
+                    "left" -> "Linkes Panel"
+                    "right" -> "Rechtes Panel"
+                    "default" -> "App-Standard /apktool/output"
+                    else -> "Benutzerdefiniert"
+                } }) { mode ->
+                    outputMode = mode
+                    val dir = when (mode) {
+                        "same" -> project.parentFile?.absolutePath ?: outputRoot
+                        "left" -> leftPanelPath ?: outputRoot
+                        "right" -> rightPanelPath ?: outputRoot
+                        "default" -> ApktoolSettings.outputRoot(context)
+                        else -> null
+                    }
+                    if (dir != null) output = uniqueFilePath(dir, project.name + suffix + ".apk")
+                }
+                OutlinedTextField(output, { output = it }, label = { Text("Ausgabe-APK") }, enabled = !noApk, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                if (noApk) Text("--no-apk: Dateien werden gebaut, aber nicht zu einer APK gepackt.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         dismissButton = {
@@ -412,15 +490,18 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
         },
         confirmButton = {
             TextButton(
-                enabled = output.isNotBlank() && (aapt != "custom" || customAapt.isNotBlank()) && (!sign || signature.profile != "custom" || signature.customKeystorePath.isNotBlank()),
+                enabled = (noApk || output.isNotBlank()) && (aapt != "custom" || customAapt.isNotBlank()) && (noApk || !sign || signature.profile != "custom" || signature.customKeystorePath.isNotBlank()),
                 onClick = {
                     val command = buildString {
                         append("apktool build -j ").append(threads.coerceIn(1, 4))
-                        if (verbose) append(" -v")
+                        if (quiet) append(" -q") else if (verbose) append(" -v")
+                        if (framePath.isNotBlank()) append(" -p ").append(ShellTokenizer.quote(framePath.trim()))
                         if (framework != "default") append(" -t ").append(ShellTokenizer.quote(framework))
+                        sharedLibraries.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lib -> append(" -l ").append(ShellTokenizer.quote(lib)) }
                         if (aapt == "custom") append(" --aapt ").append(ShellTokenizer.quote(customAapt.trim()))
                         else append(" --aapt-variant ").append(ShellTokenizer.quote(aapt))
                         if (force) append(" -f")
+                        if (noApk) append(" --no-apk")
                         if (debuggable) append(" --debuggable")
                         if (copyOriginal) append(" --copy-original")
                         if (noCrunch) append(" --no-crunch")
@@ -428,14 +509,15 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                             append(" --net-sec-conf")
                             if (netSecKeep) append(" --net-sec-conf-keep-existing")
                         }
-                        append(" -o ").append(ShellTokenizer.quote(output)).append(' ').append(ShellTokenizer.quote(project.absolutePath))
+                        if (!noApk) append(" -o ").append(ShellTokenizer.quote(output))
+                        append(' ').append(ShellTokenizer.quote(project.absolutePath))
                     }
                     val jobId = ApktoolJobService.enqueue(
                         context = context,
                         title = "Build ${project.name}",
                         command = command,
-                        postAlign = align,
-                        postSign = sign,
+                        postAlign = align && !noApk,
+                        postSign = sign && !noApk,
                         signature = signature,
                         cleanBuildProject = if (deleteBuild) project.absolutePath else null,
                     )
@@ -453,15 +535,19 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
             text = {
                 Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
                     CheckRow("Vollständigen Build erzwingen", force) { force = it }
+                    CheckRow("Keine APK packen (--no-apk)", noApk) { noApk = it }
+                    OutlinedTextField(framePath, { framePath = it }, label = { Text("Framework-Pfad (-p)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(sharedLibraries, { sharedLibraries = it }, label = { Text("Shared Libraries (-l), eine pro Zeile") }, minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth())
                     CheckRow("apk als debuggingfähig einstellen", debuggable) { debuggable = it }
                     CheckRow("Resource-Crunching deaktivieren", noCrunch) { noCrunch = it }
                     CheckRow("Netzwerksicherheitskonfiguration hinzufügen", netSec) { netSec = it }
                     CheckRow("Nicht ändern, wenn sie vorhanden ist", netSecKeep, enabled = netSec) { netSecKeep = it }
                     CheckRow("Ordner \"build\" löschen", deleteBuild) { deleteBuild = it }
                     CheckRow("Ersetzen von Prüfsummen aus dem Original", copyOriginal) { copyOriginal = it }
-                    CheckRow("Zipalign", align) { align = it }
-                    CheckRow("Signieren", sign) { sign = it }
-                    CheckRow("Ausführlich", verbose) { verbose = it }
+                    CheckRow("Zipalign", align, enabled = !noApk) { align = it }
+                    CheckRow("Signieren", sign, enabled = !noApk) { sign = it }
+                    CheckRow("Ausführlich", verbose, enabled = !quiet) { verbose = it; if (it) quiet = false }
+                    CheckRow("Leise (--quiet)", quiet, enabled = !verbose) { quiet = it; if (it) verbose = false }
                 }
             },
             dismissButton = {
@@ -489,12 +575,6 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
         }, onDismiss = { showThreads = false })
     }
 
-    if (showSignature) {
-        SignatureManagerDialog(onBack = {
-            signature = ApktoolSettings.signatureDefaults(context)
-            showSignature = false
-        })
-    }
 }
 
 @Composable
@@ -543,31 +623,6 @@ fun ApktoolJobsDialog(jobs: List<ApktoolJobInfo>, onCancel: (String) -> Unit, on
         },
         dismissButton = { if (active > 0) TextButton(onClick = onCancelAll) { Text("ALLE STOPPEN") } },
         confirmButton = { TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } },
-    )
-}
-
-@Composable
-fun ApktoolCliDialog(onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
-    val context = LocalContext.current
-    var command by remember { mutableStateOf("apktool --help") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Apktool CLI") },
-        text = {
-            OutlinedTextField(
-                value = command,
-                onValueChange = { command = it },
-                minLines = 4,
-                maxLines = 10,
-                label = { Text("Command") },
-                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
-        confirmButton = {
-            Button(enabled = command.isNotBlank(), onClick = { val jobId = ApktoolJobService.enqueue(context, "CLI", command); onJobQueued(jobId); onDismiss() }) { Text("START") }
-        },
     )
 }
 

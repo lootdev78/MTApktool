@@ -33,7 +33,7 @@ The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and its fram
 
 ## Explorer integration
 
-- Tap `.apk` to open Apktool decode options.
+- Tap `.apk` to open the dedicated APK information activity first; **Functions** then exposes decode, framework import, zipalign, share and related Apktool actions.
 - `.apks`, `.apkm`, `.xapk` are inspected as split containers.
 - Folders containing `apktool.yml` are recognized as Apktool projects.
 - Inside an Apktool project the pane shows **Dieses Projekt kompilieren**.
@@ -55,7 +55,7 @@ The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and its fram
 
 ## File manager fixes included
 
-- Settings in the navigation drawer now opens the Apktool settings UI.
+- Settings in the navigation drawer opens the real Settings activity and its section activities.
 - Share uses `FileProvider` content URIs instead of `file://` URIs.
 - Open-with, ZIP compression, symbolic-link creation and persistent bookmarks are wired into the context menu.
 - Cross-filesystem moves fall back to copy/delete, and copy/move guards against recursively transferring a directory into itself.
@@ -65,3 +65,21 @@ The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and its fram
 
 ### Apktool jobs
 Heavy Apktool operations are executed by the foreground `ApktoolJobService` in the dedicated `:apktool` process. Live output can be hidden without cancelling a task and reopened from the right-side Task panel. A plain APK click offers both decode and framework installation.
+
+### Read-only archive browsing and extraction
+Supported ZIP/JAR/APK, 7z, TAR-family and RAR archives can be opened directly in either explorer pane. The archive is mounted through a private cache workspace and is deliberately read-only: files can be viewed/opened/installed from there or copied/extracted out to a normal filesystem pane, while rename/delete/move/create operations into the archive are blocked. Leaving the archive discards the temporary workspace and never rewrites the source archive. The Extract dialog supports the current pane, the opposite pane, a relative destination folder, optional source deletion, and passwords where supported.
+
+
+## Explorer / package workflow update (2026-09-14)
+
+- Settings now open as real activities rather than the old full-screen settings dialog.
+- APK taps open an APK information activity; **VIEW** opens the APK archive in the current explorer pane.
+- `.apks`, `.apkm`, `.xapk` and `.apkx` open a split-package screen with one-session install, extraction, decode and Split→APK controls.
+- Decode/build and Split→APK output can target same folder, left pane, right pane, app defaults or a custom path; decoded sources use `/apktool/projects/<app-name>/` as the explicit app-default destination.
+- `zipalign-android` is wired into APK functions and Split→APK output.
+- ZIP/JAR/APK, 7z, TAR-family and read-only RAR browsing/extraction are supported.
+- Added persisted hidden/filter/sort options, per-folder sort overrides with management UI, and SAF Document Tree locations.
+- Both navigation drawers use finger-bound drag progress with velocity/threshold settling; the right task drawer keeps active tasks and clears/removes terminal tasks only.
+- Explorer text-file taps use external/open-with handling; no new internal editor workflow was added.
+
+See `IMPLEMENTATION_NOTES_2026-09-14.md` for the exact AntiSplit-M source status and validation notes.

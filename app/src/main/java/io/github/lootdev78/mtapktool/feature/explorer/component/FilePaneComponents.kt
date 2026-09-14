@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -51,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -60,9 +62,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,7 +76,10 @@ import coil3.compose.AsyncImage
 import io.github.lootdev78.mtapktool.core.theme.*
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.state.*
+import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveReader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
@@ -149,7 +156,7 @@ fun ClassicFilePane(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
-                                        text = paneState.currentPath,
+                                        text = paneState.displayPath,
                                         modifier = Modifier.weight(1f),
                                         color = MaterialTheme.colorScheme.primary,
                                         fontSize = 12.sp,
@@ -189,6 +196,7 @@ fun ClassicFilePane(
                             ClassicFileRow(
                                 item = item,
                                 isSelected = paneState.selectedPaths.contains(item.path) || isHighlighted,
+                                isRecentlyChanged = item.path in paneState.recentlyChangedPaths,
                                 onClick = {
                                     onFocus()
                                     onItemClick(item)
@@ -304,12 +312,25 @@ private fun ParentDirectoryRow(onClick: () -> Unit) {
 private fun ClassicFileRow(
     item: FileItem,
     isSelected: Boolean,
+    isRecentlyChanged: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onSwipeSelect: (FileItem) -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val apkIcon by produceState<android.graphics.Bitmap?>(
+        initialValue = null,
+        key1 = item.path,
+        key2 = item.modifiedAt,
+    ) {
+        value = if (!item.isDirectory && item.isApkFile()) {
+            withContext(Dispatchers.IO) { ApkArchiveReader.icon(context, item.file) }
+        } else {
+            null
+        }
+    }
 
     // Tracks horizontal swipe offset for visual feedback
     val offsetX = remember { Animatable(0f) }
@@ -439,6 +460,13 @@ private fun ClassicFileRow(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+            } else if (apkIcon != null) {
+                Image(
+                    bitmap = apkIcon!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
             } else {
                 Box(
                     modifier = Modifier
@@ -470,7 +498,7 @@ private fun ClassicFileRow(
                 style = LocalTextStyle.current.copy(
                     platformStyle = PlatformTextStyle(includeFontPadding = false)
                 ),
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (isRecentlyChanged) Color(0xFF2CBF4A) else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

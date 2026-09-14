@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -53,6 +54,8 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.apktool.isApkLike
 import io.github.lootdev78.mtapktool.apktool.isApktoolProject
+import io.github.lootdev78.mtapktool.archive.ArchiveEngine
+import io.github.lootdev78.mtapktool.feature.explorer.state.isArchiveFile
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -81,7 +84,9 @@ fun FileContextMenuDialog(
     onShare: () -> Unit,
     onOpenWith: () -> Unit,
     onAddBookmark: () -> Unit,
+    readOnlyArchive: Boolean = false,
     onApktool: () -> Unit = {},
+    onExtractArchive: () -> Unit = {},
 ) {
 
 
@@ -105,6 +110,13 @@ fun FileContextMenuDialog(
     val targetFile = targetItem?.let { File(it.path) }
     val apktoolCapable = targetFile?.let { isApkLike(it) || isApktoolProject(it) } == true
     val apktoolBuild = targetFile?.let(::isApktoolProject) == true
+    val splitPackage = targetFile?.extension?.lowercase() in setOf("apks", "apkm", "xapk", "apkx")
+    val apktoolActionLabel = when {
+        apktoolBuild -> "Apktool build"
+        splitPackage -> "${targetFile?.extension?.uppercase()} → APK"
+        else -> "APK Funktionen"
+    }
+    val archiveCapable = targetItem?.isArchiveFile() == true && targetFile?.let(ArchiveEngine::supports) == true
 
     val addArrow = fun(text: String): String{
         return if (activePane == ActivePane.LEFT){
@@ -170,7 +182,7 @@ fun FileContextMenuDialog(
                         right = MenuAction(
                             addArrow("Move"),
                             Icons.AutoMirrored.Outlined.DriveFileMove,
-                            isEnabled = true,
+                            isEnabled = !readOnlyArchive,
                             onClick = onMove
                         )
                     )
@@ -179,13 +191,13 @@ fun FileContextMenuDialog(
                         left = MenuAction(
                             addArrow("Link"),
                             Icons.Outlined.Link,
-                            isEnabled = targetItem != null,
+                            isEnabled = targetItem != null && !readOnlyArchive,
                             onClick = onLink
                         ),
                         right = MenuAction(
                             "Rename",
                             Icons.Default.Edit,
-                            isEnabled = true,
+                            isEnabled = !readOnlyArchive,
                             onClick = onRename
                         )
                     )
@@ -194,7 +206,7 @@ fun FileContextMenuDialog(
                         left = MenuAction(
                             "Delete",
                             Icons.Default.Delete,
-                            isEnabled = true,
+                            isEnabled = !readOnlyArchive,
                             onClick = {
                                 isDeleteClicked = true
                             }
@@ -238,16 +250,16 @@ fun FileContextMenuDialog(
 
                     ActionRow(
                         left = MenuAction(
-                            if (apktoolBuild) "Apktool build" else "Apktool decode",
+                            apktoolActionLabel,
                             if (apktoolBuild) Icons.Default.Build else Icons.Default.Android,
                             isEnabled = apktoolCapable,
                             onClick = onApktool,
                         ),
                         right = MenuAction(
-                            "",
-                            Icons.Default.Check,
-                            isEnabled = false,
-                            onClick = {},
+                            "Extract",
+                            Icons.Default.Unarchive,
+                            isEnabled = archiveCapable,
+                            onClick = onExtractArchive,
                         ),
                     )
                 }

@@ -13,7 +13,7 @@ import java.util.zip.ZipFile
 
 /** Split-container handling remains in the MTExplorer integration layer. */
 object SplitArchiveSupport {
-    private val supportedExtensions = setOf("apks", "apkm", "xapk")
+    private val supportedExtensions = setOf("apks", "apkm", "xapk", "apkx")
 
     data class ApkEntry(val path: String, val size: Long, val preferred: Boolean = false) {
         val displayName: String get() = File(path).name

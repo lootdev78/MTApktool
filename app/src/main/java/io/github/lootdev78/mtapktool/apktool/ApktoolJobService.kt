@@ -39,6 +39,8 @@ class ApktoolJobService : Service() {
         const val ACTION_ENQUEUE = "io.github.lootdev78.mtapktool.apktool.ENQUEUE"
         const val ACTION_CANCEL = "io.github.lootdev78.mtapktool.apktool.CANCEL"
         const val ACTION_CANCEL_ALL = "io.github.lootdev78.mtapktool.apktool.CANCEL_ALL"
+        const val ACTION_DISMISS = "io.github.lootdev78.mtapktool.apktool.DISMISS"
+        const val ACTION_CLEAR_FINISHED = "io.github.lootdev78.mtapktool.apktool.CLEAR_FINISHED"
         const val ACTION_QUERY = "io.github.lootdev78.mtapktool.apktool.QUERY"
         const val ACTION_SET_WORKERS = "io.github.lootdev78.mtapktool.apktool.SET_WORKERS"
         const val ACTION_STATUS = "io.github.lootdev78.mtapktool.apktool.STATUS"
@@ -132,6 +134,19 @@ class ApktoolJobService : Service() {
             runCatching { context.startService(Intent(context, ApktoolJobService::class.java).setAction(ACTION_CANCEL_ALL)) }
         }
 
+        fun dismiss(context: Context, id: String) {
+            runCatching {
+                context.startService(Intent(context, ApktoolJobService::class.java).apply {
+                    action = ACTION_DISMISS
+                    putExtra(EXTRA_JOB_ID, id)
+                })
+            }
+        }
+
+        fun clearFinished(context: Context) {
+            runCatching { context.startService(Intent(context, ApktoolJobService::class.java).setAction(ACTION_CLEAR_FINISHED)) }
+        }
+
         fun query(context: Context) {
             runCatching { context.startService(Intent(context, ApktoolJobService::class.java).setAction(ACTION_QUERY)) }
         }
@@ -199,6 +214,13 @@ class ApktoolJobService : Service() {
                 records.values.filter { !it.status.isTerminal() }.forEach { cancelInternal(it.id) }
                 executor.purge()
             }
+            ACTION_DISMISS -> intent.getStringExtra(EXTRA_JOB_ID)?.let { id ->
+                records[id]?.takeIf { it.status.isTerminal() }?.let { records.remove(id) }
+            }
+            ACTION_CLEAR_FINISHED -> records.entries
+                .filter { it.value.status.isTerminal() }
+                .map { it.key }
+                .forEach { records.remove(it) }
             ACTION_QUERY -> records.values.sortedBy { it.createdAt }.forEach { broadcast(it, force = true) }
             ACTION_SET_WORKERS -> resizePool(intent.getIntExtra(EXTRA_WORKERS, 1).coerceIn(1, 4))
         }

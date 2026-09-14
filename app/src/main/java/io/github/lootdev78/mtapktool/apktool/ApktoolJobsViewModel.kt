@@ -64,6 +64,18 @@ class ApktoolJobsViewModel(application: Application) : AndroidViewModel(applicat
     fun cancel(id: String) = ApktoolJobService.cancel(getApplication(), id)
     fun cancelAll() = ApktoolJobService.cancelAll(getApplication())
 
+    fun dismiss(id: String) {
+        val job = _jobs.value.firstOrNull { it.id == id } ?: return
+        if (!job.isTerminal) return
+        _jobs.update { jobs -> jobs.filterNot { it.id == id } }
+        ApktoolJobService.dismiss(getApplication(), id)
+    }
+
+    fun clearFinished() {
+        _jobs.update { jobs -> jobs.filterNot { it.isTerminal } }
+        ApktoolJobService.clearFinished(getApplication())
+    }
+
     override fun onCleared() {
         runCatching { getApplication<Application>().unregisterReceiver(receiver) }
         super.onCleared()
