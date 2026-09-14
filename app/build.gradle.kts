@@ -47,6 +47,7 @@ android {
         versionName = "1.0"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "VERSION_NAME", "\"1.0\"")
     }
 
     buildTypes {
@@ -66,7 +67,10 @@ android {
         resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { 
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(mtapktoolJavaVersion)
