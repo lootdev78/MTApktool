@@ -17,7 +17,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.InfoOutline
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VpnKey
@@ -115,7 +115,7 @@ fun AppSettingsDialog(
         SettingsEntry("Archivierung", "Format, Kompressionsstufe und Standardoptionen festlegen.", Icons.Default.Archive, SettingsPage.ARCHIVE),
         SettingsEntry("Apktool CLI", "Vollständige Apktool-Kommandos direkt als Job ausführen.", Icons.Default.Code, SettingsPage.CLI),
         SettingsEntry("FAQ", "Hilfe zur Benutzung des Programms", Icons.Default.HelpOutline, SettingsPage.FAQ),
-        SettingsEntry("Über", "Informationen über App, Runtime und integriertes Apktool", Icons.Default.InfoOutline, SettingsPage.ABOUT),
+        SettingsEntry("Über", "Informationen über App, Runtime und integriertes Apktool", Icons.Default.Info, SettingsPage.ABOUT),
     )
     val filtered = entries.filter {
         query.isBlank() || it.title.contains(query, ignoreCase = true) || it.subtitle.contains(query, ignoreCase = true)

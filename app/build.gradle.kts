@@ -67,7 +67,11 @@ android {
         resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
     }
 
+<<<<<<< HEAD
     buildFeatures { 
+=======
+    buildFeatures {
+>>>>>>> 32980cf (fix(ci))
         compose = true
         buildConfig = true
     }

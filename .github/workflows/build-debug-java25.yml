@@ -62,7 +62,7 @@ jobs:
           grep -q '^mtapktool.targetSdk=36$' gradle.properties
           grep -q '^mtapktool.ndkVersion=29.0.14033849$' gradle.properties
           for api in 33 34 35 36; do
-            test -s "apktool-android/src/main/assets/apktool/frameworks/sdk-$api.bin"
+            test -s "apktool-android/src/main/assets/apktool/frameworks/sdk-$api.apk"
           done
           test -s apktool-android/src/main/assets/apktool/debug-keystore.bin
           ! grep -q 'R.raw.apktool_framework_sdk_' apktool-android/src/main/java/io/github/apktool/android/runtime/Toolchain.java

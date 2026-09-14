@@ -27,6 +27,8 @@ public final class Toolchain {
     private static final Object PROVISION_LOCK = new Object();
     public static final String VERSION = "3.1.0-android-final";
     public static final String[] FRAMEWORK_TAGS = {"sdk33", "sdk34", "sdk35", "sdk36"};
+    private static final int[] BUNDLED_FRAMEWORK_APIS = {33, 34, 35, 36};
+    private static final String FRAMEWORK_BOOTSTRAP_MARKER = ".bundled-frameworks-v1";
 
     private final Context context;
     private final File root;
@@ -78,14 +80,10 @@ public final class Toolchain {
             requireArm64Payload();
             configureAndroidRuntimeProperties();
 
-            // Framework APK bytes are bundled with a .bin source suffix on purpose.
-            // The repository ignores *.apk build artifacts, so storing the payload as
-            // sdk-XX.apk made GitHub Actions checkouts lose the framework files. At
-            // runtime the exact bytes are copied to Apktool's normal .apk filenames.
-            for (int api : new int[]{33, 34, 35, 36}) {
-                copyBundledFrameworkIfDifferent(api, new File(frameworkDir, "1-sdk" + api + ".apk"));
-                if (api == 36) copyBundledFrameworkIfDifferent(api, new File(frameworkDir, "1.apk"));
-            }
+            // The framework manager owns the installed framework directory after
+            // bootstrap. Do not silently overwrite or resurrect files that the user
+            // imported, replaced or deleted through the manager.
+            provisionBundledFrameworksOnce();
 
             // Shared-storage mirrors are for visibility/CLI paths only. Android 10+
             // forbids executing writable app payloads, so Apktool executes AAPT2 from
@@ -212,13 +210,13 @@ public final class Toolchain {
     public void resetFrameworks() throws IOException {
         synchronized (PROVISION_LOCK) {
             ensureDirectories();
-        File[] files = frameworkDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".apk"));
-        if (files != null) {
-            for (File file : files) {
-                if (!file.delete() && file.exists()) throw new IOException("Cannot delete framework: " + file);
+            File[] files = frameworkDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".apk"));
+            if (files != null) {
+                for (File file : files) {
+                    if (!file.delete() && file.exists()) throw new IOException("Cannot delete framework: " + file);
+                }
             }
-        }
-            provision();
+            restoreBundledFrameworks();
         }
     }
 
@@ -250,11 +248,66 @@ public final class Toolchain {
         }
     }
 
-    private void copyBundledFrameworkIfDifferent(int api, File dst) throws IOException {
-        if (api < 33 || api > 36) {
-            throw new IOException("Unsupported bundled framework API: " + api);
+    private void provisionBundledFrameworksOnce() throws IOException {
+        File marker = new File(frameworkDir, FRAMEWORK_BOOTSTRAP_MARKER);
+        if (marker.isFile()) return;
+
+        // Migration-safe behavior: if an older app version already provisioned at
+        // least one bundled framework, keep the exact manager state. Missing files
+        // may have been intentionally deleted by the user.
+        if (hasAnyBundledFrameworkInstalled()) {
+            writeFrameworkBootstrapMarker(marker);
+            return;
         }
-        copyAssetIfDifferent("apktool/frameworks/sdk-" + api + ".bin", dst);
+
+        for (int api : BUNDLED_FRAMEWORK_APIS) {
+            copyBundledFrameworkIfMissing(api, new File(frameworkDir, "1-sdk" + api + ".apk"));
+            if (api == 36) copyBundledFrameworkIfMissing(api, new File(frameworkDir, "1.apk"));
+        }
+        writeFrameworkBootstrapMarker(marker);
+    }
+
+    private boolean hasAnyBundledFrameworkInstalled() {
+        File defaultFramework = new File(frameworkDir, "1.apk");
+        if (defaultFramework.isFile() && defaultFramework.length() > 0L) return true;
+        for (int api : BUNDLED_FRAMEWORK_APIS) {
+            File taggedFramework = new File(frameworkDir, "1-sdk" + api + ".apk");
+            if (taggedFramework.isFile() && taggedFramework.length() > 0L) return true;
+        }
+        return false;
+    }
+
+    private void restoreBundledFrameworks() throws IOException {
+        for (int api : BUNDLED_FRAMEWORK_APIS) {
+            String asset = bundledFrameworkAsset(api);
+            copyAssetIfDifferent(asset, new File(frameworkDir, "1-sdk" + api + ".apk"));
+            if (api == 36) copyAssetIfDifferent(asset, new File(frameworkDir, "1.apk"));
+        }
+        writeFrameworkBootstrapMarker(new File(frameworkDir, FRAMEWORK_BOOTSTRAP_MARKER));
+    }
+
+    private void copyBundledFrameworkIfMissing(int api, File dst) throws IOException {
+        if (dst.isFile() && dst.length() > 0L) return;
+        copyAssetIfDifferent(bundledFrameworkAsset(api), dst);
+    }
+
+    private static String bundledFrameworkAsset(int api) {
+        return "apktool/frameworks/sdk-" + api + ".apk";
+    }
+
+    private void writeFrameworkBootstrapMarker(File marker) throws IOException {
+        File tmp = new File(frameworkDir, FRAMEWORK_BOOTSTRAP_MARKER + ".tmp");
+        try (OutputStream out = new FileOutputStream(tmp)) {
+            out.write((VERSION + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        if (marker.exists() && !marker.delete()) throw new IOException("Cannot replace " + marker);
+        if (!tmp.renameTo(marker)) {
+            try (InputStream in = new FileInputStream(tmp); OutputStream out = new FileOutputStream(marker)) {
+                copy(in, out);
+            }
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+        }
     }
 
     private void copyAssetIfDifferent(String asset, File dst) throws IOException {

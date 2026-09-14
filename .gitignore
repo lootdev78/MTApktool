@@ -21,6 +21,8 @@ local.properties
 # APKs / App Bundles
 *.apk
 *.aab
+# Bundled Apktool framework APKs are source assets, not build outputs.
+!apktool-android/src/main/assets/apktool/frameworks/*.apk
 
 # Native build
 .externalNativeBuild/

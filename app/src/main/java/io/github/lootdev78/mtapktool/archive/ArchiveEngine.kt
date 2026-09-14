@@ -124,8 +124,20 @@ object ArchiveEngine {
         }
         val entry = seven.createArchiveEntry(file, name)
         seven.putArchiveEntry(entry)
-        if (file.isFile) BufferedInputStream(FileInputStream(file)).use { input -> input.copyTo(seven) }
-        seven.closeArchiveEntry()
+        try {
+            if (file.isFile) {
+                BufferedInputStream(FileInputStream(file)).use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (read > 0) seven.write(buffer, 0, read)
+                    }
+                }
+            }
+        } finally {
+            seven.closeArchiveEntry()
+        }
         if (file.isDirectory) file.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { addTo7z(seven, base, it) }
     }
 
