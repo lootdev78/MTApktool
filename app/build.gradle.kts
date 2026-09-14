@@ -51,8 +51,10 @@ android {
                 storeFile = releaseKeystore
                 storePassword =
                     localProperties.getProperty("KEYSTORE_PASSWORD") ?: "123456"
+
                 keyAlias =
                     localProperties.getProperty("KEY_ALIAS") ?: "my-alias"
+
                 keyPassword =
                     localProperties.getProperty("KEY_PASSWORD") ?: "123456"
             }
@@ -67,7 +69,6 @@ android {
 
         versionCode = 1
         versionName = "1.0"
-<<<<<<< HEAD
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -81,10 +82,6 @@ android {
             "VERSION_NAME",
             "\"1.0\""
         )
-=======
-        ndk { abiFilters += "arm64-v8a" }
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
->>>>>>> b8d7c0e (fix(ci))
     }
 
     buildTypes {
@@ -110,11 +107,13 @@ android {
             )
         }
 
-        resources.excludes += setOf(
-            "META-INF/DEPENDENCIES",
-            "META-INF/LICENSE*",
-            "META-INF/NOTICE*"
-        )
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*"
+            )
+        }
     }
 
     buildFeatures {
