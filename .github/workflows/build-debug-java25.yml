@@ -54,7 +54,18 @@ jobs:
         run: |
           set -eu
           grep -q 'gradle-9.1.0-bin.zip' gradle/java25-wrapper/gradle-wrapper.properties
+          grep -q 'coreKtx = "1.18.0"' gradle/libs.versions.toml
+          grep -q 'lifecycleViewmodelCompose = "2.10.0"' gradle/libs.versions.toml
           grep -q 'defaultAgpVersion = if (javaProfile == 25) "9.0.0" else "8.10.1"' settings.gradle.kts
+          grep -q '^mtapktool.compileSdk=36$' gradle.properties
+          grep -q '^mtapktool.minSdk=29$' gradle.properties
+          grep -q '^mtapktool.targetSdk=36$' gradle.properties
+          grep -q '^mtapktool.ndkVersion=29.0.14033849$' gradle.properties
+          for api in 33 34 35 36; do
+            test -s "apktool-android/src/main/assets/apktool/frameworks/sdk-$api.bin"
+          done
+          test -s apktool-android/src/main/assets/apktool/debug-keystore.bin
+          ! grep -q 'R.raw.apktool_framework_sdk_' apktool-android/src/main/java/io/github/apktool/android/runtime/Toolchain.java
           for module in \
             app \
             apktool-android \
@@ -65,7 +76,12 @@ jobs:
           do
             grep -q 'mtapktool.javaVersion' "$module/build.gradle.kts"
             grep -q 'JavaVersion.toVersion(mtapktoolJavaVersion)' "$module/build.gradle.kts"
+            grep -q 'mtapktool.compileSdk' "$module/build.gradle.kts"
+            grep -q 'mtapktool.minSdk' "$module/build.gradle.kts"
+            grep -q 'compileSdk = mtapktoolCompileSdk' "$module/build.gradle.kts"
+            grep -q 'minSdk = mtapktoolMinSdk' "$module/build.gradle.kts"
           done
+          grep -q 'targetSdk = mtapktoolTargetSdk' app/build.gradle.kts
           grep -q 'JavaLanguageVersion.of(mtapktoolJavaVersion)' build.gradle.kts
           grep -q 'options.release.set(mtapktoolJavaVersion)' build.gradle.kts
           grep -q 'jvmToolchain(mtapktoolJavaVersion)' app/build.gradle.kts

@@ -5,7 +5,7 @@ This update wires the file-manager UI to the bundled Apktool runtime instead of 
 ## Apktool runtime and frameworks
 
 - Decode/build/CLI jobs are enqueued through `ApktoolJobService` and executed by the bundled `ApktoolCommandRunner`.
-- Bundled SDK 33/34/35/36 framework APKs are provisioned from Android `res/raw` resources, with the previous asset locations kept only as fallback. This avoids the `FileNotFoundException: apktool/frameworks/sdk-33.apk` seen on affected builds.
+- Bundled SDK 33/34/35/36 framework APK bytes are stored as trackable `.bin` assets and copied to normal `.apk` framework names at runtime. This avoids both missing ignored APK assets and missing `R.raw` IDs in CI builds.
 - The default framework mirror `1.apk` is provisioned from SDK 36 and tagged framework files remain available as `1-sdk33.apk` … `1-sdk36.apk`.
 - Framework manager, AAPT2 manager, signatures, job/threads paths, runtime info and the complete original Apktool CLI remain reachable from **Einstellungen > Erstellen & Dekodieren** / **Apktool CLI**.
 
@@ -56,3 +56,11 @@ All included Android application/library modules read the shared values. JVM-onl
 ## Validation note
 
 The code was statically checked in the provided environment. A complete Android Gradle build could not be executed there because the matching Gradle distribution/dependency cache was not present and outbound Gradle downloads were unavailable. Run `./gradlew assembleDebug` with JDK 17 (or the existing Java-25 profile/wrapper for that profile) in the normal Android build environment before installing.
+
+## CI / bundled framework follow-up
+
+- Restored the original two GitHub Actions workflow files; no `.github/scripts` helper is required.
+- Java 17 and Java 25 verify the same SDK 36 / NDK 29 profile inline, including the pinned `libs.versions.toml` values.
+- All Android application/library modules are checked for the shared `mtapktool.compileSdk` / `mtapktool.minSdk` wiring.
+- Bundled framework APK bytes now use tracked `.bin` asset names and are copied to normal `.apk` framework names at runtime. This avoids both the repository `*.apk` ignore rule and missing `R.raw.apktool_framework_sdk_*` symbols.
+- The bundled debug keystore is likewise stored as a `.bin` asset so the `*.keystore` ignore rule cannot remove it in CI checkouts.

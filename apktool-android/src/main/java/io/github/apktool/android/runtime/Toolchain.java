@@ -2,11 +2,9 @@ package io.github.apktool.android.runtime;
 
 import android.content.Context;
 import android.content.res.AssetManager;
-import android.content.res.Resources;
 import android.os.Build;
 import android.os.Environment;
 
-import io.github.apktool.android.R;
 import android.system.Os;
 import android.system.OsConstants;
 
@@ -80,11 +78,10 @@ public final class Toolchain {
             requireArm64Payload();
             configureAndroidRuntimeProperties();
 
-            // Frameworks are shipped as raw resources as well as legacy assets.
-            // Some Android/AGP packaging combinations have dropped nested .apk assets,
-            // causing provision() to fail before a decode job can even start. Raw
-            // resources are assigned stable resource IDs and are therefore the primary
-            // source; the asset path is retained only as a compatibility fallback.
+            // Framework APK bytes are bundled with a .bin source suffix on purpose.
+            // The repository ignores *.apk build artifacts, so storing the payload as
+            // sdk-XX.apk made GitHub Actions checkouts lose the framework files. At
+            // runtime the exact bytes are copied to Apktool's normal .apk filenames.
             for (int api : new int[]{33, 34, 35, 36}) {
                 copyBundledFrameworkIfDifferent(api, new File(frameworkDir, "1-sdk" + api + ".apk"));
                 if (api == 36) copyBundledFrameworkIfDifferent(api, new File(frameworkDir, "1.apk"));
@@ -179,7 +176,7 @@ public final class Toolchain {
     private File ensureDebugKeystore() throws IOException {
         File key = new File(context.getFilesDir(), "apktool-debug.keystore");
         if (!key.isFile() || key.length() == 0) {
-            try (InputStream in = openRawOrAsset(R.raw.apktool_debug_keystore, "debug.keystore");
+            try (InputStream in = context.getAssets().open("apktool/debug-keystore.bin", AssetManager.ACCESS_STREAMING);
                  OutputStream out = new FileOutputStream(key)) {
                 copy(in, out);
             }
@@ -254,56 +251,10 @@ public final class Toolchain {
     }
 
     private void copyBundledFrameworkIfDifferent(int api, File dst) throws IOException {
-        final int resourceId;
-        switch (api) {
-            case 33: resourceId = R.raw.apktool_framework_sdk_33; break;
-            case 34: resourceId = R.raw.apktool_framework_sdk_34; break;
-            case 35: resourceId = R.raw.apktool_framework_sdk_35; break;
-            case 36: resourceId = R.raw.apktool_framework_sdk_36; break;
-            default: throw new IOException("Unsupported bundled framework API: " + api);
+        if (api < 33 || api > 36) {
+            throw new IOException("Unsupported bundled framework API: " + api);
         }
-        copyRawOrAssetIfDifferent(resourceId, "apktool/frameworks/sdk-" + api + ".apk", dst);
-    }
-
-    private InputStream openRawOrAsset(int resourceId, String fallbackAsset) throws IOException {
-        try {
-            return context.getResources().openRawResource(resourceId);
-        } catch (Resources.NotFoundException notFound) {
-            try {
-                return context.getAssets().open(fallbackAsset, AssetManager.ACCESS_STREAMING);
-            } catch (IOException assetError) {
-                IOException combined = new IOException(
-                    "Bundled resource is missing (raw=" + resourceId + ", asset=" + fallbackAsset + ")",
-                    assetError
-                );
-                combined.addSuppressed(notFound);
-                throw combined;
-            }
-        }
-    }
-
-    private void copyRawOrAssetIfDifferent(int resourceId, String fallbackAsset, File dst) throws IOException {
-        if (dst.isFile()) {
-            byte[] bundled;
-            byte[] installed;
-            try (InputStream in = openRawOrAsset(resourceId, fallbackAsset)) { bundled = sha256(in); }
-            try (InputStream in = new FileInputStream(dst)) { installed = sha256(in); }
-            if (Arrays.equals(bundled, installed)) return;
-        }
-        File parent = dst.getParentFile();
-        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create " + parent);
-        File tmp = new File(dst.getParentFile(), dst.getName() + ".tmp");
-        try (InputStream in = openRawOrAsset(resourceId, fallbackAsset);
-             OutputStream out = new FileOutputStream(tmp)) {
-            copy(in, out);
-        }
-        if (dst.exists() && !dst.delete()) throw new IOException("Cannot replace " + dst);
-        if (!tmp.renameTo(dst)) {
-            try (InputStream in = new FileInputStream(tmp); OutputStream out = new FileOutputStream(dst)) { copy(in, out); }
-            //noinspection ResultOfMethodCallIgnored
-            tmp.delete();
-        }
-        if (!dst.isFile() || dst.length() == 0L) throw new IOException("Provisioned framework is empty: " + dst);
+        copyAssetIfDifferent("apktool/frameworks/sdk-" + api + ".bin", dst);
     }
 
     private void copyAssetIfDifferent(String asset, File dst) throws IOException {
