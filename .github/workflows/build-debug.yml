@@ -19,11 +19,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # A previously committed updateDaemonJvm file can override JAVA_HOME.
-      # Remove it before the very first project Gradle invocation.
       - name: Remove stale Gradle daemon JVM criteria
-        run: rm -f gradle/gradle-daemon-jvm.properties
-
+        run: |
+          rm -f gradle/gradle-daemon-jvm.properties
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -33,52 +31,107 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          packages: ''
 
+      - name: Accept Android SDK licenses
+        run: |
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
       - name: Install Android SDK 36
         run: |
+          set -e
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "ndk;29.0.14033849"
-          yes | sdkmanager --licenses || true
-
+      - name: Verify Android SDK
+        run: |
+          set -e
+          echo "ANDROID_HOME=${ANDROID_HOME:-}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
+          echo "=== sdkmanager ==="
+          sdkmanager --version
+          echo "=== Installed SDK packages ==="
+          sdkmanager --list_installed | grep -E \
+            'platform-tools|platforms;android-36|build-tools;36.0.0|ndk;29.0.14033849' || true
+          test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
+          test -d "${ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          test -d "${ANDROID_SDK_ROOT}/ndk/29.0.14033849"
       - name: Make Gradle executable
-        run: chmod +x ./gradlew ./gradlew17 ./gradlew25
-
+        run: |
+          chmod +x ./gradlew
+          if [ -f ./gradlew25 ]; then
+            chmod +x ./gradlew25
+          fi
       - name: Verify Java 17 profile
         run: |
           set -eu
           test ! -e gradle/gradle-daemon-jvm.properties
-          java_major="$(java -version 2>&1 | sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p')"
-          test "$java_major" = "17" || { echo "Expected JDK 17, got: $java_major"; exit 1; }
-          ./gradlew17 --version
-          ./gradlew17 verifyJavaProfile --no-daemon
-
+          java_major="$(
+            java -version 2>&1 |
+            sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p'
+          )"
+          echo "Java major version: $java_major"
+          test "$java_major" = "17" || {
+            echo "Expected JDK 17, got: $java_major"
+            exit 1
+          }
+          java -version
+          ./gradlew --version
+          ./gradlew verifyJavaProfile --no-daemon
       - name: Verify SDK-36 dependency pins
         run: |
           set -eu
           grep -q 'coreKtx = "1.18.0"' gradle/libs.versions.toml
-          grep -q 'lifecycleViewmodelCompose = "2.10.0"' gradle/libs.versions.toml
-          grep -q 'defaultAgpVersion = if (javaProfile == 25) "9.0.0" else "8.10.1"' settings.gradle.kts
+          grep -q \
+            'lifecycleViewmodelCompose = "2.10.0"' \
+            gradle/libs.versions.toml
+          grep -q \
+            'defaultAgpVersion = if (javaProfile == 25) "9.0.0" else "8.10.1"' \
+            settings.gradle.kts
           grep -q '^mtapktool.compileSdk=36$' gradle.properties
           grep -q '^mtapktool.minSdk=29$' gradle.properties
           grep -q '^mtapktool.targetSdk=36$' gradle.properties
           grep -q '^mtapktool.ndkVersion=29.0.14033849$' gradle.properties
           for api in 33 34 35 36; do
-            test -s "apktool-android/src/main/assets/apktool/frameworks/sdk-$api.apk"
+            test -s \
+              "apktool-android/src/main/assets/apktool/frameworks/sdk-$api.apk"
           done
-          test -s apktool-android/src/main/assets/apktool/debug-keystore.bin
-          ! grep -q 'R.raw.apktool_framework_sdk_' apktool-android/src/main/java/io/github/apktool/android/runtime/Toolchain.java
-          grep -q 'compileSdk = mtapktoolCompileSdk' app/build.gradle.kts
-          grep -q 'targetSdk = mtapktoolTargetSdk' app/build.gradle.kts
-          for module in app apktool-android apksig-android zipalign-android antisplit-m apkextractor apkcloner mh-editview mh-editor brut.apktool/apktool-lib brut.apktool/apktool-cli; do
-            grep -q 'mtapktool.compileSdk' "$module/build.gradle.kts"
-            grep -q 'mtapktool.minSdk' "$module/build.gradle.kts"
-            grep -q 'compileSdk = mtapktoolCompileSdk' "$module/build.gradle.kts"
-            grep -q 'minSdk = mtapktoolMinSdk' "$module/build.gradle.kts"
+          test -s \
+            apktool-android/src/main/assets/apktool/debug-keystore.bin
+          ! grep -q \
+            'R.raw.apktool_framework_sdk_' \
+            apktool-android/src/main/java/io/github/apktool/android/runtime/Toolchain.java
+          grep -q \
+            'compileSdk = mtapktoolCompileSdk' \
+            app/build.gradle.kts
+          grep -q \
+            'targetSdk = mtapktoolTargetSdk' \
+            app/build.gradle.kts
+          for module in \
+            app \
+            apktool-android \
+            apksig-android \
+            zipalign-android \
+            brut.apktool/apktool-lib \
+            brut.apktool/apktool-cli
+          do
+            grep -q \
+              'mtapktool.compileSdk' \
+              "$module/build.gradle.kts"
+            grep -q \
+              'mtapktool.minSdk' \
+              "$module/build.gradle.kts"
+            grep -q \
+              'compileSdk = mtapktoolCompileSdk' \
+              "$module/build.gradle.kts"
+            grep -q \
+              'minSdk = mtapktoolMinSdk' \
+              "$module/build.gradle.kts"
           done
-
       - name: Verify integrated source modules and Java profile wiring
         run: |
           set -eu
@@ -87,11 +140,6 @@ jobs:
             apktool-android \
             apksig-android \
             zipalign-android \
-            antisplit-m \
-            apkextractor \
-            apkcloner \
-            mh-editview \
-            mh-editor \
             antlr-runtime \
             smali-android \
             brut.j.common \
@@ -102,62 +150,84 @@ jobs:
             brut.apktool/apktool-lib \
             brut.apktool/apktool-cli
           do
-            test -f "$module/build.gradle.kts" || { echo "Missing module: $module"; exit 1; }
+            test -f "$module/build.gradle.kts" || {
+              echo "Missing module: $module"
+              exit 1
+            }
           done
           for module in \
             app \
             apktool-android \
             apksig-android \
             zipalign-android \
-            antisplit-m \
-            apkextractor \
-            apkcloner \
-            mh-editview \
-            mh-editor \
             brut.apktool/apktool-lib \
             brut.apktool/apktool-cli
           do
-            grep -q 'mtapktool.javaVersion' "$module/build.gradle.kts"
-            grep -q 'JavaVersion.toVersion(mtapktoolJavaVersion)' "$module/build.gradle.kts"
+            grep -q \
+              'mtapktool.javaVersion' \
+              "$module/build.gradle.kts"
+            grep -q \
+              'JavaVersion.toVersion(mtapktoolJavaVersion)' \
+              "$module/build.gradle.kts"
           done
-          grep -q 'JavaLanguageVersion.of(mtapktoolJavaVersion)' build.gradle.kts
-          grep -q 'options.release.set(mtapktoolJavaVersion)' build.gradle.kts
-          grep -q 'jvmToolchain(mtapktoolJavaVersion)' app/build.gradle.kts
-          test -f app/src/main/java/io/github/lootdev78/mtapktool/MainActivity.kt
-          test -f apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
-          test -f third_party/antlr-runtime/src/main/java/org/antlr/runtime/Parser.java
-          test ! -f third_party/antlr-runtime/src/main/java/org/antlr/runtime/tree/DOTTreeGenerator.java
-          grep -q 'api(project(":antlr-runtime"))' smali-android/build.gradle.kts
-
+          grep -q \
+            'JavaLanguageVersion.of(mtapktoolJavaVersion)' \
+            build.gradle.kts
+          grep -q \
+            'options.release.set(mtapktoolJavaVersion)' \
+            build.gradle.kts
+          grep -q \
+            'jvmToolchain(mtapktoolJavaVersion)' \
+            app/build.gradle.kts
+          test -f \
+            app/src/main/java/io/github/lootdev78/mtapktool/MainActivity.kt
+          test -f \
+            apktool-android/src/main/java/io/github/apktool/android/runtime/ApktoolCommandRunner.java
+          test -f \
+            third_party/antlr-runtime/src/main/java/org/antlr/runtime/Parser.java
+          test ! -f \
+            third_party/antlr-runtime/src/main/java/org/antlr/runtime/tree/DOTTreeGenerator.java
+          grep -q \
+            'api(project(":antlr-runtime"))' \
+            smali-android/build.gradle.kts
       - name: Check AAR metadata
-        run: ./gradlew17 :app:checkDebugAarMetadata --stacktrace --no-daemon
-
-      - name: Build Debug APK
         run: |
-          ./gradlew17 :app:assembleDebug \
+          ./gradlew \
+            :app:checkDebugAarMetadata \
             --stacktrace \
             --no-daemon
-
+      - name: Build Debug APK
+        run: |
+          ./gradlew \
+            :app:assembleDebug \
+            --stacktrace \
+            --no-daemon
       - name: Locate APK
         run: |
           echo "=== APK files ==="
-          find . -type f \
+          find . \
+            -type f \
             -path '*/build/outputs/apk/debug/*.apk' \
             -print
-
       - name: Prepare JAVA17 artifact
         run: |
           set -eu
           mkdir -p artifacts
-          apk="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          apk="$(
+            find app/build/outputs/apk/debug \
+              -maxdepth 1 \
+              -type f \
+              -name '*.apk' |
+            head -n 1
+          )"
           test -n "$apk"
-          cp "$apk" "artifacts/MTApktool-debug-java17.apk"
-
+          echo "APK: $apk"
+          cp "$apk" \
+            "artifacts/MTApktool-debug-java17.apk"
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: MTApktool-debug-java17
-          path: |
-            artifacts/MTApktool-debug-java17.apk
+          path: artifacts/MTApktool-debug-java17.apk
           if-no-files-found: error
           retention-days: 14
