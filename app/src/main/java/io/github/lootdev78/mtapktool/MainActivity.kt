@@ -10,20 +10,27 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
 import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
+import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import androidx.core.net.toUri
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import android.graphics.Color as AndroidColor
 
 class MainActivity : ComponentActivity() {
 
@@ -42,18 +49,43 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Android 15/16 can enforce edge-to-edge. Keep the window edge-to-edge but
+        // consume safeDrawing in Compose so explorer content never sits under status/navigation bars.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
         requestStoragePermission()
         requestNotificationPermission()
+        ExternalOpenBridge.publish(intent)
 
         val themeManager = ThemeManager(applicationContext)
+        ExplorerPreferences.init(applicationContext)
 
         setContent {
             val themeMode by themeManager.themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
+            val explorerPrefs by ExplorerPreferences.state.collectAsState()
+            val systemDark = isSystemInDarkTheme()
+            val darkBars = when (themeMode) {
+                ThemeMode.SYSTEM -> systemDark
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+            }
+            LaunchedEffect(themeMode, darkBars) {
+                applicationContext.getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE)
+                    .edit()
+                    .putString("mode", themeMode.name)
+                    .apply()
+                val controller = WindowInsetsControllerCompat(window, window.decorView)
+                window.statusBarColor = if (darkBars) AndroidColor.rgb(18, 19, 24) else AndroidColor.rgb(246, 243, 247)
+                window.navigationBarColor = if (darkBars) AndroidColor.rgb(10, 11, 15) else AndroidColor.rgb(246, 243, 247)
+                controller.isAppearanceLightStatusBars = !darkBars
+                controller.isAppearanceLightNavigationBars = !darkBars
+            }
 
-            MTExplorerTheme(themeMode = themeMode) {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+            MTExplorerTheme(themeMode = themeMode, accentKey = explorerPrefs.accentKey) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                ) { innerPadding ->
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
@@ -68,6 +100,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        ExternalOpenBridge.publish(intent)
+    }
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

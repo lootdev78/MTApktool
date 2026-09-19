@@ -4,13 +4,13 @@
         <activity
             android:name="modder.hub.editor.MainActivity"
             android:label="Text Editor"
-            android:theme="@style/AppTheme"
+            android:theme="@style/MTApktoolEditorTheme.Dark"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
             android:windowSoftInputMode="adjustResize"
             android:exported="false" />
         <activity
             android:name="modder.hub.editor.DebugActivity"
-            android:theme="@style/AppTheme.DebugActivity"
+            android:theme="@style/MTApktoolEditorTheme.Dark"
             android:exported="false" />
     </application>
 </manifest>

@@ -27,7 +27,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:visibility="gone"
-        android:background="@color/mt_editor_surface"
+        android:background="?android:attr/colorBackground"
         android:elevation="4dp"
         android:padding="4dp">
         <!-- Dynamic buttons will be added programmatically -->

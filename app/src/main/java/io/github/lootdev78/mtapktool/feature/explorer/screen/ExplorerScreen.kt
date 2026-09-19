@@ -3,9 +3,12 @@ package io.github.lootdev78.mtapktool.feature.explorer.screen
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Environment
 import android.webkit.MimeTypeMap
 import android.widget.Toast
+import com.android.apksig.ApkVerifier
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,8 +29,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -44,23 +45,26 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -81,16 +85,23 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.navigation.NavHostController
+import io.github.lootdev78.mtapktool.ExternalOpenBridge
+import io.github.lootdev78.mtapktool.ExplorerOutputBridge
+import io.github.lootdev78.mtapktool.apktool.ApkFunctionsDialog
+import io.github.lootdev78.mtapktool.apktool.ApkInfoDialog
+import io.github.lootdev78.mtapktool.apktool.ApkCloneDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolBuildDialog
+import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolDecodeDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolFrameworkImportDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolJobOutputDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolJobsViewModel
-import io.github.lootdev78.mtapktool.apktool.ApkInfoActivity
+import io.github.lootdev78.mtapktool.apktool.ApktoolSettingsDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolTaskPanel
-import io.github.lootdev78.mtapktool.apktool.SplitPackageActivity
 import io.github.lootdev78.mtapktool.apktool.isApkLike
 import io.github.lootdev78.mtapktool.apktool.isApktoolProject
+import io.github.lootdev78.mtapktool.apktool.SplitArchiveSupport
+import io.github.lootdev78.mtapktool.apktool.SplitPackageDialog
 import io.github.lootdev78.mtapktool.archive.ArchiveActionDialog
 import io.github.lootdev78.mtapktool.archive.ArchiveCreateDialog
 import io.github.lootdev78.mtapktool.archive.ArchiveEngine
@@ -98,33 +109,40 @@ import io.github.lootdev78.mtapktool.archive.ArchiveExtractDialog
 import io.github.lootdev78.mtapktool.feature.editor.FileInfoDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.ClassicFilePane
 import io.github.lootdev78.mtapktool.feature.explorer.component.EditHiddenFilesDialog
-import io.github.lootdev78.mtapktool.feature.explorer.component.ExplorerSideDrawer
 import io.github.lootdev78.mtapktool.feature.explorer.component.FileFilterDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.HiddenFilesDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.SortFilesDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.fileFilterLabel
 import io.github.lootdev78.mtapktool.feature.explorer.component.CustomCreateItemDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.FileContextMenuDialog
+import io.github.lootdev78.mtapktool.feature.explorer.component.FileConflictDialog
+import io.github.lootdev78.mtapktool.feature.explorer.component.BuiltInOpenDialog
+import io.github.lootdev78.mtapktool.feature.explorer.component.FileToolsDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.RenameDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.GoToPathDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.SelectionBottomBar
 import io.github.lootdev78.mtapktool.feature.explorer.component.SideBar
-import io.github.lootdev78.mtapktool.feature.explorer.model.CustomLocationStore
-import io.github.lootdev78.mtapktool.feature.explorer.model.ExplorerPreferenceStore
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
+import io.github.lootdev78.mtapktool.feature.explorer.saf.CustomLocation
+import io.github.lootdev78.mtapktool.feature.explorer.saf.CustomLocationStore
+import io.github.lootdev78.mtapktool.feature.explorer.saf.SafFileSystem
 import io.github.lootdev78.mtapktool.feature.explorer.state.FileFilter
 import io.github.lootdev78.mtapktool.feature.explorer.state.isArchiveFile
 import io.github.lootdev78.mtapktool.feature.explorer.state.isEditableTextFile
 import io.github.lootdev78.mtapktool.feature.explorer.state.isImageFile
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
+import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.FileConflictAction
 import io.github.lootdev78.mtapktool.feature.explorer.util.FileOpener
-import io.github.lootdev78.mtapktool.settings.ApktoolCliActivity
-import io.github.lootdev78.mtapktool.settings.ApktoolSettingsActivity
-import io.github.lootdev78.mtapktool.settings.SettingsActivity
-import io.github.lootdev78.mtapktool.tools.ApkExtractorActivity
+import io.github.lootdev78.mtapktool.settings.AppSettingsDialog
+import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
+import modder.hub.editor.MainActivity as MhTextEditorActivity
 
 @Composable
 fun ExplorerScreen(
@@ -134,48 +152,28 @@ fun ExplorerScreen(
     val leftState by viewModel.leftPaneState.collectAsState()
     val rightState by viewModel.rightPaneState.collectAsState()
     val activePane by viewModel.activePane.collectAsState()
+    val externalOpenRequest by ExternalOpenBridge.request.collectAsState()
+    val pendingToolOutput by ExplorerOutputBridge.outputPath.collectAsState()
     val apktoolJobsViewModel: ApktoolJobsViewModel = composeViewModel()
     val apktoolJobs by apktoolJobsViewModel.jobs.collectAsState()
     var observedSuccessfulJobs by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var jobPaneById by remember { mutableStateOf<Map<String, ActivePane>>(emptyMap()) }
 
-    var showLeftDrawer by remember { mutableStateOf(false) }
-    var leftDrawerProgress by remember { mutableFloatStateOf(0f) }
-    var leftDrawerDragging by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
     val activeState = if (activePane == ActivePane.LEFT) leftState else rightState
     val context = navController.context
     val lifecycleOwner = LocalLifecycleOwner.current
-    val restoredExplorerOptions = remember(context) { ExplorerPreferenceStore.load(context) }
-
-    LaunchedEffect(viewModel, restoredExplorerOptions) {
-        val o = restoredExplorerOptions
-        viewModel.restoreExplorerOptions(
-            leftShowSystemHidden = o.leftSystemHidden,
-            rightShowSystemHidden = o.rightSystemHidden,
-            leftShowManuallyHidden = o.leftManualHidden,
-            rightShowManuallyHidden = o.rightManualHidden,
-            hiddenPaths = o.manualHiddenPaths,
-            leftSort = o.leftSort,
-            rightSort = o.rightSort,
-            leftFilter = o.leftFilter,
-            rightFilter = o.rightFilter,
-            sortOverrides = o.folderSortOverrides,
-        )
-    }
+    ExplorerPreferences.init(context)
+    val explorerPrefs by ExplorerPreferences.state.collectAsState()
+    val fileConflict by viewModel.fileConflict.collectAsState()
 
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> {
-                    viewModel.commitMountedArchives()
-                    // External editors/installers may have changed files while Explorer was paused.
-                    viewModel.refreshDirectory(ActivePane.LEFT)
-                    viewModel.refreshDirectory(ActivePane.RIGHT)
-                }
-                Lifecycle.Event.ON_STOP -> viewModel.commitMountedArchives()
-                else -> Unit
+            if (event == Lifecycle.Event.ON_RESUME || event == Lifecycle.Event.ON_STOP) {
+                viewModel.commitMountedArchives()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -187,39 +185,19 @@ fun ExplorerScreen(
     var bookmarks by remember(bookmarkPreferences) {
         mutableStateOf(bookmarkPreferences.getStringSet("paths", emptySet()).orEmpty().toList().sorted())
     }
-    var customLocations by remember(context) { mutableStateOf(CustomLocationStore.all(context)) }
-    var launchedPackagePane by remember { mutableStateOf(ActivePane.LEFT) }
+    var customLocations by remember(context) { mutableStateOf(CustomLocationStore.load(context)) }
+    var locationToEdit by remember { mutableStateOf<CustomLocation?>(null) }
+    var locationEditName by remember { mutableStateOf("") }
     val addLocationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-            CustomLocationStore.add(context, uri)
-            customLocations = CustomLocationStore.all(context)
-        }
-    }
-    val apkInfoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val data = result.data
-        if (result.resultCode == android.app.Activity.RESULT_OK && data?.getStringExtra(ApkInfoActivity.RESULT_ACTION) == ApkInfoActivity.ACTION_VIEW_ARCHIVE) {
-            data.getStringExtra(ApkInfoActivity.EXTRA_PATH)?.let(::File)?.takeIf { it.isFile }?.let { viewModel.openArchive(launchedPackagePane, it) }
-        }
-    }
-    fun openAppPackage(file: File, pane: ActivePane) {
-        launchedPackagePane = pane
-        if (file.extension.equals("apk", true)) {
-            apkInfoLauncher.launch(
-                Intent(context, ApkInfoActivity::class.java)
-                    .putExtra(ApkInfoActivity.EXTRA_PATH, file.absolutePath)
-                    .putExtra(ApkInfoActivity.EXTRA_LEFT_PATH, leftState.currentPath)
-                    .putExtra(ApkInfoActivity.EXTRA_RIGHT_PATH, rightState.currentPath)
-                    .putExtra(ApkInfoActivity.EXTRA_SOURCE_PANE, pane.name)
-            )
-        } else {
-            context.startActivity(
-                Intent(context, SplitPackageActivity::class.java)
-                    .putExtra(SplitPackageActivity.EXTRA_PATH, file.absolutePath)
-                    .putExtra(SplitPackageActivity.EXTRA_LEFT_PATH, leftState.currentPath)
-                    .putExtra(SplitPackageActivity.EXTRA_RIGHT_PATH, rightState.currentPath)
-                    .putExtra(SplitPackageActivity.EXTRA_SOURCE_PANE, pane.name)
-            )
+            runCatching { CustomLocationStore.add(context, uri) }
+                .onSuccess { location ->
+                    customLocations = CustomLocationStore.load(context)
+                    viewModel.openCustomLocation(activePane, CustomLocationStore.rootDocumentUri(location).toString(), location.name)
+                    locationToEdit = location
+                    locationEditName = location.name
+                }
+                .onFailure { Toast.makeText(context, "Storage permission failed: ${it.message}", Toast.LENGTH_LONG).show() }
         }
     }
 
@@ -234,13 +212,20 @@ fun ExplorerScreen(
         val newlyFinished = successful - observedSuccessfulJobs
         if (newlyFinished.isNotEmpty()) {
             observedSuccessfulJobs = observedSuccessfulJobs + newlyFinished
-            viewModel.refreshDirectory(ActivePane.LEFT)
-            viewModel.refreshDirectory(ActivePane.RIGHT)
+            newlyFinished.forEach { id ->
+                val job = apktoolJobs.firstOrNull { it.id == id }
+                val pane = jobPaneById[id] ?: activePane
+                val output = job?.output
+                if (!output.isNullOrBlank() && File(output).exists()) viewModel.revealOutput(pane, output)
+                else viewModel.refreshDirectory(pane)
+            }
         }
     }
 
     // State Variables
     var showContextMenu by remember { mutableStateOf(false) }
+    var showBuiltInOpen by remember { mutableStateOf(false) }
+    var showFileTools by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showGoToPathDialog by remember { mutableStateOf(false) }
     var goToPane by remember { mutableStateOf<ActivePane?>(null) }
@@ -248,12 +233,20 @@ fun ExplorerScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var targetItem by remember { mutableStateOf<FileItem?>(null) }
     var isSearching by remember { mutableStateOf(false) }
+    var showApkInfo by remember { mutableStateOf(false) }
+    var apkInfoPane by remember { mutableStateOf(ActivePane.LEFT) }
+    var showSplitPackage by remember { mutableStateOf(false) }
+    var splitPackagePane by remember { mutableStateOf(ActivePane.LEFT) }
+    var showApkFunctions by remember { mutableStateOf(false) }
+    var showApkClone by remember { mutableStateOf(false) }
     var showApktoolDecode by remember { mutableStateOf(false) }
+    var showFrameworkImport by remember { mutableStateOf(false) }
     var showApktoolBuild by remember { mutableStateOf(false) }
+    var showApktoolSettings by remember { mutableStateOf(false) }
+    var showAppSettings by remember { mutableStateOf(false) }
     var showTaskPanel by remember { mutableStateOf(false) }
-    var taskDrawerProgress by remember { mutableFloatStateOf(0f) }
-    var taskDrawerDragging by remember { mutableStateOf(false) }
     var selectedJobId by remember { mutableStateOf<String?>(null) }
+    var showApktoolCli by remember { mutableStateOf(false) }
     var showApktoolOptions by remember { mutableStateOf(false) }
     var apktoolTarget by remember { mutableStateOf<File?>(null) }
     var showArchiveDialog by remember { mutableStateOf(false) }
@@ -268,16 +261,168 @@ fun ExplorerScreen(
     var showEditHiddenFiles by remember { mutableStateOf(false) }
     var showSortFiles by remember { mutableStateOf(false) }
     var showSortManage by remember { mutableStateOf(false) }
-    var sortManageRevision by remember { mutableIntStateOf(0) }
     var showFilterFiles by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var deletePane by remember { mutableStateOf(ActivePane.LEFT) }
+    var recycleOnDelete by remember { mutableStateOf(false) }
+
+    fun requestDelete(pane: ActivePane) {
+        deletePane = pane
+        recycleOnDelete = explorerPrefs.recycleBinEnabled && explorerPrefs.moveToRecycleBinByDefault
+        showDeleteConfirm = true
+    }
 
     val hasSelectedItems = activeState.selectedPaths.isNotEmpty()
-    val canNavigateBack = activeState.currentPath != rootPath && activeState.currentPath != "/"
+    val canNavigateBack = viewModel.canNavigateUp(activePane)
+
+    fun openInTextEditor(item: FileItem) {
+        val intent = Intent(context, MhTextEditorActivity::class.java).apply {
+            if (item.isSaf) {
+                putExtra("uri", item.path)
+                putExtra("name", item.name)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } else {
+                putExtra("path", item.path)
+                putExtra("name", item.name)
+            }
+        }
+        runCatching { context.startActivity(intent) }
+            .onFailure { Toast.makeText(context, it.message ?: "Editor konnte nicht geöffnet werden", Toast.LENGTH_SHORT).show() }
+    }
+
+    fun materializeForTool(item: FileItem, pane: ActivePane, onReady: (File) -> Unit) {
+        if (!item.isSaf) {
+            onReady(File(item.path))
+            return
+        }
+        scope.launch {
+            viewModel.setPaneBusy(pane, true, "Bereite ${item.name} vor")
+            val result = withContext(Dispatchers.IO) {
+                runCatching { SafFileSystem.materializeToCache(context, Uri.parse(item.path), item.name) }
+            }
+            viewModel.setPaneBusy(pane, false)
+            result.onSuccess(onReady)
+                .onFailure { Toast.makeText(context, it.message ?: "Datei konnte nicht geöffnet werden", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    fun revealIncomingInLastPane(item: FileItem) {
+        if (!item.isSaf) {
+            viewModel.revealOutput(activePane, item.path)
+            return
+        }
+        val uri = Uri.parse(item.path)
+        val local = runCatching {
+            if (uri.authority == "com.android.externalstorage.documents") {
+                val id = DocumentsContract.getDocumentId(uri)
+                val parts = id.split(':', limit = 2)
+                if (parts.firstOrNull().equals("primary", ignoreCase = true)) {
+                    File(Environment.getExternalStorageDirectory(), parts.getOrElse(1) { "" })
+                } else null
+            } else null
+        }.getOrNull()
+        if (local != null && local.exists()) {
+            viewModel.revealOutput(activePane, local.absolutePath)
+        } else {
+            Toast.makeText(context, "Der Original-Speicherort dieser URI ist für Android nicht direkt auflösbar.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    LaunchedEffect(pendingToolOutput) {
+        val output = pendingToolOutput ?: return@LaunchedEffect
+        ExplorerOutputBridge.clear()
+        if (File(output).exists()) viewModel.revealOutput(activePane, output)
+    }
+
+    LaunchedEffect(externalOpenRequest?.uri) {
+        val request = externalOpenRequest ?: return@LaunchedEffect
+        val uri = Uri.parse(request.uri)
+        val item = if (uri.scheme.equals("file", ignoreCase = true)) {
+            val file = uri.path?.let(::File)
+            file?.takeIf { it.exists() }?.let(::FileItem)
+        } else {
+            var name = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "Datei" } ?: "Datei"
+            var size = 0L
+            runCatching {
+                context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
+                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+            FileItem(
+                file = File(name),
+                safUri = uri.toString(),
+                displayName = name,
+                directoryOverride = false,
+                sizeOverride = size,
+                mimeType = request.mimeType ?: context.contentResolver.getType(uri),
+            )
+        }
+        ExternalOpenBridge.clear()
+        if (item != null) {
+            targetItem = item
+            showBuiltInOpen = true
+        } else {
+            Toast.makeText(context, "Datei konnte nicht geöffnet werden", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openSafItem(pane: ActivePane, item: FileItem) {
+        if (item.isDirectory) {
+            viewModel.loadDirectory(pane, item.path)
+            return
+        }
+        val ext = item.extensionName
+        if (item.isEditableTextFile()) {
+            openInTextEditor(item)
+            return
+        }
+        if (ext in setOf("apk", "apks", "apkm", "xapk", "apkx") || item.isArchiveFile()) {
+            scope.launch {
+                viewModel.setPaneBusy(pane, true, "Öffne ${item.name}", 0)
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { SafFileSystem.materializeToCache(context, Uri.parse(item.path), item.name) }
+                }
+                result.onSuccess { local ->
+                    when {
+                        ext == "apk" -> {
+                            viewModel.setPaneBusy(pane, false)
+                            apktoolTarget = local
+                            targetItem = item
+                            apkInfoPane = pane
+                            showApkInfo = true
+                        }
+                        ext in setOf("apks", "apkm", "xapk", "apkx") -> {
+                            viewModel.setPaneBusy(pane, false)
+                            apktoolTarget = local
+                            targetItem = item
+                            splitPackagePane = pane
+                            showSplitPackage = true
+                        }
+                        ArchiveEngine.supports(local) -> viewModel.openArchive(pane, local)
+                        else -> {
+                            viewModel.setPaneBusy(pane, false)
+                            FileOpener.openUri(context, Uri.parse(item.path), item.name, item.mimeType)
+                        }
+                    }
+                }.onFailure {
+                    viewModel.setPaneBusy(pane, false)
+                    Toast.makeText(context, it.message ?: "Open failed", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            FileOpener.openUri(context, Uri.parse(item.path), item.name, item.mimeType)
+        }
+    }
 
     // Dialogs
     if (showContextMenu && targetItem != null) {
         FileContextMenuDialog(
-            targetItem=targetItem,
+            targetItem = targetItem,
             activePane = activePane,
             onDismissRequest = { showContextMenu = false },
             onCopy = {
@@ -294,10 +439,6 @@ fun ExplorerScreen(
                 }
                 showContextMenu = false
             },
-            onLink = {
-                targetItem?.let { item -> viewModel.linkToOppositePane(activePane, item.path) }
-                showContextMenu = false
-            },
             onRename = {
                 showRenameDialog = true
                 showContextMenu = false
@@ -305,15 +446,21 @@ fun ExplorerScreen(
             onDelete = {
                 targetItem?.let { item ->
                     viewModel.ensureSelected(activePane, item.path)
-                    viewModel.deleteSelected(activePane)
+                    requestDelete(activePane)
                 }
                 showContextMenu = false
             },
+            onTools = {
+                showContextMenu = false
+                showFileTools = true
+            },
             onCompress = {
                 targetItem?.let { item ->
-                    archiveSources = listOf(File(item.path))
-                    archivePane = activePane
-                    showArchiveDialog = true
+                    materializeForTool(item, activePane) { file ->
+                        archiveSources = listOf(file)
+                        archivePane = activePane
+                        showArchiveDialog = true
+                    }
                 }
                 showContextMenu = false
             },
@@ -323,62 +470,105 @@ fun ExplorerScreen(
             },
             onShare = {
                 targetItem?.let { item ->
-                    val file = File(item.path)
-                    if (file.isFile) {
-                        runCatching {
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file
-                            )
-                            val mimeType = MimeTypeMap.getSingleton()
-                                .getMimeTypeFromExtension(file.extension.lowercase()) ?: "*/*"
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = mimeType
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                clipData = ClipData.newRawUri(file.name, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Share File"))
-                        }.onFailure { error ->
-                            Toast.makeText(context, "Share failed: ${error.message}", Toast.LENGTH_SHORT).show()
+                    runCatching {
+                        val uri = if (item.isSaf) Uri.parse(item.path) else FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(item.path))
+                        val mimeType = item.mimeType ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(item.extensionName) ?: "*/*"
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = mimeType
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            clipData = ClipData.newRawUri(item.name, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                    }
+                        context.startActivity(Intent.createChooser(intent, "Datei teilen"))
+                    }.onFailure { error -> Toast.makeText(context, "Teilen fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show() }
                 }
                 showContextMenu = false
             },
             onOpenWith = {
-                targetItem?.let { item ->
-                    val file = File(item.path)
-                    if (file.isFile) FileOpener.openFile(context, file)
-                }
                 showContextMenu = false
+                showBuiltInOpen = true
             },
             onAddBookmark = {
                 targetItem?.let { item ->
                     val updated = (bookmarks + item.path).distinct().sorted()
                     bookmarks = updated
                     bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
-                    Toast.makeText(context, "Bookmark added", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Lesezeichen hinzugefügt", Toast.LENGTH_SHORT).show()
                 }
                 showContextMenu = false
             },
-            readOnlyArchive = activeState.isArchiveView,
-            onApktool = {
-                targetItem?.let { item ->
-                    val file = File(item.path)
-                    apktoolTarget = file
-                    if (isApktoolProject(file)) {
-                        showApktoolBuild = true
-                    } else if (isApkLike(file)) {
-                        openAppPackage(file, activePane)
-                    }
+        )
+    }
+
+    if (showBuiltInOpen && targetItem != null) {
+        val item = targetItem!!
+        BuiltInOpenDialog(
+            item = item,
+            onDismiss = { showBuiltInOpen = false },
+            onTextEditor = {
+                showBuiltInOpen = false
+                openInTextEditor(item)
+            },
+            onArchiveViewer = {
+                showBuiltInOpen = false
+                materializeForTool(item, activePane) { file ->
+                    if (ArchiveEngine.supports(file)) viewModel.openArchive(activePane, file)
+                    else Toast.makeText(context, "Kein unterstütztes Archiv", Toast.LENGTH_SHORT).show()
                 }
-                showContextMenu = false
+            },
+            onApkInfo = {
+                showBuiltInOpen = false
+                materializeForTool(item, activePane) { file ->
+                    apktoolTarget = file
+                    apkInfoPane = activePane
+                    showApkInfo = true
+                }
+            },
+            onSplitFunctions = {
+                showBuiltInOpen = false
+                materializeForTool(item, activePane) { file ->
+                    apktoolTarget = file
+                    splitPackagePane = activePane
+                    showSplitPackage = true
+                }
+            },
+            onApktoolDecode = {
+                showBuiltInOpen = false
+                materializeForTool(item, activePane) { file ->
+                    apktoolTarget = file
+                    showApktoolDecode = true
+                }
+            },
+            onRevealInPanel = {
+                showBuiltInOpen = false
+                revealIncomingInLastPane(item)
+            },
+            onExternalApp = {
+                showBuiltInOpen = false
+                if (item.isSaf) FileOpener.openUri(context, Uri.parse(item.path), item.name, item.mimeType)
+                else FileOpener.openFile(context, File(item.path))
+            },
+        )
+    }
+
+    if (showFileTools && targetItem != null) {
+        val item = targetItem!!
+        FileToolsDialog(
+            item = item,
+            onDismiss = { showFileTools = false },
+            onTextEditor = {
+                showFileTools = false
+                openInTextEditor(item)
+            },
+            onArchiveViewer = {
+                showFileTools = false
+                materializeForTool(item, activePane) { file ->
+                    if (ArchiveEngine.supports(file)) viewModel.openArchive(activePane, file)
+                }
             },
             onExtractArchive = {
-                targetItem?.let { item ->
-                    val file = File(item.path)
+                showFileTools = false
+                materializeForTool(item, activePane) { file ->
                     if (ArchiveEngine.supports(file)) {
                         archiveTarget = file
                         archiveActionPane = activePane
@@ -386,17 +576,54 @@ fun ExplorerScreen(
                         showArchiveExtract = true
                     }
                 }
-                showContextMenu = false
             },
-
+            onApkInfo = {
+                showFileTools = false
+                materializeForTool(item, activePane) { file ->
+                    apktoolTarget = file
+                    apkInfoPane = activePane
+                    showApkInfo = true
+                }
+            },
+            onSplitFunctions = {
+                showFileTools = false
+                materializeForTool(item, activePane) { file ->
+                    apktoolTarget = file
+                    splitPackagePane = activePane
+                    showSplitPackage = true
+                }
+            },
+            onApktool = {
+                showFileTools = false
+                materializeForTool(item, activePane) { file ->
+                    apktoolTarget = file
+                    if (isApktoolProject(file)) showApktoolBuild = true else showApktoolDecode = true
+                }
+            },
         )
     }
 
     if (showPropertyDialog && targetItem != null) {
-        FileInfoDialog(
-            file = File(targetItem!!.path),
-            onDismiss = { showPropertyDialog = false }
-        )
+        val item = targetItem!!
+        if (item.isSaf) {
+            AlertDialog(
+                onDismissRequest = { showPropertyDialog = false },
+                title = { Text(item.name) },
+                text = {
+                    Column {
+                        Text(if (item.isDirectory) "Folder" else "File")
+                        if (!item.isDirectory) Text("Size: ${item.sizeText}")
+                        Text("Storage: Android document tree (read/write)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showPropertyDialog = false }) { Text("OK") } },
+            )
+        } else {
+            FileInfoDialog(
+                file = File(item.path),
+                onDismiss = { showPropertyDialog = false }
+            )
+        }
     }
 
     if (showRenameDialog && targetItem != null) {
@@ -443,18 +670,9 @@ fun ExplorerScreen(
             showManuallyHidden = activeState.showManuallyHidden,
             selectedCount = activeState.selectedPaths.size,
             manualHiddenCount = activeState.manuallyHiddenPaths.size,
-            onShowSystemHidden = { show ->
-                viewModel.setShowSystemHidden(activePane, show)
-                ExplorerPreferenceStore.saveVisibility(context, activePane, systemHidden = show)
-            },
-            onShowManuallyHidden = { show ->
-                viewModel.setShowManuallyHidden(activePane, show)
-                ExplorerPreferenceStore.saveVisibility(context, activePane, manualHidden = show)
-            },
-            onHideSelected = {
-                viewModel.hideSelectedManually(activePane)
-                ExplorerPreferenceStore.saveManualHiddenPaths(context, viewModel.manualHiddenPaths().toSet())
-            },
+            onShowSystemHidden = { viewModel.setShowSystemHidden(activePane, it) },
+            onShowManuallyHidden = { viewModel.setShowManuallyHidden(activePane, it) },
+            onHideSelected = { viewModel.hideSelectedManually(activePane) },
             onEditHidden = {
                 showHiddenFiles = false
                 showEditHiddenFiles = true
@@ -466,14 +684,8 @@ fun ExplorerScreen(
     if (showEditHiddenFiles) {
         EditHiddenFilesDialog(
             paths = activeState.manuallyHiddenPaths.sorted(),
-            onRemove = { path ->
-                viewModel.unhideManualPath(path)
-                ExplorerPreferenceStore.saveManualHiddenPaths(context, viewModel.manualHiddenPaths().toSet())
-            },
-            onClear = {
-                viewModel.clearManualHidden()
-                ExplorerPreferenceStore.saveManualHiddenPaths(context, emptySet())
-            },
+            onRemove = viewModel::unhideManualPath,
+            onClear = viewModel::clearManualHidden,
             onDismiss = { showEditHiddenFiles = false },
         )
     }
@@ -486,74 +698,30 @@ fun ExplorerScreen(
                 showSortFiles = false
                 showSortManage = true
             },
-            onApply = { spec, onlyFolder ->
-                viewModel.setSort(activePane, spec, onlyFolder)
-                if (!onlyFolder) ExplorerPreferenceStore.saveDefaultSort(context, activePane, spec)
-                ExplorerPreferenceStore.saveFolderSortOverrides(context, viewModel.folderSortOverridesSnapshot())
-            },
+            onApply = { spec, onlyFolder -> viewModel.setSort(activePane, spec, onlyFolder) },
             onDismiss = { showSortFiles = false },
         )
     }
 
     if (showSortManage) {
-        val panePrefix = activePane.name + ":"
-        val overrides = remember(showSortManage, sortManageRevision, activePane) {
-            viewModel.folderSortOverridesSnapshot()
-                .filterKeys { it.startsWith(panePrefix) }
-                .mapKeys { it.key.removePrefix(panePrefix) }
-                .toSortedMap(String.CASE_INSENSITIVE_ORDER)
-        }
         AlertDialog(
             onDismissRequest = { showSortManage = false },
             title = { Text("Sortierung verwalten") },
-            text = {
-                if (overrides.isEmpty()) {
-                    Text("Keine ordnerspezifischen Sortierungen für ${if (activePane == ActivePane.LEFT) "das linke" else "das rechte"} Fenster.")
-                } else {
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
-                        overrides.forEach { (path, spec) ->
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(path, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                                    Text(
-                                        "${spec.field.name.lowercase().replaceFirstChar { it.uppercase() }} • ${if (spec.descending) "absteigend" else "aufsteigend"}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                TextButton(onClick = {
-                                    viewModel.removeFolderSortOverride(activePane, path)
-                                    ExplorerPreferenceStore.saveFolderSortOverrides(context, viewModel.folderSortOverridesSnapshot())
-                                    sortManageRevision++
-                                }) { Text("ENTFERNEN") }
-                            }
-                        }
-                    }
-                }
+            text = { Text("Ordnerspezifische Sortierungen für ${if (activePane == ActivePane.LEFT) "das linke" else "das rechte"} Fenster zurücksetzen?") },
+            dismissButton = { TextButton(onClick = { showSortManage = false }) { Text("ABBRECHEN") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearFolderSortOverrides(activePane)
+                    showSortManage = false
+                }) { Text("ZURÜCKSETZEN") }
             },
-            dismissButton = {
-                if (overrides.isNotEmpty()) {
-                    TextButton(onClick = {
-                        viewModel.clearFolderSortOverrides(activePane)
-                        ExplorerPreferenceStore.saveFolderSortOverrides(context, viewModel.folderSortOverridesSnapshot())
-                        sortManageRevision++
-                    }) { Text("ALLE ENTFERNEN") }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showSortManage = false }) { Text("FERTIG") } },
         )
     }
 
     if (showFilterFiles) {
         FileFilterDialog(
             current = activeState.filter,
-            onApply = { filter ->
-                viewModel.setFilter(activePane, filter)
-                ExplorerPreferenceStore.saveFilter(context, activePane, filter)
-            },
+            onApply = { viewModel.setFilter(activePane, it) },
             onDismiss = { showFilterFiles = false },
         )
     }
@@ -610,18 +778,134 @@ fun ExplorerScreen(
         )
     }
 
+    if (showApkInfo) {
+        apktoolTarget?.takeIf { it.isFile && it.extension.equals("apk", ignoreCase = true) }?.let { file ->
+            ApkInfoDialog(
+                file = file,
+                panelLabel = if (apkInfoPane == ActivePane.LEFT) "Links" else "Rechts",
+                onDismiss = { showApkInfo = false },
+                onFunctions = {
+                    showApkInfo = false
+                    showApkFunctions = true
+                },
+                onView = {
+                    showApkInfo = false
+                    viewModel.openArchive(apkInfoPane, file)
+                },
+                onInstall = {
+                    installApk(context, file)
+                    showApkInfo = false
+                },
+            )
+        } ?: run { showApkInfo = false }
+    }
+
+    if (showSplitPackage) {
+        apktoolTarget?.takeIf { SplitArchiveSupport.isSplitArchive(it) }?.let { file ->
+            SplitPackageDialog(
+                file = file,
+                sourcePane = splitPackagePane,
+                leftPath = leftState.currentPath,
+                rightPath = rightState.currentPath,
+                onDismiss = { showSplitPackage = false },
+                onDecode = {
+                    showSplitPackage = false
+                    showApktoolDecode = true
+                },
+                onOutputCreated = { output, pane ->
+                    showSplitPackage = false
+                    viewModel.revealOutput(pane, output.absolutePath)
+                },
+            )
+        } ?: run { showSplitPackage = false }
+    }
+
+    if (showApkFunctions) {
+        apktoolTarget?.takeIf { it.isFile && it.extension.equals("apk", ignoreCase = true) }?.let { file ->
+            ApkFunctionsDialog(
+                file = file,
+                onDismiss = { showApkFunctions = false },
+                onDecode = {
+                    showApkFunctions = false
+                    showApktoolDecode = true
+                },
+                onImportFramework = {
+                    showApkFunctions = false
+                    showFrameworkImport = true
+                },
+                onClone = {
+                    showApkFunctions = false
+                    showApkClone = true
+                },
+                onFileInfo = {
+                    targetItem = FileItem(file)
+                    showApkFunctions = false
+                    showPropertyDialog = true
+                },
+                onOpenWith = {
+                    showApkFunctions = false
+                    targetItem = FileItem(file)
+                    showBuiltInOpen = true
+                },
+                onShare = {
+                    showApkFunctions = false
+                    shareFile(context, file)
+                },
+            )
+        } ?: run { showApkFunctions = false }
+    }
+
+    if (showApkClone) {
+        apktoolTarget?.takeIf { it.isFile && it.extension.equals("apk", ignoreCase = true) }?.let { file ->
+            ApkCloneDialog(
+                file = file,
+                leftPath = leftState.currentPath,
+                rightPath = rightState.currentPath,
+                onDismiss = { showApkClone = false },
+                onOutputCreated = { output ->
+                    showApkClone = false
+                    viewModel.revealOutput(apkInfoPane, output.absolutePath)
+                },
+            )
+        } ?: run { showApkClone = false }
+    }
+
+    if (showFrameworkImport) {
+        apktoolTarget?.takeIf { it.isFile && it.extension.equals("apk", ignoreCase = true) }?.let { file ->
+            ApktoolFrameworkImportDialog(
+                file = file,
+                onDismiss = { showFrameworkImport = false },
+                onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId },
+            )
+        } ?: run { showFrameworkImport = false }
+    }
+
     if (showApktoolDecode) {
         apktoolTarget?.takeIf(::isApkLike)?.let { file ->
-            ApktoolDecodeDialog(file = file, leftPanelPath = leftState.currentPath, rightPanelPath = rightState.currentPath, onDismiss = { showApktoolDecode = false }, onJobQueued = { jobId -> selectedJobId = jobId })
+            ApktoolDecodeDialog(file = file, onDismiss = { showApktoolDecode = false }, onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId })
         } ?: run { showApktoolDecode = false }
     }
 
     if (showApktoolBuild) {
         apktoolTarget?.takeIf(::isApktoolProject)?.let { project ->
-            ApktoolBuildDialog(project = project, leftPanelPath = leftState.currentPath, rightPanelPath = rightState.currentPath, onDismiss = { showApktoolBuild = false }, onJobQueued = { jobId -> selectedJobId = jobId })
+            ApktoolBuildDialog(project = project, onDismiss = { showApktoolBuild = false }, onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId })
         } ?: run { showApktoolBuild = false }
     }
 
+    if (showApktoolSettings) {
+        ApktoolSettingsDialog(onDismiss = { showApktoolSettings = false })
+    }
+
+    if (showAppSettings) {
+        AppSettingsDialog(
+            onDismiss = { showAppSettings = false },
+            onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId },
+        )
+    }
+
+    if (showApktoolCli) {
+        ApktoolCliDialog(onDismiss = { showApktoolCli = false }, onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId })
+    }
 
     selectedJobId?.let { jobId ->
         ApktoolJobOutputDialog(
@@ -632,17 +916,100 @@ fun ExplorerScreen(
         )
     }
 
-    BackHandler(enabled = showLeftDrawer || showTaskPanel || selectedJobId != null || canNavigateBack || isSearching) {
+    locationToEdit?.let { location ->
+        AlertDialog(
+            onDismissRequest = { locationToEdit = null },
+            title = { Text("Speicherort") },
+            text = {
+                Column {
+                    Text("Name", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = locationEditName,
+                        onValueChange = { locationEditName = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        text = "Lese- und Schreibzugriff ist aktiv. Entfernen löscht nur diesen Eintrag und gibt die gespeicherte Android-Berechtigung frei.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    val prefix = location.treeUri
+                    CustomLocationStore.remove(context, location.id)
+                    customLocations = CustomLocationStore.load(context)
+                    if (leftState.currentPath.startsWith(prefix)) viewModel.navigateToDirectPath(ActivePane.LEFT, rootPath)
+                    if (rightState.currentPath.startsWith(prefix)) viewModel.navigateToDirectPath(ActivePane.RIGHT, rootPath)
+                    locationToEdit = null
+                }) { Text("ENTFERNEN") }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = { locationToEdit = null }) { Text("ABBRECHEN") }
+                    TextButton(onClick = {
+                        CustomLocationStore.rename(context, location.id, locationEditName)
+                        customLocations = CustomLocationStore.load(context)
+                        locationToEdit = null
+                    }) { Text("SPEICHERN") }
+                }
+            },
+        )
+    }
+
+    fileConflict?.let { request ->
+        FileConflictDialog(
+            request = request,
+            onResolve = { action, applyAll -> viewModel.resolveFileConflict(action, applyAll) },
+        )
+    }
+
+    if (showDeleteConfirm) {
+        val state = if (deletePane == ActivePane.LEFT) leftState else rightState
+        val count = state.selectedPaths.size
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Löschen") },
+            text = {
+                Column {
+                    Text(if (count == 1) "Ausgewähltes Element löschen?" else "$count ausgewählte Elemente löschen?")
+                    if (explorerPrefs.recycleBinEnabled) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { recycleOnDelete = !recycleOnDelete }.padding(top = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(recycleOnDelete, { recycleOnDelete = it })
+                            Text("In Papierkorb verschieben")
+                        }
+                    }
+                    if (!recycleOnDelete && explorerPrefs.showDeletionWarning) {
+                        Text(
+                            "Die Dateien werden endgültig gelöscht.",
+                            modifier = Modifier.padding(top = 8.dp),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("ABBRECHEN") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    viewModel.deleteSelected(deletePane, recycleOverride = recycleOnDelete)
+                }) { Text("OK") }
+            },
+        )
+    }
+
+    BackHandler(enabled = showTaskPanel || selectedJobId != null || canNavigateBack || isSearching) {
         if (selectedJobId != null) {
             selectedJobId = null
         } else if (showTaskPanel) {
-            taskDrawerDragging = false
-            taskDrawerProgress = 0f
             showTaskPanel = false
-        } else if (showLeftDrawer) {
-            leftDrawerDragging = false
-            leftDrawerProgress = 0f
-            showLeftDrawer = false
         } else if (isSearching) {
             isSearching = false
             viewModel.clearSearch(activePane)
@@ -653,7 +1020,53 @@ fun ExplorerScreen(
 
     BoxWithConstraints {
         val drawerWidth = maxWidth * 0.7f
-        Box(Modifier.fillMaxSize()) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                    SideBar(
+                        drawerWidth = drawerWidth,
+                        viewModel = viewModel,
+                        bookmarks = bookmarks,
+                        customLocations = customLocations,
+                        onBookmarkClick = { path -> viewModel.navigateToDirectPath(activePane, path) },
+                        onCustomLocationClick = { location ->
+                            viewModel.openCustomLocation(activePane, CustomLocationStore.rootDocumentUri(location).toString(), location.name)
+                        },
+                        onCustomLocationLongClick = { location ->
+                            locationToEdit = location
+                            locationEditName = location.name
+                        },
+                        onCustomLocationDelete = { location ->
+                            val prefix = location.treeUri
+                            CustomLocationStore.remove(context, location.id)
+                            customLocations = CustomLocationStore.load(context)
+                            if (leftState.currentPath.startsWith(prefix)) viewModel.navigateToDirectPath(ActivePane.LEFT, rootPath)
+                            if (rightState.currentPath.startsWith(prefix)) viewModel.navigateToDirectPath(ActivePane.RIGHT, rootPath)
+                        },
+                        onCustomLocationHide = { location, hidden ->
+                            CustomLocationStore.setHidden(context, location.id, hidden)
+                            customLocations = CustomLocationStore.load(context)
+                        },
+                        onCustomLocationMove = { location, delta ->
+                            CustomLocationStore.move(context, location.id, delta)
+                            customLocations = CustomLocationStore.load(context)
+                        },
+                        onAddLocation = { addLocationLauncher.launch(null) },
+                        onOpenApkExtractor = { navController.navigate(Screen.ApkExtractor.route) },
+                        onOpenTextEditor = { runCatching { context.startActivity(Intent(context, MhTextEditorActivity::class.java)) } },
+                        onOpenRecycleBin = { viewModel.openRecycleBin(activePane) },
+                        onRemoveBookmark = { path ->
+                            val updated = bookmarks.filterNot { it == path }
+                            bookmarks = updated
+                            bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
+                        },
+                        onOpenSettings = { showAppSettings = true },
+                        onClose = {
+                            scope.launch { drawerState.close() }
+                        }
+                    )
+                }
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -666,51 +1079,14 @@ fun ExplorerScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (isSearching) {
-                        Box(Modifier.fillMaxWidth()) {
-                            SearchBar(
-                                query = activeState.searchQuery,
-                                onQueryChange = { viewModel.setSearchQuery(activePane, it) },
-                                onOpenDrawer = { showLeftDrawer = true },
-                                onMore = { showApktoolOptions = true },
-                                onClose = {
-                                    isSearching = false
-                                    viewModel.clearSearch(activePane)
-                                }
-                            )
-                            DropdownMenu(
-                                expanded = showApktoolOptions,
-                                onDismissRequest = { showApktoolOptions = false },
-                                modifier = Modifier.align(Alignment.TopEnd),
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Versteckte Dateien") },
-                                    leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null) },
-                                    onClick = { showApktoolOptions = false; showHiddenFiles = true },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Sortieren") },
-                                    leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) },
-                                    onClick = { showApktoolOptions = false; showSortFiles = true },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (activeState.filter == FileFilter.ALL) "Filter" else "Filter: ${fileFilterLabel(activeState.filter)}") },
-                                    leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
-                                    onClick = { showApktoolOptions = false; showFilterFiles = true },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Erstellen & Dekodieren") },
-                                    onClick = { showApktoolOptions = false; context.startActivity(Intent(context, ApktoolSettingsActivity::class.java)) },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Apktool Jobs (${apktoolJobs.count { !it.isTerminal }})") },
-                                    onClick = { showApktoolOptions = false; showTaskPanel = true; taskDrawerProgress = 1f },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Apktool CLI") },
-                                    onClick = { showApktoolOptions = false; context.startActivity(Intent(context, ApktoolCliActivity::class.java)) },
-                                )
+                        SearchBar(
+                            query = activeState.searchQuery,
+                            onQueryChange = { viewModel.setSearchQuery(activePane, it) },
+                            onClose = {
+                                isSearching = false
+                                viewModel.clearSearch(activePane)
                             }
-                        }
+                        )
                     } else {
                         Row(
                             modifier = Modifier
@@ -719,7 +1095,7 @@ fun ExplorerScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(
-                                onClick = { showLeftDrawer = true },
+                                onClick = { scope.launch { drawerState.open() } },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
@@ -740,17 +1116,27 @@ fun ExplorerScreen(
                                     }
                             ) {
                                 Text(
-                                    text = activeState.currentPath,
+                                    text = activeState.displayPath,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                val diskRoot = if (!activeState.currentPath.startsWith("content://")) File(activeState.currentPath) else File(rootPath)
+                                val totalDisk = diskRoot.totalSpace.takeIf { it > 0L } ?: File(rootPath).totalSpace
+                                val freeDisk = diskRoot.freeSpace.takeIf { it >= 0L } ?: File(rootPath).freeSpace
+                                val usedDisk = (totalDisk - freeDisk).coerceAtLeast(0L)
                                 Text(
-                                    text = "Folder: ${activeState.folderCount} File: ${activeState.fileCount}",
+                                    text = buildString {
+                                        append("Folders: ${activeState.folderCount} Files: ${activeState.fileCount}")
+                                        if (activeState.selectedPaths.isNotEmpty()) append(" Selected: ${activeState.selectedPaths.size}")
+                                        if (totalDisk > 0L) append(" Disk: ${formatDiskG(usedDisk)}/${formatDiskG(totalDisk)}")
+                                    },
                                     fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
 
@@ -795,9 +1181,15 @@ fun ExplorerScreen(
                                         leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
                                         onClick = { showApktoolOptions = false; showFilterFiles = true },
                                     )
+                                    if (activeState.currentPath == viewModel.recycleBinPath()) {
+                                        DropdownMenuItem(
+                                            text = { Text("Papierkorb leeren") },
+                                            onClick = { showApktoolOptions = false; viewModel.emptyRecycleBin(activePane) },
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text("Erstellen & Dekodieren") },
-                                        onClick = { showApktoolOptions = false; context.startActivity(Intent(context, ApktoolSettingsActivity::class.java)) }
+                                        onClick = { showApktoolOptions = false; showApktoolSettings = true }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Apktool Jobs (${apktoolJobs.count { !it.isTerminal }})") },
@@ -805,7 +1197,7 @@ fun ExplorerScreen(
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Apktool CLI") },
-                                        onClick = { showApktoolOptions = false; context.startActivity(Intent(context, ApktoolCliActivity::class.java)) }
+                                        onClick = { showApktoolOptions = false; showApktoolCli = true }
                                     )
                                 }
                             }
@@ -833,18 +1225,18 @@ fun ExplorerScreen(
                                 viewModel.toggleSelection(ActivePane.LEFT, item.path, false)
                             } else {
                                 when {
+                                    item.isSaf -> openSafItem(ActivePane.LEFT, item)
+
                                     isApkLike(File(item.path)) -> {
                                         val apk = File(item.path)
                                         apktoolTarget = apk
                                         targetItem = item
-                                        openAppPackage(apk, ActivePane.LEFT)
+                                        if (apk.extension.equals("apk", ignoreCase = true)) { apkInfoPane = ActivePane.LEFT; showApkInfo = true }
+                                        else { splitPackagePane = ActivePane.LEFT; showSplitPackage = true }
                                     }
 
                                     item.isArchiveFile() && ArchiveEngine.supports(File(item.path)) -> {
-                                        archiveTarget = File(item.path)
-                                        archiveActionPane = ActivePane.LEFT
-                                        archiveActionPassword = ""
-                                        showArchiveActions = true
+                                        viewModel.openArchive(ActivePane.LEFT, File(item.path))
                                     }
 
                                     item.isDirectory -> viewModel.loadDirectory(
@@ -852,7 +1244,7 @@ fun ExplorerScreen(
                                         item.path
                                     )
 
-                                    item.isEditableTextFile() -> FileOpener.openFile(navController.context, File(item.path))
+                                    item.isEditableTextFile() -> openInTextEditor(item)
 
                                     item.isImageFile() -> {
                                         navController.navigate(
@@ -906,18 +1298,18 @@ fun ExplorerScreen(
                                 viewModel.toggleSelection(ActivePane.RIGHT, item.path, false)
                             } else {
                                 when {
+                                    item.isSaf -> openSafItem(ActivePane.RIGHT, item)
+
                                     isApkLike(File(item.path)) -> {
                                         val apk = File(item.path)
                                         apktoolTarget = apk
                                         targetItem = item
-                                        openAppPackage(apk, ActivePane.RIGHT)
+                                        if (apk.extension.equals("apk", ignoreCase = true)) { apkInfoPane = ActivePane.RIGHT; showApkInfo = true }
+                                        else { splitPackagePane = ActivePane.RIGHT; showSplitPackage = true }
                                     }
 
                                     item.isArchiveFile() && ArchiveEngine.supports(File(item.path)) -> {
-                                        archiveTarget = File(item.path)
-                                        archiveActionPane = ActivePane.RIGHT
-                                        archiveActionPassword = ""
-                                        showArchiveActions = true
+                                        viewModel.openArchive(ActivePane.RIGHT, File(item.path))
                                     }
 
                                     item.isDirectory -> viewModel.loadDirectory(
@@ -925,7 +1317,7 @@ fun ExplorerScreen(
                                         item.path
                                     )
 
-                                    item.isEditableTextFile() -> FileOpener.openFile(navController.context, File(item.path))
+                                    item.isEditableTextFile() -> openInTextEditor(item)
 
                                     item.isImageFile() -> {
                                         navController.navigate(
@@ -967,7 +1359,7 @@ fun ExplorerScreen(
                         selectedCount = activeState.selectedPaths.size,
                         onSelectAll = { viewModel.selectAll(activePane) },
                         onInvertSelection = { viewModel.invertSelection(activePane) },
-                        onDeleteSelected = { viewModel.deleteSelected(activePane) },
+                        onDeleteSelected = { requestDelete(activePane) },
                         onCloseSelected = { viewModel.cancelSelection(activePane) },
                         onArchiveSelected = {
                             archivePane = activePane
@@ -976,24 +1368,8 @@ fun ExplorerScreen(
                         },
                         onMoreOptions = { viewModel.moveSelectedToOppositePane(activePane) },
                         modifier = Modifier.drawerSwipe(
-                            onLeftDragStart = {
-                                leftDrawerDragging = true
-                                leftDrawerProgress = if (showLeftDrawer) 1f else 0f
-                            },
-                            onLeftDragProgress = { leftDrawerProgress = it },
-                            onLeftDragEnd = { open ->
-                                leftDrawerDragging = false
-                                showLeftDrawer = open
-                            },
-                            onRightDragStart = {
-                                taskDrawerDragging = true
-                                taskDrawerProgress = if (showTaskPanel) 1f else 0f
-                            },
-                            onRightDragProgress = { taskDrawerProgress = it },
-                            onRightDragEnd = { open ->
-                                taskDrawerDragging = false
-                                showTaskPanel = open
-                            },
+                            onOpenLeft = { scope.launch { drawerState.open() } },
+                            onOpenRight = { showTaskPanel = true },
                         ),
                     )
                 } else {
@@ -1002,24 +1378,8 @@ fun ExplorerScreen(
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         shadowElevation = 8.dp,
                         modifier = Modifier.fillMaxWidth().drawerSwipe(
-                            onLeftDragStart = {
-                                leftDrawerDragging = true
-                                leftDrawerProgress = if (showLeftDrawer) 1f else 0f
-                            },
-                            onLeftDragProgress = { leftDrawerProgress = it },
-                            onLeftDragEnd = { open ->
-                                leftDrawerDragging = false
-                                showLeftDrawer = open
-                            },
-                            onRightDragStart = {
-                                taskDrawerDragging = true
-                                taskDrawerProgress = if (showTaskPanel) 1f else 0f
-                            },
-                            onRightDragProgress = { taskDrawerProgress = it },
-                            onRightDragEnd = { open ->
-                                taskDrawerDragging = false
-                                showTaskPanel = open
-                            },
+                            onOpenLeft = { scope.launch { drawerState.open() } },
+                            onOpenRight = { showTaskPanel = true },
                         )
                     ) {
                         Row(
@@ -1053,69 +1413,13 @@ fun ExplorerScreen(
                     }
                 }
             }
-
-            ExplorerSideDrawer(
-                visible = showLeftDrawer,
-                drawerWidth = drawerWidth,
-                dragProgress = leftDrawerProgress,
-                dragging = leftDrawerDragging,
-                onDragProgress = { progress ->
-                    leftDrawerDragging = true
-                    leftDrawerProgress = progress
-                },
-                onDragSettled = { open ->
-                    leftDrawerDragging = false
-                    showLeftDrawer = open
-                },
-                onDismiss = {
-                    leftDrawerDragging = false
-                    leftDrawerProgress = 0f
-                    showLeftDrawer = false
-                },
-            ) {
-                SideBar(
-                    drawerWidth = drawerWidth,
-                    viewModel = viewModel,
-                    bookmarks = bookmarks,
-                    customLocations = customLocations,
-                    onBookmarkClick = { path -> viewModel.navigateToDirectPath(activePane, path) },
-                    onRemoveBookmark = { path ->
-                        val updated = bookmarks.filterNot { it == path }
-                        bookmarks = updated
-                        bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
-                    },
-                    onCustomLocationClick = { uri ->
-                        context.startActivity(Intent(context, SafTreeBrowserActivity::class.java).putExtra(SafTreeBrowserActivity.EXTRA_TREE_URI, uri.toString()))
-                    },
-                    onAddLocation = { addLocationLauncher.launch(null) },
-                    onOpenApkExtractor = { context.startActivity(Intent(context, ApkExtractorActivity::class.java)) },
-                    onOpenSettings = { context.startActivity(Intent(context, SettingsActivity::class.java)) },
-                    onClose = {
-                        leftDrawerDragging = false
-                        leftDrawerProgress = 0f
-                        showLeftDrawer = false
-                    },
-                )
-            }
         }
     }
 
     ApktoolTaskPanel(
         visible = showTaskPanel,
         jobs = apktoolJobs,
-        dragProgress = taskDrawerProgress,
-        dragging = taskDrawerDragging,
-        onDragProgress = { progress ->
-            taskDrawerDragging = true
-            taskDrawerProgress = progress
-        },
-        onDragSettled = { open ->
-            taskDrawerDragging = false
-            showTaskPanel = open
-        },
         onOpenJob = { jobId ->
-            taskDrawerDragging = false
-            taskDrawerProgress = 0f
             showTaskPanel = false
             selectedJobId = jobId
         },
@@ -1123,83 +1427,41 @@ fun ExplorerScreen(
         onCancelAll = apktoolJobsViewModel::cancelAll,
         onRemove = apktoolJobsViewModel::dismiss,
         onClearFinished = apktoolJobsViewModel::clearFinished,
-        onDismiss = {
-            taskDrawerDragging = false
-            taskDrawerProgress = 0f
-            showTaskPanel = false
-        },
+        onDismiss = { showTaskPanel = false },
     )
 }
 
+private fun formatDiskG(bytes: Long): String = String.format(Locale.US, "%.2fG", bytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
+
 private fun Modifier.drawerSwipe(
-    onLeftDragStart: () -> Unit,
-    onLeftDragProgress: (Float) -> Unit,
-    onLeftDragEnd: (Boolean) -> Unit,
-    onRightDragStart: () -> Unit,
-    onRightDragProgress: (Float) -> Unit,
-    onRightDragEnd: (Boolean) -> Unit,
-): Modifier = pointerInput(
-    onLeftDragStart,
-    onLeftDragProgress,
-    onLeftDragEnd,
-    onRightDragStart,
-    onRightDragProgress,
-    onRightDragEnd,
-) {
+    onOpenLeft: () -> Unit,
+    onOpenRight: () -> Unit,
+): Modifier = pointerInput(onOpenLeft, onOpenRight) {
     var startX = 0f
     var total = 0f
-    var leftActive = false
-    var rightActive = false
-    var lastTime = 0L
-    var velocityX = 0f
+    var opened = false
     detectHorizontalDragGestures(
         onDragStart = { offset ->
             startX = offset.x
             total = 0f
-            lastTime = 0L
-            velocityX = 0f
-            leftActive = startX <= size.width * 0.32f
-            rightActive = !leftActive && startX >= size.width * 0.68f
-            if (leftActive) onLeftDragStart()
-            if (rightActive) onRightDragStart()
+            opened = false
         },
         onHorizontalDrag = { change, amount ->
-            if (!leftActive && !rightActive) return@detectHorizontalDragGestures
             total += amount
-            if (lastTime != 0L) {
-                val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1L)
-                val instantaneous = amount * 1000f / dt.toFloat()
-                velocityX = velocityX * 0.55f + instantaneous * 0.45f
-            }
-            lastTime = change.uptimeMillis
-            change.consume()
-            if (leftActive) {
-                onLeftDragProgress((total / (size.width * 0.70f)).coerceIn(0f, 1f))
-            } else if (rightActive) {
-                onRightDragProgress((-total / (size.width * 0.82f)).coerceIn(0f, 1f))
+            val fromLeft = startX <= size.width * 0.28f
+            val fromRight = startX >= size.width * 0.72f
+            if (!opened && fromLeft && total >= 72f) {
+                opened = true
+                onOpenLeft()
+                change.consume()
+            } else if (!opened && fromRight && total <= -72f) {
+                opened = true
+                onOpenRight()
+                change.consume()
             }
         },
-        onDragEnd = {
-            if (leftActive) {
-                val progress = (total / (size.width * 0.70f)).coerceIn(0f, 1f)
-                onLeftDragEnd(when { velocityX > 900f -> true; velocityX < -900f -> false; else -> progress >= 0.34f })
-            } else if (rightActive) {
-                val progress = (-total / (size.width * 0.82f)).coerceIn(0f, 1f)
-                onRightDragEnd(when { velocityX < -900f -> true; velocityX > 900f -> false; else -> progress >= 0.34f })
-            }
-            total = 0f
-            lastTime = 0L
-            velocityX = 0f
-            leftActive = false
-            rightActive = false
-        },
-        onDragCancel = {
-            if (leftActive) onLeftDragEnd(false)
-            if (rightActive) onRightDragEnd(false)
-            total = 0f
-            leftActive = false
-            rightActive = false
-        },
+        onDragEnd = { total = 0f; opened = false },
+        onDragCancel = { total = 0f; opened = false },
     )
 }
 
@@ -1207,45 +1469,32 @@ private fun Modifier.drawerSwipe(
 fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
-    onOpenDrawer: () -> Unit,
-    onMore: () -> Unit,
-    onClose: () -> Unit,
+    onClose: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onOpenDrawer) {
-            Icon(Icons.Default.Menu, contentDescription = "Menü")
-        }
+        Icon(Icons.Default.Search, contentDescription = null)
+        Spacer(Modifier.width(12.dp))
         BasicTextField(
             value = query,
             onValueChange = onQueryChange,
             modifier = Modifier.weight(1f),
-            textStyle = LocalTextStyle.current.copy(
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 16.sp,
-            ),
+            textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurfaceVariant),
-            singleLine = true,
             decorationBox = { innerTextField ->
                 if (query.isEmpty()) {
-                    Text(
-                        "Dateien suchen…",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    )
+                    Text("Search files...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                 }
                 innerTextField()
-            },
+            }
         )
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = "Suche schließen")
-        }
-        IconButton(onClick = onMore) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Mehr")
+            Icon(Icons.Default.Close, contentDescription = "Close Search")
         }
     }
 }
@@ -1279,15 +1528,48 @@ private fun BottomNavIconButton(
     }
 }
 private fun installApk(context: Context, file: File) {
-    runCatching {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    fun launchInstaller() {
+        runCatching {
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(intent)
+        }.onFailure { error ->
+            Toast.makeText(context, "Installieren fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show()
         }
-        context.startActivity(intent)
-    }.onFailure { error ->
-        Toast.makeText(context, "Installieren fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show()
+    }
+
+    if (!ExplorerPreferences.current(context).apkInstallationVerification) {
+        launchInstaller()
+        return
+    }
+
+    CoroutineScope(Dispatchers.IO).launch {
+        val problem = runCatching {
+            val verifyResult = ApkVerifier.Builder(file).build().verify()
+            if (!verifyResult.isVerified) return@runCatching "APK-Signaturprüfung fehlgeschlagen."
+
+            val pm = context.packageManager
+            val archive = pm.getPackageArchiveInfo(file.absolutePath, 0)
+            if (archive != null) {
+                val installed = try {
+                    pm.getPackageInfo(archive.packageName, 0)
+                } catch (_: PackageManager.NameNotFoundException) {
+                    null
+                }
+                if (installed != null && archive.longVersionCode < installed.longVersionCode) {
+                    return@runCatching "Versionscode ${archive.longVersionCode} ist niedriger als die installierte Version ${installed.longVersionCode}."
+                }
+            }
+            null
+        }.getOrElse { "APK-Prüfung fehlgeschlagen: ${it.message ?: it.javaClass.simpleName}" }
+
+        withContext(Dispatchers.Main) {
+            if (problem == null) launchInstaller()
+            else Toast.makeText(context, problem, Toast.LENGTH_LONG).show()
+        }
     }
 }
 

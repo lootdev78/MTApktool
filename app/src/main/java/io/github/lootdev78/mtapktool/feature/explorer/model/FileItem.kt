@@ -5,23 +5,32 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * One explorer row. Normal filesystem rows use [file] directly. SAF rows keep their tree-scoped
+ * document URI in [safUri]; [file] is only a lightweight name placeholder in that case.
+ */
 data class FileItem(
-    val file: File
+    val file: File,
+    val safUri: String? = null,
+    val displayName: String? = null,
+    val directoryOverride: Boolean? = null,
+    val sizeOverride: Long? = null,
+    val modifiedOverride: Long? = null,
+    val mimeType: String? = null,
 ) {
-    val name: String = file.name
-    val path: String = file.path
-    val isDirectory: Boolean = file.isDirectory
-    val modifiedAt: Long = file.lastModified()
-    val fileSize: Long = if (isDirectory) 0L else file.length()
-    val extensionName: String = file.extension.lowercase(Locale.ROOT)
+    val isSaf: Boolean get() = safUri != null
+    val name: String = displayName ?: file.name
+    val path: String = safUri ?: file.path
+    val isDirectory: Boolean = directoryOverride ?: file.isDirectory
+    val modifiedAt: Long = modifiedOverride ?: file.lastModified()
+    val fileSize: Long = sizeOverride ?: if (isDirectory) 0L else file.length()
+    val extensionName: String = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
 
-    // Formats last modified date to match "YY-MM-DD HH:mm" (e.g. 22-05-16 12:36)
     val formattedDate: String by lazy {
         val sdf = SimpleDateFormat("yy-MM-dd HH:mm", Locale.getDefault())
-        sdf.format(Date(modifiedAt))
+        if (modifiedAt > 0L) sdf.format(Date(modifiedAt)) else ""
     }
 
-    // Formats byte size (B, KB, MB, GB)
     val sizeText: String by lazy {
         if (isDirectory) "" else formatFileSize(fileSize)
     }

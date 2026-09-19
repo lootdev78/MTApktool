@@ -1,9 +1,14 @@
 package io.github.lootdev78.mtapktool.apktool
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -18,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,21 +35,16 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -53,24 +52,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 @Composable
 fun ApktoolTaskPanel(
     visible: Boolean,
     jobs: List<ApktoolJobInfo>,
-    dragProgress: Float = if (visible) 1f else 0f,
-    dragging: Boolean = false,
-    onDragProgress: (Float) -> Unit = {},
-    onDragSettled: (Boolean) -> Unit = {},
     onOpenJob: (String) -> Unit,
     onCancel: (String) -> Unit,
     onCancelAll: () -> Unit,
@@ -78,105 +70,78 @@ fun ApktoolTaskPanel(
     onClearFinished: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val drawerAnimation = remember { Animatable(if (visible) 1f else 0f) }
-    var previousDragging by remember { mutableStateOf(false) }
-    val latestDragProgress by rememberUpdatedState(dragProgress.coerceIn(0f, 1f))
-    LaunchedEffect(dragging, visible) {
-        val endedDrag = previousDragging && !dragging
-        previousDragging = dragging
-        if (dragging) return@LaunchedEffect
-        if (endedDrag) drawerAnimation.snapTo(latestDragProgress)
-        drawerAnimation.animateTo(
-            targetValue = if (visible) 1f else 0f,
-            animationSpec = tween(if (visible) 220 else 190),
-        )
-    }
-    val progress = (if (dragging) latestDragProgress else drawerAnimation.value).coerceIn(0f, 1f)
-    if (progress <= 0.001f && !visible && !dragging) return
-
     Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.48f * progress))
-                .clickable(enabled = progress > 0.15f, onClick = onDismiss),
-        )
-
-        var panelWidth by remember { mutableIntStateOf(1) }
-        val currentProgress by rememberUpdatedState(progress)
-        Surface(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .fillMaxWidth(0.82f)
-                .onSizeChanged { panelWidth = it.width.coerceAtLeast(1) }
-                .offset { IntOffset(((1f - progress) * panelWidth).roundToInt(), 0) }
-                .pointerInput(visible, panelWidth) {
-                    var start = 1f
-                    var lastTime = 0L
-                    var velocityX = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = {
-                            start = currentProgress
-                            lastTime = 0L
-                            velocityX = 0f
-                        },
-                        onHorizontalDrag = { change, amount ->
-                            change.consume()
-                            if (lastTime != 0L) {
-                                val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1L)
-                                val instantaneous = amount * 1000f / dt.toFloat()
-                                velocityX = velocityX * 0.55f + instantaneous * 0.45f
-                            }
-                            lastTime = change.uptimeMillis
-                            start = (start - amount / panelWidth.toFloat()).coerceIn(0f, 1f)
-                            onDragProgress(start)
-                        },
-                        onDragEnd = {
-                            val open = when {
-                                velocityX < -900f -> true
-                                velocityX > 900f -> false
-                                else -> start >= 0.55f
-                            }
-                            onDragSettled(open)
-                        },
-                        onDragCancel = { onDragSettled(start >= 0.55f) },
-                    )
-                },
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 12.dp,
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(160)),
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Check, contentDescription = "Schliessen") }
-                    Column(Modifier.weight(1f)) {
-                        Text("Tasks", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                        val active = jobs.count { !it.isTerminal }
-                        if (active > 0) Text("$active aktiv", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (jobs.any { it.isTerminal }) {
-                        TextButton(onClick = onClearFinished) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("LISTE LEEREN")
-                        }
-                    }
-                    if (jobs.any { !it.isTerminal }) TextButton(onClick = onCancelAll) { Text("ALLE STOPPEN") }
-                }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.48f))
+                    .clickable(onClick = onDismiss),
+            )
+        }
 
-                if (jobs.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Noch keine Task-Informationen", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                    }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(jobs, key = { it.id }) { job ->
-                            TaskCard(job = job, onOpen = { onOpenJob(job.id) }, onCancel = onCancel, onRemove = onRemove)
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInHorizontally(animationSpec = tween(220), initialOffsetX = { it }),
+            exit = slideOutHorizontally(animationSpec = tween(200), targetOffsetX = { it }),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.72f),
+                color = MaterialTheme.colorScheme.background,
+                shadowElevation = 10.dp,
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = onDismiss) { Icon(Icons.Default.Check, contentDescription = "Schliessen") }
+                        Column(Modifier.weight(1f)) {
+                            Text("Tasks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Normal)
+                            val active = jobs.count { !it.isTerminal }
+                            if (active > 0) Text("$active aktiv", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        item { Spacer(Modifier.height(24.dp)) }
+                        if (jobs.any { it.isTerminal }) {
+                            IconButton(onClick = onClearFinished) {
+                                Icon(Icons.Default.DeleteSweep, contentDescription = "Fertige Tasks leeren")
+                            }
+                        }
+                        if (jobs.any { !it.isTerminal }) {
+                            TextButton(onClick = onCancelAll) { Text("ALLE STOPPEN") }
+                        }
+                    }
+
+                    if (jobs.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                "Noch keine Task-Informationen",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(0.dp),
+                        ) {
+                            items(jobs, key = { it.id }) { job ->
+                                TaskCard(
+                                    job = job,
+                                    onOpen = { onOpenJob(job.id) },
+                                    onCancel = onCancel,
+                                    onRemove = onRemove,
+                                )
+                            }
+                            item { Spacer(Modifier.height(24.dp)) }
+                        }
                     }
                 }
             }
@@ -194,7 +159,7 @@ private fun TaskCard(
     val scope = rememberCoroutineScope()
     val offset = remember(job.id) { Animatable(0f) }
 
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer { translationX = offset.value }
@@ -220,52 +185,56 @@ private fun TaskCard(
                 )
             }
             .clickable(onClick = onOpen),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        color = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     job.title,
                     modifier = Modifier.weight(1f),
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(job.statusLabel(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(job.statusLabel(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
-            if (job.command.isNotBlank()) {
-                Text(
-                    job.command,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            if (!job.isTerminal) {
+                Spacer(Modifier.height(7.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant,
                 )
             }
             if (job.line.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     job.line.lineSequence().lastOrNull().orEmpty(),
-                    maxLines = 4,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!job.output.isNullOrBlank()) {
+                Text(
+                    job.output.orEmpty(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onOpen) { Text("OUTPUT") }
+                TextButton(onClick = onOpen) { Text("DETAILS") }
                 if (!job.isTerminal) {
-                    TextButton(onClick = { onCancel(job.id) }) {
-                        Icon(Icons.Default.Stop, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("STOP")
-                    }
-                } else {
-                    TextButton(onClick = { onRemove(job.id) }) { Text("ENTFERNEN") }
+                    TextButton(onClick = { onCancel(job.id) }) { Text("STOP") }
                 }
             }
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

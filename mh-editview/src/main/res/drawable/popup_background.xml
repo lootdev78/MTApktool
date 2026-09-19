@@ -4,5 +4,5 @@
     <corners android:radius="12dp" />
     <stroke
         android:width="0.5dp"
-        android:color="@color/mt_editor_popup_scrim" />
+        android:color="#1F000000" />
 </shape>

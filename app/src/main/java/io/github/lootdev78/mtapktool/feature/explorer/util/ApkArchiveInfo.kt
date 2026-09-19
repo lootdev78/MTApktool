@@ -8,9 +8,12 @@ import android.os.Build
 import androidx.core.graphics.drawable.toBitmap
 import com.android.apksig.ApkVerifier
 import java.io.File
-import java.util.Locale
+import java.security.MessageDigest
+import java.security.interfaces.RSAKey
+import java.security.interfaces.ECKey
+import java.util.zip.CRC32
 import java.util.concurrent.ConcurrentHashMap
-import java.util.zip.ZipFile
+import java.util.Locale
 
 data class ApkArchiveInfo(
     val file: File,
@@ -29,7 +32,23 @@ data class ApkArchiveInfo(
     val installedUid: Int?,
     val firstInstallTime: Long?,
     val lastUpdateTime: Long?,
-    val protection: String,
+)
+
+
+data class ApkSignatureInfo(
+    val schemes: String,
+    val status: String,
+    val algorithm: String,
+    val publicKey: String,
+    val validFrom: Long,
+    val validUntil: Long,
+    val owner: String,
+    val hash: String,
+    val crc32: String,
+    val md5: String,
+    val sha1: String,
+    val sha256: String,
+    val rawCertificateHex: String,
 )
 
 object ApkArchiveReader {
@@ -41,55 +60,14 @@ object ApkArchiveReader {
         if (cached != null && cached.modifiedAt == file.lastModified() && cached.length == file.length()) {
             return cached.bitmap
         }
-        val bitmap = when (file.extension.lowercase(Locale.ROOT)) {
-            "apk" -> loadApkIcon(context, file)
-            "apks", "apkm", "xapk", "apkx" -> loadSplitContainerIcon(context, file)
-            else -> null
-        }
-        iconCache[file.absolutePath] = IconEntry(file.lastModified(), file.length(), bitmap)
-        return bitmap
-    }
-
-    private fun loadApkIcon(context: Context, file: File): Bitmap? {
         val info = archivePackageInfo(context.packageManager, file, 0) ?: return null
         val appInfo = info.applicationInfo ?: return null
         appInfo.sourceDir = file.absolutePath
         appInfo.publicSourceDir = file.absolutePath
-        return runCatching { appInfo.loadIcon(context.packageManager).toBitmap(96, 96) }.getOrNull()
+        val bitmap = runCatching { appInfo.loadIcon(context.packageManager).toBitmap(96, 96) }.getOrNull()
+        iconCache[file.absolutePath] = IconEntry(file.lastModified(), file.length(), bitmap)
+        return bitmap
     }
-
-    /** Best-effort launcher icon for APKS/APKM/XAPK/APKX using universal/base APK. */
-    private fun loadSplitContainerIcon(context: Context, container: File): Bitmap? = runCatching {
-        ZipFile(container).use { zip ->
-            val entries = zip.entries().asSequence()
-                .filter { !it.isDirectory && it.name.lowercase(Locale.ROOT).endsWith(".apk") }
-                .toList()
-            if (entries.isEmpty()) return@use null
-            fun score(nameValue: String, size: Long): Long {
-                val path = nameValue.lowercase(Locale.ROOT)
-                val name = File(path).name
-                var result = when {
-                    name == "universal.apk" -> 1_000_000L
-                    name == "base.apk" -> 950_000L
-                    name == "base-master.apk" -> 925_000L
-                    name.startsWith("base-") && !name.contains("config") -> 850_000L
-                    else -> 500_000L
-                }
-                if (name.startsWith("config") || name.startsWith("split_config")) result -= 400_000L
-                if (size > 0) result += minOf(100_000L, size / 1024L)
-                return result
-            }
-            val entry = entries.maxByOrNull { score(it.name, it.size) } ?: return@use null
-            val dir = File(context.cacheDir, "apk-icon-probe").apply { mkdirs() }
-            val temp = File(dir, "${container.absolutePath.hashCode()}-${container.lastModified()}.apk")
-            try {
-                zip.getInputStream(entry).use { input -> temp.outputStream().buffered().use { output -> input.copyTo(output) } }
-                loadApkIcon(context, temp)
-            } finally {
-                temp.delete()
-            }
-        }
-    }.getOrNull()
 
     fun read(context: Context, file: File): ApkArchiveInfo? {
         val pm = context.packageManager
@@ -135,26 +113,47 @@ object ApkArchiveReader {
             installedUid = installedApp?.uid,
             firstInstallTime = installed?.firstInstallTime,
             lastUpdateTime = installed?.lastUpdateTime,
-            protection = detectProtection(file),
         )
     }
 
-
-    private fun detectProtection(file: File): String = runCatching {
-        java.util.zip.ZipFile(file).use { zip ->
-            val names = zip.entries().asSequence().map { it.name.lowercase() }.toList()
-            val hit = when {
-                names.any { "libjiagu" in it || "jiagu" in it } -> "Qihoo/Jiagu"
-                names.any { "libsecexe" in it || "bangcle" in it } -> "Bangcle"
-                names.any { "libshell" in it || "secshell" in it } -> "Shell/Protector"
-                names.any { "dexguard" in it } -> "DexGuard"
-                names.any { "ijiami" in it } -> "iJiami"
-                names.any { "libprotect" in it || "protect" in it && it.startsWith("lib/") } -> "Native protector"
-                else -> null
-            }
-            hit ?: "Nicht erkannt"
+    fun signatureInfo(file: File, addColons: Boolean = true, upperCase: Boolean = true): ApkSignatureInfo? = runCatching {
+        val result = ApkVerifier.Builder(file).build().verify()
+        val cert = result.signerCertificates.firstOrNull() ?: return@runCatching null
+        val bytes = cert.encoded
+        fun digest(name: String): String {
+            val raw = MessageDigest.getInstance(name).digest(bytes).joinToString("") { "%02x".format(it) }
+            val cased = if (upperCase) raw.uppercase(Locale.ROOT) else raw.lowercase(Locale.ROOT)
+            return if (addColons) cased.chunked(2).joinToString(":") else cased
         }
-    }.getOrDefault("Nicht geprüft")
+        val key = cert.publicKey
+        val bitCount = when (key) {
+            is RSAKey -> key.modulus.bitLength()
+            is ECKey -> key.params.order.bitLength()
+            else -> key.encoded.size * 8
+        }
+        val crc = CRC32().apply { update(bytes) }.value
+        val rawHex = bytes.joinToString("") { "%02X".format(it) }
+        ApkSignatureInfo(
+            schemes = buildList {
+                if (result.isVerifiedUsingV1Scheme) add("V1")
+                if (result.isVerifiedUsingV2Scheme) add("V2")
+                if (result.isVerifiedUsingV3Scheme || result.isVerifiedUsingV31Scheme) add("V3")
+                if (result.isVerifiedUsingV4Scheme) add("V4")
+            }.distinct().joinToString(" + ").ifBlank { "-" },
+            status = if (result.isVerified) "Verified successfully" else "Verification failed",
+            algorithm = cert.sigAlgName ?: key.algorithm,
+            publicKey = "${key.algorithm} · $bitCount bits",
+            validFrom = cert.notBefore.time,
+            validUntil = cert.notAfter.time,
+            owner = cert.subjectX500Principal?.name ?: "-",
+            hash = "0x${cert.hashCode().toUInt().toString(16).uppercase(Locale.ROOT)} (${cert.hashCode()})",
+            crc32 = "0x${crc.toString(16).uppercase(Locale.ROOT)} ($crc)",
+            md5 = digest("MD5"),
+            sha1 = digest("SHA-1"),
+            sha256 = digest("SHA-256"),
+            rawCertificateHex = rawHex,
+        )
+    }.getOrNull()
 
     private fun verifySchemes(file: File): String = runCatching {
         val result = ApkVerifier.Builder(file).build().verify()

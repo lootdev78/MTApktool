@@ -8,7 +8,7 @@
         tools:ignore="AllFilesAccessPolicy,ScopedStorage" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
@@ -29,30 +29,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
-
-        <activity android:name=".settings.SettingsActivity" android:exported="false" />
-        <activity android:name=".settings.ApplicationSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.ApktoolSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.SignatureSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.ArchiveSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.FrameworkSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.Aapt2SettingsActivity" android:exported="false" />
-        <activity android:name=".settings.ApkModulesSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.ApkExtractorSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.ApkClonerSettingsActivity" android:exported="false" />
-        <activity android:name=".settings.TextEditorSettingsActivity" android:exported="false" />
-        <activity android:name=".tools.ApkExtractorActivity" android:exported="false" />
-        <activity android:name=".settings.ApktoolCliActivity" android:exported="false" />
-        <activity android:name=".settings.FaqActivity" android:exported="false" />
-        <activity android:name=".settings.AboutActivity" android:exported="false" />
-        <activity android:name=".apktool.ApkInfoActivity" android:exported="false" />
-        <activity android:name=".apktool.SplitPackageActivity" android:exported="false" />
-        <activity android:name=".feature.explorer.screen.SafTreeBrowserActivity" android:exported="false" />
-
-        <receiver
-            android:name=".apktool.SplitInstallReceiver"
-            android:exported="false" />
 
         <service
             android:name=".apktool.ApktoolJobService"
@@ -70,5 +56,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+            <receiver android:name=".apktool.SplitInstallReceiver" android:exported="false" />
     </application>
 </manifest>

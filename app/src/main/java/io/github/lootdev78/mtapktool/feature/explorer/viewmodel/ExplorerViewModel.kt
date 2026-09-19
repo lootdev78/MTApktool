@@ -1,6 +1,7 @@
 package io.github.lootdev78.mtapktool.feature.explorer.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,9 +9,12 @@ import io.github.lootdev78.mtapktool.archive.ArchiveEngine
 import io.github.lootdev78.mtapktool.archive.ArchiveExtractRequest
 import io.github.lootdev78.mtapktool.archive.ArchiveRequest
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
+import io.github.lootdev78.mtapktool.feature.explorer.saf.SafFileSystem
 import io.github.lootdev78.mtapktool.feature.explorer.state.FileFilter
 import io.github.lootdev78.mtapktool.feature.explorer.state.PaneState
 import io.github.lootdev78.mtapktool.feature.explorer.state.SortSpec
+import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -22,15 +26,32 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.util.Stack
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 enum class ActivePane { LEFT, RIGHT }
 
+enum class FileConflictAction { OVERWRITE, SKIP, KEEP_BOTH, CANCEL }
+
+data class FileConflictRequest(
+    val id: Long,
+    val name: String,
+    val source: String,
+    val destination: String,
+    val directory: Boolean,
+)
+
+private class TransferCancelledException : IOException("Transfer cancelled")
+
 class ExplorerViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val app: Application get() = getApplication()
 
     private val _leftPaneState = MutableStateFlow(PaneState())
     val leftPaneState: StateFlow<PaneState> = _leftPaneState.asStateFlow()
@@ -39,11 +60,22 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val rightPaneState: StateFlow<PaneState> = _rightPaneState.asStateFlow()
 
 
-    private val _activePane = MutableStateFlow(ActivePane.LEFT)
+    private val panePreferences = app.getSharedPreferences("explorer_pane_state", android.content.Context.MODE_PRIVATE)
+    private val _activePane = MutableStateFlow(
+        runCatching { ActivePane.valueOf(panePreferences.getString("active_pane", ActivePane.LEFT.name) ?: ActivePane.LEFT.name) }
+            .getOrDefault(ActivePane.LEFT)
+    )
     val activePane: StateFlow<ActivePane> = _activePane.asStateFlow()
 
     private val _operationMessages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val operationMessages: SharedFlow<String> = _operationMessages.asSharedFlow()
+
+    private val _fileConflict = MutableStateFlow<FileConflictRequest?>(null)
+    val fileConflict: StateFlow<FileConflictRequest?> = _fileConflict.asStateFlow()
+    private val conflictId = AtomicLong(0L)
+    private val conflictMutex = Mutex()
+    private var pendingConflict: CompletableDeferred<FileConflictAction>? = null
+    @Volatile private var batchConflictAction: FileConflictAction? = null
 
     // Separate Back/Forward stacks for dual pane navigation history
     private val leftBackStack = Stack<String>()
@@ -56,6 +88,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private var rightDefaultSort = SortSpec()
     private val folderSortOverrides = mutableMapOf<String, SortSpec>()
     private var manualHiddenPaths: Set<String> = emptySet()
+    private val safRootByPane = mutableMapOf<ActivePane, String>()
+    private val safDisplayByUri = mutableMapOf<String, String>()
 
     private data class ArchiveSession(
         val archive: File,
@@ -74,68 +108,77 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private val archiveSessions = ConcurrentHashMap<ActivePane, ArchiveSession>()
 
     init {
+        ExplorerPreferences.init(app)
+        val prefs = ExplorerPreferences.current(app)
         val rootPath = Environment.getExternalStorageDirectory().absolutePath
-        loadDirectory(
-            ActivePane.LEFT,
-            rootPath,
-            isHistoryAction = false
-        )
-
-        loadDirectory(
-            ActivePane.RIGHT,
-            rootPath,
-            isHistoryAction = false
-        )
+        val leftStart = if (prefs.startupLeft == "last") panePreferences.getString("last_left_path", rootPath) ?: rootPath else rootPath
+        val rightStart = if (prefs.startupRight == "last") panePreferences.getString("last_right_path", rootPath) ?: rootPath else rootPath
+        cleanRecycleBinIfNeeded(prefs.customWorkspace, prefs.autoCleanRecycleBinDays)
+        loadDirectory(ActivePane.LEFT, leftStart, isHistoryAction = false)
+        loadDirectory(ActivePane.RIGHT, rightStart, isHistoryAction = false)
     }
 
     fun setActive(pane: ActivePane) {
         _activePane.value = pane
+        panePreferences.edit().putString("active_pane", pane.name).apply()
     }
 
-    fun restoreExplorerOptions(
-        leftShowSystemHidden: Boolean,
-        rightShowSystemHidden: Boolean,
-        leftShowManuallyHidden: Boolean,
-        rightShowManuallyHidden: Boolean,
-        hiddenPaths: Set<String>,
-        leftSort: SortSpec,
-        rightSort: SortSpec,
-        leftFilter: FileFilter,
-        rightFilter: FileFilter,
-        sortOverrides: Map<String, SortSpec>,
-    ) {
-        manualHiddenPaths = hiddenPaths
-        leftDefaultSort = leftSort
-        rightDefaultSort = rightSort
-        folderSortOverrides.clear()
-        folderSortOverrides.putAll(sortOverrides)
-        _leftPaneState.update { state ->
-            state.copy(
-                showSystemHidden = leftShowSystemHidden,
-                showManuallyHidden = leftShowManuallyHidden,
-                manuallyHiddenPaths = hiddenPaths,
-                sortSpec = folderSortOverrides[sortKey(ActivePane.LEFT, state.currentPath)] ?: leftSort,
-                filter = leftFilter,
+    fun resolveFileConflict(action: FileConflictAction, applyToAll: Boolean) {
+        if (applyToAll && action != FileConflictAction.CANCEL) batchConflictAction = action
+        pendingConflict?.complete(action)
+    }
+
+    private suspend fun askConflict(item: FileItem, destination: String): FileConflictAction {
+        batchConflictAction?.let { return it }
+        return conflictMutex.withLock {
+            batchConflictAction?.let { return@withLock it }
+            val request = FileConflictRequest(
+                id = conflictId.incrementAndGet(),
+                name = item.name,
+                source = item.path,
+                destination = destination,
+                directory = item.isDirectory,
             )
-        }
-        _rightPaneState.update { state ->
-            state.copy(
-                showSystemHidden = rightShowSystemHidden,
-                showManuallyHidden = rightShowManuallyHidden,
-                manuallyHiddenPaths = hiddenPaths,
-                sortSpec = folderSortOverrides[sortKey(ActivePane.RIGHT, state.currentPath)] ?: rightSort,
-                filter = rightFilter,
-            )
+            val deferred = CompletableDeferred<FileConflictAction>()
+            pendingConflict = deferred
+            _fileConflict.value = request
+            try {
+                deferred.await()
+            } finally {
+                if (pendingConflict === deferred) pendingConflict = null
+                if (_fileConflict.value?.id == request.id) _fileConflict.value = null
+            }
         }
     }
 
-    fun folderSortOverridesSnapshot(): Map<String, SortSpec> = folderSortOverrides.toMap()
+    private fun beginTransferBatch() {
+        batchConflictAction = null
+    }
+
+    fun setPaneBusy(pane: ActivePane, busy: Boolean, label: String? = null, progress: Int? = null) {
+        updatePaneState(pane) {
+            it.copy(
+                isLoading = busy,
+                loadingLabel = if (busy) label else null,
+                loadingProgress = if (busy) progress?.coerceIn(0, 100) else null,
+            )
+        }
+    }
+
+    fun openCustomLocation(pane: ActivePane, rootDocumentUri: String, displayName: String) {
+        safRootByPane[pane] = rootDocumentUri
+        safDisplayByUri[rootDocumentUri] = displayName
+        val back = if (pane == ActivePane.LEFT) leftBackStack else rightBackStack
+        val forward = if (pane == ActivePane.LEFT) leftForwardStack else rightForwardStack
+        back.clear()
+        forward.clear()
+        loadDirectory(pane, rootDocumentUri, isHistoryAction = true)
+    }
 
     fun loadDirectory(pane: ActivePane, path: String, isHistoryAction: Boolean = false) {
         val previousState = paneState(pane)
         val currentPath = previousState.currentPath
 
-        // If navigating to a new path (not back/forward action), save to back stack & clear forward stack.
         if (!isHistoryAction && currentPath.isNotEmpty() && currentPath != path) {
             if (pane == ActivePane.LEFT) {
                 leftBackStack.push(currentPath)
@@ -147,17 +190,37 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            updatePaneState(pane) { it.copy(isLoading = true, currentPath = path) }
+            val isSaf = SafFileSystem.isSafPath(path)
+            val displayOverride = if (isSaf) {
+                safDisplayByUri[path] ?: withContext(Dispatchers.IO) {
+                    val name = SafFileSystem.documentName(app, Uri.parse(path)) ?: "Storage"
+                    val parentDisplay = safDisplayByUri[previousState.currentPath]
+                    val display = if (!isHistoryAction && parentDisplay != null && previousState.currentPath != path) "$parentDisplay/$name" else name
+                    safDisplayByUri[path] = display
+                    display
+                }
+            } else null
 
-            val files = withContext(Dispatchers.IO) {
-                val dir = File(path)
-                if (dir.exists() && dir.isDirectory) {
-                    dir.listFiles()?.map { FileItem(file = it) } ?: emptyList()
-                } else {
-                    emptyList()
+            updatePaneState(pane) { it.copy(isLoading = true, currentPath = path, displayPathOverride = displayOverride) }
+
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (isSaf) SafFileSystem.list(app, Uri.parse(path))
+                    else {
+                        val dir = File(path)
+                        if (dir.exists() && dir.isDirectory) dir.listFiles()?.map { FileItem(file = it) } ?: emptyList()
+                        else emptyList()
+                    }
                 }
             }
 
+            if (result.isFailure) {
+                updatePaneState(pane) { it.copy(isLoading = false, loadingProgress = null, loadingLabel = null, items = emptyList()) }
+                _operationMessages.tryEmit("Storage access failed: ${result.exceptionOrNull()?.message ?: "unknown error"}")
+                return@launch
+            }
+
+            val files = result.getOrThrow()
             val sameDirectory = previousState.currentPath == path && previousState.items.isNotEmpty()
             val oldModified = previousState.items.associate { it.path to it.modifiedAt }
             val changedPaths = if (sameDirectory) {
@@ -165,21 +228,26 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     .filter { item -> oldModified[item.path]?.let { it != item.modifiedAt } ?: true }
                     .map { it.path }
                     .toSet()
-            } else {
-                emptySet()
-            }
+            } else emptySet()
             val sort = folderSortOverrides[sortKey(pane, path)] ?: defaultSort(pane)
 
             updatePaneState(pane) { state ->
                 state.copy(
                     items = files,
                     isLoading = false,
+                    loadingProgress = null,
+                    loadingLabel = null,
                     selectedPaths = emptySet(),
                     manuallyHiddenPaths = manualHiddenPaths,
                     sortSpec = sort,
                     recentlyChangedPaths = if (sameDirectory) state.recentlyChangedPaths + changedPaths else emptySet(),
+                    displayPathOverride = displayOverride,
                 )
             }
+
+            panePreferences.edit()
+                .putString(if (pane == ActivePane.LEFT) "last_left_path" else "last_right_path", path)
+                .apply()
 
             if (changedPaths.isNotEmpty()) {
                 viewModelScope.launch {
@@ -268,8 +336,28 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun canNavigateUp(pane: ActivePane): Boolean {
+        val current = paneState(pane).currentPath
+        if (SafFileSystem.isSafPath(current)) return current != safRootByPane[pane]
+        if (archiveSessions.containsKey(pane)) return true
+        val rootPath = Environment.getExternalStorageDirectory().absolutePath
+        return current != rootPath && current != "/" && File(current).parent != null
+    }
+
     fun navigateUp(pane: ActivePane) {
         val current = paneState(pane).currentPath
+        if (SafFileSystem.isSafPath(current)) {
+            if (current == safRootByPane[pane]) return
+            val backStack = if (pane == ActivePane.LEFT) leftBackStack else rightBackStack
+            if (backStack.isNotEmpty()) {
+                val parent = backStack.pop()
+                val forwardStack = if (pane == ActivePane.LEFT) leftForwardStack else rightForwardStack
+                forwardStack.push(current)
+                loadDirectory(pane, parent, isHistoryAction = true)
+            }
+            return
+        }
+
         archiveSessions[pane]?.let { session ->
             val currentFile = File(current)
             val root = session.workspaceRoot
@@ -345,99 +433,121 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             openArchive(targetPane, session.archive, session.password)
             return
         }
-        loadDirectory(pane = targetPane, path = paneState(sourcePane).currentPath)
+        val sourcePath = paneState(sourcePane).currentPath
+        if (SafFileSystem.isSafPath(sourcePath)) {
+            safRootByPane[sourcePane]?.let { safRootByPane[targetPane] = it }
+            safDisplayByUri[sourcePath]?.let { safDisplayByUri[sourcePath] = it }
+        } else {
+            safRootByPane.remove(targetPane)
+        }
+        loadDirectory(pane = targetPane, path = sourcePath)
     }
 
     fun copySelectedToOppositePane(fromPane: ActivePane) {
-        val sourceState = if (fromPane == ActivePane.LEFT) _leftPaneState.value else _rightPaneState.value
+        val sourceState = paneState(fromPane)
         val targetPane = if (fromPane == ActivePane.LEFT) ActivePane.RIGHT else ActivePane.LEFT
-        if (archiveSessions.containsKey(targetPane)) {
-            _operationMessages.tryEmit("Archive are read-only. Copy files out to a normal folder instead.")
-            return
-        }
-        val targetPath = if (targetPane == ActivePane.RIGHT) _rightPaneState.value.currentPath else _leftPaneState.value.currentPath
+        val targetPath = paneState(targetPane).currentPath
+        val selected = sourceState.selectedPaths.mapNotNull { path -> sourceState.items.firstOrNull { it.path == path } }
+        if (selected.isEmpty()) return
 
-        val itemsToCopy = sourceState.selectedPaths
+        beginTransferBatch()
+        setPaneBusy(targetPane, true, "Kopieren …", 0)
         viewModelScope.launch(Dispatchers.IO) {
+            val copiedNames = mutableListOf<String>()
             runCatching {
-                itemsToCopy.forEach { sourcePath ->
-                    val sourceFile = File(sourcePath)
-                    if (sourceFile.exists()) {
-                        val destFile = File(targetPath, sourceFile.name)
-                        ensureTransferTargetIsSafe(sourceFile, destFile)
-                        if (sourceFile.isDirectory) {
-                            if (!sourceFile.copyRecursively(destFile, overwrite = true)) {
-                                throw IOException("Could not copy directory: ${sourceFile.path}")
-                            }
-                        } else {
-                            sourceFile.copyTo(destFile, overwrite = true)
-                        }
-                    }
+                selected.forEachIndexed { index, item ->
+                    if (copyItemToTarget(item, targetPath)) copiedNames += item.name
+                    setPaneBusy(targetPane, true, "Kopieren: ${item.name}", ((index + 1) * 100 / selected.size).coerceIn(0, 100))
                 }
             }.onSuccess {
+                setPaneBusy(targetPane, false)
                 scheduleArchiveCommit(targetPane)
                 refreshDirectory(targetPane)
+                highlightTransferredItems(targetPane, copiedNames)
                 clearSelection(fromPane)
+                _operationMessages.tryEmit("Copied ${copiedNames.size} item(s)")
             }.onFailure { e ->
-                _operationMessages.tryEmit("Copy failed: ${e.message ?: e.javaClass.simpleName}")
-                e.printStackTrace()
+                setPaneBusy(targetPane, false)
+                if (e is TransferCancelledException) {
+                    _operationMessages.tryEmit("Copy cancelled")
+                } else {
+                    _operationMessages.tryEmit("Copy failed: ${e.message ?: e.javaClass.simpleName}")
+                }
             }
         }
     }
 
     fun moveSelectedToOppositePane(fromPane: ActivePane) {
-        val sourceState = if (fromPane == ActivePane.LEFT) _leftPaneState.value else _rightPaneState.value
+        val sourceState = paneState(fromPane)
         val targetPane = if (fromPane == ActivePane.LEFT) ActivePane.RIGHT else ActivePane.LEFT
-        if (archiveSessions.containsKey(fromPane) || archiveSessions.containsKey(targetPane)) {
-            _operationMessages.tryEmit("Archive are read-only. Use Copy to extract files from an archive.")
-            return
-        }
-        val targetPath = if (targetPane == ActivePane.RIGHT) _rightPaneState.value.currentPath else _leftPaneState.value.currentPath
+        val targetPath = paneState(targetPane).currentPath
+        val selected = sourceState.selectedPaths.mapNotNull { path -> sourceState.items.firstOrNull { it.path == path } }
+        if (selected.isEmpty()) return
 
-        val itemsToMove = sourceState.selectedPaths
+        beginTransferBatch()
+        setPaneBusy(targetPane, true, "Verschieben …", 0)
         viewModelScope.launch(Dispatchers.IO) {
+            val movedNames = mutableListOf<String>()
             runCatching {
-                itemsToMove.forEach { sourcePath ->
-                    val sourceFile = File(sourcePath)
-                    if (!sourceFile.exists()) return@forEach
-                    val destFile = File(targetPath, sourceFile.name)
-                    ensureTransferTargetIsSafe(sourceFile, destFile)
-                    if (!sourceFile.renameTo(destFile)) {
-                        if (sourceFile.isDirectory) {
-                            if (!sourceFile.copyRecursively(destFile, overwrite = true)) {
-                                throw IOException("Could not copy directory while moving: ${sourceFile.path}")
-                            }
-                            if (!sourceFile.deleteRecursively()) {
-                                throw IOException("Copied but could not remove source directory: ${sourceFile.path}")
-                            }
-                        } else {
-                            sourceFile.copyTo(destFile, overwrite = true)
-                            if (!sourceFile.delete()) {
-                                throw IOException("Copied but could not remove source file: ${sourceFile.path}")
+                selected.forEachIndexed { index, item ->
+                    if (!item.isSaf && !SafFileSystem.isSafPath(targetPath)) {
+                        val source = File(item.path)
+                        var destination = File(targetPath, item.name)
+                        ensureTransferTargetIsSafe(source, destination)
+                        if (destination.exists()) {
+                            when (askConflict(item, destination.absolutePath)) {
+                                FileConflictAction.SKIP -> return@forEach
+                                FileConflictAction.CANCEL -> throw TransferCancelledException()
+                                FileConflictAction.KEEP_BOTH -> destination = uniqueLocalTarget(destination)
+                                FileConflictAction.OVERWRITE -> deleteExistingLocal(destination)
                             }
                         }
+                        if (!source.renameTo(destination)) {
+                            if (!copyLocalToLocal(source, destination)) throw IOException("Could not move ${source.name}")
+                            if (source.isDirectory) {
+                                if (!source.deleteRecursively()) throw IOException("Copied but could not remove ${source.name}")
+                            } else if (!source.delete()) throw IOException("Copied but could not remove ${source.name}")
+                        }
+                        movedNames += destination.name
+                    } else {
+                        if (copyItemToTarget(item, targetPath)) {
+                            deleteItem(item, recycleOverride = false)
+                            movedNames += item.name
+                        }
                     }
+                    setPaneBusy(targetPane, true, "Verschieben: ${item.name}", ((index + 1) * 100 / selected.size).coerceIn(0, 100))
                 }
             }.onSuccess {
+                setPaneBusy(targetPane, false)
                 scheduleArchiveCommit(fromPane)
                 scheduleArchiveCommit(targetPane)
                 refreshDirectory(fromPane)
                 refreshDirectory(targetPane)
+                highlightTransferredItems(targetPane, movedNames)
                 clearSelection(fromPane)
+                _operationMessages.tryEmit("Moved ${movedNames.size} item(s)")
             }.onFailure { e ->
-                _operationMessages.tryEmit("Move failed: ${e.message ?: e.javaClass.simpleName}")
-                e.printStackTrace()
+                setPaneBusy(targetPane, false)
+                if (e is TransferCancelledException) {
+                    _operationMessages.tryEmit("Move cancelled")
+                } else {
+                    _operationMessages.tryEmit("Move failed: ${e.message ?: e.javaClass.simpleName}")
+                }
             }
         }
     }
 
     fun linkToOppositePane(fromPane: ActivePane, sourcePath: String) {
         val targetPane = if (fromPane == ActivePane.LEFT) ActivePane.RIGHT else ActivePane.LEFT
-        if (archiveSessions.containsKey(fromPane) || archiveSessions.containsKey(targetPane)) {
-            _operationMessages.tryEmit("Symbolic links are unavailable for read-only archive views")
+        if (archiveSessions.containsKey(targetPane)) {
+            _operationMessages.tryEmit("Symbolic links cannot be stored inside archives")
             return
         }
-        val targetPath = if (targetPane == ActivePane.RIGHT) _rightPaneState.value.currentPath else _leftPaneState.value.currentPath
+        val targetPath = paneState(targetPane).currentPath
+        if (SafFileSystem.isSafPath(sourcePath) || SafFileSystem.isSafPath(targetPath)) {
+            _operationMessages.tryEmit("Symbolic links are only available on filesystem storage")
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val source = File(sourcePath)
@@ -463,10 +573,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
      */
     fun createArchive(pane: ActivePane, request: ArchiveRequest) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (archiveSessions.values.any { isInside(request.outputDirectory, it.workspaceRoot) }) {
-                _operationMessages.tryEmit("Archive views are read-only. Choose a filesystem output folder or the other panel.")
-                return@launch
-            }
             runCatching { ArchiveEngine.create(request) }
                 .onSuccess { outputs ->
                     scheduleArchiveCommit(ActivePane.LEFT)
@@ -474,6 +580,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     refreshDirectory(ActivePane.LEFT)
                     refreshDirectory(ActivePane.RIGHT)
                     clearSelection(pane)
+                    outputs.firstOrNull()?.let { revealOutput(pane, it.absolutePath) }
                     val names = outputs.joinToString { it.name }
                     _operationMessages.tryEmit("Created $names")
                 }
@@ -484,7 +591,13 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openArchive(pane: ActivePane, archive: File, password: String = "") {
-        updatePaneState(pane) { it.copy(isLoading = true) }
+        updatePaneState(pane) {
+            it.copy(
+                isLoading = true,
+                loadingProgress = 0,
+                loadingLabel = "Öffne ${archive.name}",
+            )
+        }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 if (!ArchiveEngine.supports(archive)) throw IOException("Unsupported archive: ${archive.name}")
@@ -494,16 +607,25 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
                 archiveSessions[pane]?.let { previous ->
+                    commitArchiveIfChangedInternal(pane, previous)
                     previous.workspaceRoot.deleteRecursively()
                     archiveSessions.remove(pane)
                 }
 
-                val tempBase = File(getApplication<Application>().cacheDir, "mtapktool-archive-workspaces")
+                val tempBase = File(app.cacheDir, "mtapktool-archive-workspaces")
                 if (!tempBase.exists() && !tempBase.mkdirs()) throw IOException("Cannot create archive workspace")
                 val workspace = File(tempBase, "${pane.name.lowercase()}-${archive.name.hashCode()}-${System.nanoTime()}")
                 if (!workspace.mkdirs()) throw IOException("Cannot create archive workspace: ${workspace.absolutePath}")
                 try {
-                    ArchiveEngine.extractToDirectory(archive, workspace, password)
+                    ArchiveEngine.extractToDirectory(archive, workspace, password) { progress ->
+                        updatePaneState(pane) { state ->
+                            state.copy(
+                                isLoading = true,
+                                loadingProgress = progress.coerceIn(0, 100),
+                                loadingLabel = "Öffne ${archive.name}",
+                            )
+                        }
+                    }
                 } catch (t: Throwable) {
                     workspace.deleteRecursively()
                     throw t
@@ -525,9 +647,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
                 loadDirectory(pane, session.workspaceRoot.absolutePath)
-                _operationMessages.tryEmit("Opened ${archive.name} (read-only)")
+                _operationMessages.tryEmit("Opened ${archive.name}")
             }.onFailure { error ->
-                updatePaneState(pane) { it.copy(isLoading = false) }
+                updatePaneState(pane) { it.copy(isLoading = false, loadingProgress = null, loadingLabel = null) }
                 _operationMessages.tryEmit("Archive open failed: ${error.message ?: error.javaClass.simpleName}")
             }
         }
@@ -535,10 +657,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun extractArchive(pane: ActivePane, request: ArchiveExtractRequest) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (archiveSessions.values.any { isInside(request.outputDirectory, it.workspaceRoot) }) {
-                _operationMessages.tryEmit("Archive views are read-only. Extract to a filesystem folder or the other panel.")
-                return@launch
-            }
             runCatching { ArchiveEngine.extract(request) }
                 .onSuccess { destination ->
                     // Extraction can target either pane. If that pane currently displays
@@ -546,6 +664,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     scheduleArchivesAffectedBy(request.archive, destination)
                     refreshDirectory(ActivePane.LEFT)
                     refreshDirectory(ActivePane.RIGHT)
+                    revealOutput(pane, destination.absolutePath)
                     _operationMessages.tryEmit("Extracted to ${destination.absolutePath}")
                 }
                 .onFailure { error ->
@@ -554,13 +673,30 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** Archive browsing is read-only; there is intentionally nothing to commit. */
-    fun commitMountedArchives() = Unit
-
-
-    fun closeArchive(pane: ActivePane, saveChanges: Boolean = false) {
+    fun commitMountedArchives() {
         viewModelScope.launch(Dispatchers.IO) {
-            val session = archiveSessions.remove(pane) ?: return@launch
+            ActivePane.entries.forEach { pane ->
+                runCatching { commitArchiveIfChangedInternal(pane) }
+                    .onFailure { error ->
+                        _operationMessages.tryEmit("Archive save failed: ${error.message ?: error.javaClass.simpleName}")
+                    }
+            }
+        }
+    }
+
+    fun closeArchive(pane: ActivePane, saveChanges: Boolean = true) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = archiveSessions[pane] ?: return@launch
+            val result = runCatching {
+                if (saveChanges) commitArchiveIfChangedInternal(pane, session)
+            }
+            if (result.isFailure) {
+                val error = result.exceptionOrNull()
+                _operationMessages.tryEmit("Archive save failed: ${error?.message ?: error?.javaClass?.simpleName ?: "unknown error"}")
+                return@launch
+            }
+
+            archiveSessions.remove(pane)
             session.workspaceRoot.deleteRecursively()
             updatePaneState(pane) {
                 it.copy(
@@ -572,7 +708,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             loadDirectory(pane, session.returnDirectory, isHistoryAction = true)
         }
     }
-
 
     fun navigateToDisplayPath(pane: ActivePane, value: String) {
         val text = value.trim()
@@ -595,12 +730,40 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         navigateToDirectPath(pane, text)
     }
 
-    private fun commitArchiveIfChangedInternal(pane: ActivePane, explicit: ArchiveSession? = null): Boolean = false
+    private fun commitArchiveIfChangedInternal(pane: ActivePane, explicit: ArchiveSession? = null): Boolean {
+        val session = explicit ?: archiveSessions[pane] ?: return false
+        if (!session.archive.exists()) throw IOException("Original archive no longer exists: ${session.archive.absolutePath}")
+        val current = workspaceSnapshot(session.workspaceRoot)
+        if (current == session.snapshot) return false
+        ArchiveEngine.replaceFromDirectory(session.archive, session.workspaceRoot, session.password)
+        session.snapshot = workspaceSnapshot(session.workspaceRoot)
+        _operationMessages.tryEmit("Saved ${session.archive.name}")
+        return true
+    }
 
-    private fun scheduleArchiveCommit(pane: ActivePane) = Unit
+    private fun scheduleArchiveCommit(pane: ActivePane) {
+        if (!archiveSessions.containsKey(pane)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { commitArchiveIfChangedInternal(pane) }
+                .onSuccess { changed ->
+                    if (changed) {
+                        refreshDirectory(ActivePane.LEFT)
+                        refreshDirectory(ActivePane.RIGHT)
+                    }
+                }
+                .onFailure { error ->
+                    _operationMessages.tryEmit("Archive save failed: ${error.message ?: error.javaClass.simpleName}")
+                }
+        }
+    }
 
-    private fun scheduleArchivesAffectedBy(vararg files: File) = Unit
-
+    private fun scheduleArchivesAffectedBy(vararg files: File) {
+        archiveSessions.forEach { (pane, session) ->
+            if (files.any { isInside(it, session.workspaceRoot) }) {
+                scheduleArchiveCommit(pane)
+            }
+        }
+    }
 
     private fun workspaceSnapshot(root: File): Map<String, ArchiveStamp> {
         if (!root.isDirectory) return emptyMap()
@@ -622,6 +785,181 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         first.canonicalFile == second.canonicalFile
     }.getOrDefault(first.absolutePath == second.absolutePath)
 
+    private fun highlightTransferredItems(pane: ActivePane, names: List<String>) {
+        if (names.isEmpty()) return
+        viewModelScope.launch {
+            repeat(20) {
+                delay(75)
+                val matches = paneState(pane).items.filter { it.name in names }
+                if (matches.isNotEmpty()) {
+                    val paths = matches.map { it.path }.toSet()
+                    updatePaneState(pane) { state ->
+                        state.copy(
+                            highlightedItemName = matches.first().name,
+                            recentlyChangedPaths = state.recentlyChangedPaths + paths,
+                        )
+                    }
+                    delay(RECENT_HIGHLIGHT_MS)
+                    updatePaneState(pane) { state ->
+                        state.copy(
+                            highlightedItemName = if (state.highlightedItemName in names) null else state.highlightedItemName,
+                            recentlyChangedPaths = state.recentlyChangedPaths - paths,
+                        )
+                    }
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private suspend fun copyItemToTarget(item: FileItem, targetPath: String): Boolean {
+        val targetSaf = SafFileSystem.isSafPath(targetPath)
+        when {
+            item.isSaf && targetSaf -> {
+                val targetDir = Uri.parse(targetPath)
+                var targetName = item.name
+                SafFileSystem.findChildByName(app, targetDir, targetName)?.let { existing ->
+                    when (askConflict(item, "$targetPath/$targetName")) {
+                        FileConflictAction.SKIP -> return false
+                        FileConflictAction.CANCEL -> throw TransferCancelledException()
+                        FileConflictAction.KEEP_BOTH -> targetName = SafFileSystem.uniqueChildName(app, targetDir, targetName)
+                        FileConflictAction.OVERWRITE -> SafFileSystem.delete(app, existing)
+                    }
+                }
+                SafFileSystem.copySafToSaf(app, Uri.parse(item.path), item.name, item.isDirectory, targetDir, targetName)
+            }
+            item.isSaf && !targetSaf -> {
+                val targetDir = File(targetPath)
+                var target = File(targetDir, item.name)
+                if (target.exists()) {
+                    when (askConflict(item, target.absolutePath)) {
+                        FileConflictAction.SKIP -> return false
+                        FileConflictAction.CANCEL -> throw TransferCancelledException()
+                        FileConflictAction.KEEP_BOTH -> target = uniqueLocalTarget(target)
+                        FileConflictAction.OVERWRITE -> deleteExistingLocal(target)
+                    }
+                }
+                SafFileSystem.copySafToFileSystem(app, Uri.parse(item.path), item.name, item.isDirectory, targetDir, target.name)
+            }
+            !item.isSaf && targetSaf -> {
+                val source = File(item.path)
+                val targetDir = Uri.parse(targetPath)
+                var targetName = item.name
+                SafFileSystem.findChildByName(app, targetDir, targetName)?.let { existing ->
+                    when (askConflict(item, "$targetPath/$targetName")) {
+                        FileConflictAction.SKIP -> return false
+                        FileConflictAction.CANCEL -> throw TransferCancelledException()
+                        FileConflictAction.KEEP_BOTH -> targetName = SafFileSystem.uniqueChildName(app, targetDir, targetName)
+                        FileConflictAction.OVERWRITE -> SafFileSystem.delete(app, existing)
+                    }
+                }
+                if (source.isDirectory) SafFileSystem.copyDirectoryToSaf(app, source, targetDir, targetName)
+                else SafFileSystem.copyFileToSaf(app, source, targetDir, targetName)
+            }
+            else -> {
+                val source = File(item.path)
+                var dest = File(targetPath, item.name)
+                ensureTransferTargetIsSafe(source, dest)
+                if (dest.exists()) {
+                    when (askConflict(item, dest.absolutePath)) {
+                        FileConflictAction.SKIP -> return false
+                        FileConflictAction.CANCEL -> throw TransferCancelledException()
+                        FileConflictAction.KEEP_BOTH -> dest = uniqueLocalTarget(dest)
+                        FileConflictAction.OVERWRITE -> deleteExistingLocal(dest)
+                    }
+                }
+                if (!copyLocalToLocal(source, dest)) throw IOException("Could not copy ${source.name}")
+            }
+        }
+        return true
+    }
+
+    private fun copyLocalToLocal(source: File, dest: File): Boolean {
+        if (source.isDirectory) {
+            val ok = source.copyRecursively(dest, overwrite = false)
+            if (ok && ExplorerPreferences.current(app).preserveFileTime) preserveTimestamps(source, dest)
+            return ok
+        }
+        dest.parentFile?.mkdirs()
+        source.copyTo(dest, overwrite = false)
+        if (ExplorerPreferences.current(app).preserveFileTime) dest.setLastModified(source.lastModified())
+        return true
+    }
+
+    private fun deleteExistingLocal(file: File) {
+        val ok = if (file.isDirectory) file.deleteRecursively() else file.delete()
+        if (!ok && file.exists()) throw IOException("Could not replace ${file.name}")
+    }
+
+    private fun uniqueLocalTarget(initial: File): File {
+        if (!initial.exists()) return initial
+        val name = initial.name
+        val dot = name.lastIndexOf('.')
+        val base = if (dot > 0) name.substring(0, dot) else name
+        val ext = if (dot > 0) name.substring(dot) else ""
+        var i = 1
+        var candidate: File
+        do {
+            candidate = File(initial.parentFile, "$base ($i)$ext")
+            i++
+        } while (candidate.exists())
+        return candidate
+    }
+
+    private fun deleteItem(item: FileItem, recycleOverride: Boolean? = null) {
+        val prefs = ExplorerPreferences.current(app)
+        val useRecycle = recycleOverride ?: prefs.moveToRecycleBinByDefault
+        if (item.isSaf) {
+            if (prefs.recycleBinEnabled && useRecycle) {
+                val recycleRoot = File(prefs.customWorkspace, ".RecycleBin").apply { mkdirs() }
+                val targetName = uniqueLocalTarget(File(recycleRoot, item.name)).name
+                SafFileSystem.copySafToFileSystem(
+                    app,
+                    Uri.parse(item.path),
+                    item.name,
+                    item.isDirectory,
+                    recycleRoot,
+                    targetName,
+                )
+                SafFileSystem.delete(app, Uri.parse(item.path))
+            } else {
+                SafFileSystem.delete(app, Uri.parse(item.path))
+            }
+            return
+        }
+        val file = File(item.path)
+        val externalRoot = Environment.getExternalStorageDirectory().absolutePath
+        val recycleRootPath = File(prefs.customWorkspace, ".RecycleBin").absolutePath
+        val canRecycle = prefs.recycleBinEnabled && useRecycle &&
+            file.absolutePath.startsWith(externalRoot + File.separator) &&
+            file.absolutePath != recycleRootPath &&
+            !file.absolutePath.startsWith(recycleRootPath + File.separator)
+        if (canRecycle) {
+            val recycleRoot = File(prefs.customWorkspace, ".RecycleBin")
+            recycleRoot.mkdirs()
+            var target = File(recycleRoot, file.name)
+            var suffix = 1
+            while (target.exists()) {
+                target = File(recycleRoot, "${file.nameWithoutExtension}_$suffix${if (file.extension.isNotBlank()) ".${file.extension}" else ""}")
+                suffix++
+            }
+            if (!file.renameTo(target)) {
+                if (file.isDirectory) {
+                    if (!file.copyRecursively(target, overwrite = false)) throw IOException("Could not move ${item.name} to recycle bin")
+                    if (!file.deleteRecursively()) throw IOException("Could not remove ${item.name} after recycling")
+                } else {
+                    file.copyTo(target, overwrite = false)
+                    if (!file.delete()) throw IOException("Could not remove ${item.name} after recycling")
+                }
+            }
+            return
+        }
+        val ok = if (file.isDirectory) file.deleteRecursively() else file.delete()
+        if (!ok && file.exists()) throw IOException("Could not delete ${item.name}")
+    }
+
+    fun isSafPane(pane: ActivePane): Boolean = SafFileSystem.isSafPath(paneState(pane).currentPath)
+
     private fun ensureTransferTargetIsSafe(source: File, destination: File) {
         val sourceCanonical = source.canonicalFile
         val destinationCanonical = destination.canonicalFile
@@ -634,39 +972,37 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     // --- Batch Delete ---
-    fun deleteSelected(pane: ActivePane) {
-        if (archiveSessions.containsKey(pane)) {
-            _operationMessages.tryEmit("Archive views are read-only")
-            return
-        }
-        val state = if (pane == ActivePane.LEFT) _leftPaneState.value else _rightPaneState.value
-        val itemsToDelete = state.selectedPaths
+    fun deleteSelected(pane: ActivePane, recycleOverride: Boolean? = null) {
+        val state = paneState(pane)
+        val items = state.selectedPaths.mapNotNull { path -> state.items.firstOrNull { it.path == path } }
         viewModelScope.launch(Dispatchers.IO) {
-            itemsToDelete.forEach { path ->
-                File(path).deleteRecursively()
-            }
-            scheduleArchiveCommit(pane)
-            refreshDirectory(pane)
-            clearSelection(pane)
+            runCatching { items.forEach { deleteItem(it, recycleOverride) } }
+                .onSuccess {
+                    scheduleArchiveCommit(pane)
+                    refreshDirectory(pane)
+                    clearSelection(pane)
+                }
+                .onFailure { _operationMessages.tryEmit("Delete failed: ${it.message ?: it.javaClass.simpleName}") }
         }
     }
 
     // --- Create New File or Folder ---
     fun createNewItem(pane: ActivePane, name: String, isFolder: Boolean): String? {
-        if (archiveSessions.containsKey(pane)) return "Archive views are read-only. Copy files out before editing."
-        val currentPath = if (pane == ActivePane.LEFT) _leftPaneState.value.currentPath else _rightPaneState.value.currentPath
-        val targetFile = File(currentPath, name)
-
-        if (targetFile.exists()) return "An item with this name already exists!"
-
-        val success = if (isFolder) targetFile.mkdirs() else targetFile.createNewFile()
-        if (success) {
-            scheduleArchiveCommit(pane)
+        val currentPath = paneState(pane).currentPath
+        if (name.isBlank()) return "Name is empty"
+        return runCatching {
+            if (SafFileSystem.isSafPath(currentPath)) {
+                SafFileSystem.create(app, Uri.parse(currentPath), name, isFolder)
+            } else {
+                val targetFile = File(currentPath, name)
+                if (targetFile.exists()) return "An item with this name already exists!"
+                val success = if (isFolder) targetFile.mkdirs() else targetFile.createNewFile()
+                if (!success) throw IOException("Could not create $name")
+                scheduleArchiveCommit(pane)
+            }
             refreshDirectory(pane)
-            return "Created ${if (isFolder) "folder" else "file"} successfully."
-        } else {
-            return "Failed to create ${if (isFolder) "folder" else "file"}."
-        }
+            "Created ${if (isFolder) "folder" else "file"} successfully."
+        }.getOrElse { "Failed to create ${if (isFolder) "folder" else "file"}: ${it.message}" }
     }
 
     fun clearSelection(pane: ActivePane) {
@@ -674,19 +1010,19 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun renameItem(pane: ActivePane, oldPath: String, newName: String) {
-        if (archiveSessions.containsKey(pane)) {
-            _operationMessages.tryEmit("Archive views are read-only")
-            return
-        }
         viewModelScope.launch(Dispatchers.IO) {
-            val oldFile = File(oldPath)
-            if (oldFile.exists()) {
-                val newFile = File(oldFile.parent, newName)
-                if (oldFile.renameTo(newFile)) {
+            runCatching {
+                if (SafFileSystem.isSafPath(oldPath)) {
+                    SafFileSystem.rename(app, Uri.parse(oldPath), newName)
+                } else {
+                    val oldFile = File(oldPath)
+                    if (!oldFile.exists()) throw IOException("Source no longer exists")
+                    val newFile = File(oldFile.parent, newName)
+                    if (!oldFile.renameTo(newFile)) throw IOException("Rename failed")
                     scheduleArchiveCommit(pane)
-                    refreshDirectory(pane)
                 }
-            }
+            }.onSuccess { refreshDirectory(pane) }
+                .onFailure { _operationMessages.tryEmit("Rename failed: ${it.message ?: it.javaClass.simpleName}") }
         }
     }
 
@@ -744,15 +1080,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         updatePaneState(pane) { it.copy(sortSpec = defaultSort(pane)) }
     }
 
-    fun removeFolderSortOverride(pane: ActivePane, path: String) {
-        folderSortOverrides.remove(sortKey(pane, path))
-        val state = paneState(pane)
-        if (state.currentPath == path) {
-            updatePaneState(pane) { it.copy(sortSpec = defaultSort(pane)) }
-        }
-    }
-
-
     fun setFilter(pane: ActivePane, filter: FileFilter) {
         updatePaneState(pane) { it.copy(filter = filter, selectedPaths = emptySet()) }
     }
@@ -771,8 +1098,48 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private fun sortKey(pane: ActivePane, path: String): String = "${pane.name}:$path"
 
     // --- Direct Path Navigation with Scroll/Highlight Target ---
+    fun revealOutput(pane: ActivePane, outputPath: String) {
+        if (SafFileSystem.isSafPath(outputPath)) {
+            loadDirectory(pane, outputPath)
+            return
+        }
+        val output = File(outputPath)
+        val directory = if (output.isDirectory) output.parentFile else output.parentFile
+        val targetName = output.name
+        if (directory == null) return
+        loadDirectory(pane, directory.absolutePath)
+        viewModelScope.launch {
+            var waitCount = 0
+            while (waitCount < 60) {
+                val state = paneState(pane)
+                if (!state.isLoading && state.currentPath == directory.absolutePath) break
+                delay(50)
+                waitCount++
+            }
+            val full = File(directory, targetName).absolutePath
+            updatePaneState(pane) { state ->
+                state.copy(
+                    highlightedItemName = targetName,
+                    recentlyChangedPaths = state.recentlyChangedPaths + full,
+                )
+            }
+            delay(RECENT_HIGHLIGHT_MS)
+            updatePaneState(pane) { state ->
+                state.copy(
+                    highlightedItemName = if (state.highlightedItemName == targetName) null else state.highlightedItemName,
+                    recentlyChangedPaths = state.recentlyChangedPaths - full,
+                )
+            }
+        }
+    }
+
     fun navigateToDirectPath(pane: ActivePane, fullPath: String) {
-        val target = File(fullPath.trim())
+        val text = fullPath.trim()
+        if (SafFileSystem.isSafPath(text)) {
+            loadDirectory(pane, text)
+            return
+        }
+        val target = File(text)
         if (!target.exists()) {
             _operationMessages.tryEmit("Path not found: ${target.path}")
             return
@@ -783,20 +1150,65 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             return
         }
         val highlightFileName = if (target.isDirectory) null else target.name
-
         loadDirectory(pane, directoryPath)
-
-        // Save highlight state into PaneState
-        if (pane == ActivePane.LEFT) {
-            _leftPaneState.update { it.copy(highlightedItemName = highlightFileName) }
-        } else {
-            _rightPaneState.update { it.copy(highlightedItemName = highlightFileName) }
+        if (highlightFileName != null) {
+            updatePaneState(pane) { it.copy(highlightedItemName = highlightFileName) }
+            viewModelScope.launch {
+                delay(RECENT_HIGHLIGHT_MS)
+                updatePaneState(pane) { if (it.highlightedItemName == highlightFileName) it.copy(highlightedItemName = null) else it }
+            }
         }
     }
     override fun onCleared() {
         archiveSessions.values.forEach { it.workspaceRoot.deleteRecursively() }
         archiveSessions.clear()
         super.onCleared()
+    }
+
+
+    private fun preserveTimestamps(source: File, destination: File) {
+        if (source.isDirectory && destination.isDirectory) {
+            source.listFiles()?.forEach { child ->
+                val target = File(destination, child.name)
+                if (target.exists()) preserveTimestamps(child, target)
+            }
+        }
+        destination.setLastModified(source.lastModified())
+    }
+
+    fun recycleBinPath(): String = File(ExplorerPreferences.current(app).customWorkspace, ".RecycleBin").absolutePath
+
+    fun openRecycleBin(pane: ActivePane) {
+        val prefs = ExplorerPreferences.current(app)
+        if (!prefs.recycleBinEnabled) {
+            _operationMessages.tryEmit("Recycle bin is disabled")
+            return
+        }
+        val root = File(prefs.customWorkspace, ".RecycleBin").apply { mkdirs() }
+        setActive(pane)
+        loadDirectory(pane, root.absolutePath)
+    }
+
+    fun emptyRecycleBin(pane: ActivePane) {
+        val root = File(ExplorerPreferences.current(app).customWorkspace, ".RecycleBin")
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                root.listFiles()?.forEach { if (it.isDirectory) it.deleteRecursively() else it.delete() }
+            }.onSuccess { refreshDirectory(pane); _operationMessages.tryEmit("Recycle bin emptied") }
+                .onFailure { _operationMessages.tryEmit("Could not empty recycle bin: ${it.message}") }
+        }
+    }
+
+    private fun cleanRecycleBinIfNeeded(workspace: String, days: Int) {
+        if (days <= 0) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val root = File(workspace, ".RecycleBin")
+            if (!root.isDirectory) return@launch
+            val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
+            root.listFiles()?.filter { it.lastModified() in 1 until cutoff }?.forEach { file ->
+                if (file.isDirectory) file.deleteRecursively() else file.delete()
+            }
+        }
     }
 
     companion object {

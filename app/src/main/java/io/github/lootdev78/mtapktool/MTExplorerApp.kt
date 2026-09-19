@@ -5,7 +5,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import io.github.lootdev78.mtapktool.feature.editor.CodeEditorScreen
 import io.github.lootdev78.mtapktool.feature.explorer.screen.ExplorerScreen
+import io.github.lootdev78.mtapktool.feature.explorer.screen.ApkExtractorScreen
 import io.github.lootdev78.mtapktool.feature.explorer.screen.ImageViewerScreen
 import io.github.lootdev78.mtapktool.feature.explorer.screen.Screen
 
@@ -18,6 +20,26 @@ fun MTExplorerApp(navController: NavHostController) {
         composable(Screen.Explorer.route) {
             ExplorerScreen(navController)
         }
+        composable(Screen.ApkExtractor.route) {
+            ApkExtractorScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(
+            route = Screen.Editor.route,
+            arguments = listOf(
+                navArgument("filePath") { defaultValue = "" },
+                navArgument("fileName") { defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
+            val fileName = backStackEntry.arguments?.getString("fileName") ?: ""
+
+            CodeEditorScreen(
+                filePath = filePath,
+                fileName = fileName,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
 
         composable(
             route = Screen.ImageViewer.route,
@@ -27,6 +49,7 @@ fun MTExplorerApp(navController: NavHostController) {
             )
         ) { backStackEntry ->
             val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
+
             ImageViewerScreen(
                 filePath = filePath,
                 onBackClick = { navController.popBackStack() }

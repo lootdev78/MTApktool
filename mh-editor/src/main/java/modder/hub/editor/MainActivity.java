@@ -3,12 +3,14 @@ package modder.hub.editor;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.app.AppCompatDelegate;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.net.Uri;
+import android.content.res.Configuration;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
@@ -38,6 +40,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -53,7 +57,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.mozilla.universalchardet.UniversalDetector;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
 
     private final String TAG = this.getClass().getSimpleName();
 
@@ -68,6 +72,8 @@ public class MainActivity extends AppCompatActivity {
     private String mLineSeparator = "\n";
     private boolean mFileModifiedManually = false;
     private String externalPath = File.separator;
+    private Uri sourceUri = null;
+    private String sourceDisplayName = null;
 
     private EditText edittext_replace, edittext_find;
     private TextView previous_btn, next_btn, replace_btn, replace_all_btn, item_menu;
@@ -95,24 +101,31 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        applyMTApktoolThemeMode();
+        applyHostTheme();
         super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(true);
+        }
+        getWindow().setStatusBarColor(Color.BLACK);
+        getWindow().setNavigationBarColor(Color.BLACK);
         setContentView(R.layout.activity_main);
         initialize();
         initializeLogic();
     }
 
-    /** Mirror the host's persisted theme before AppCompat inflates this legacy/XML Activity. */
-    private void applyMTApktoolThemeMode() {
+    private void applyHostTheme() {
         String mode = getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE)
                 .getString("mode", "SYSTEM");
+        boolean dark;
         if ("DARK".equals(mode)) {
-            getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+            dark = true;
         } else if ("LIGHT".equals(mode)) {
-            getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+            dark = false;
         } else {
-            getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
+            dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                    == Configuration.UI_MODE_NIGHT_YES;
         }
+        setTheme(dark ? R.style.MTApktoolEditorTheme_Dark : R.style.MTApktoolEditorTheme_Light);
     }
 
     private void initialize() {
@@ -142,9 +155,6 @@ public class MainActivity extends AppCompatActivity {
         editView.setShowIndentGuides(editor_pref.getBoolean("show_indent_guides", true));
         editView.setShowWrapArrows(editor_pref.getBoolean("show_wrap_arrows", true));
         editView.setAutoIndentEnabled(editor_pref.getBoolean("auto_indent", true));
-        //boolean dark = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-        //        == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        //editView.setSyntaxDarkMode(dark);
     }
 
     private void initializeLogic() {
@@ -200,7 +210,6 @@ public class MainActivity extends AppCompatActivity {
                 // Log.d(TAG, "afterTextChanged: " + s.length());
             }
         });
-      //  editView.setSyntaxDarkMode(false);
         editView.setOnTextChangedListener(new OnTextChangedListener() {
             @Override
             public void onTextChanged() {
@@ -214,11 +223,32 @@ public class MainActivity extends AppCompatActivity {
                 mHandler.sendEmptyMessage(0);
             }
         });
-        String intentPath = getIntent() == null ? null : getIntent().getStringExtra("path");
-        if (intentPath != null && !intentPath.isEmpty() && new File(intentPath).isFile()) {
-            mSharedPreference.edit().putString("path", intentPath).apply();
-            setTitle(new File(intentPath).getName());
-            new ReadFileThread().execute(intentPath);
+        Intent launchIntent = getIntent();
+        String directPath = launchIntent != null ? launchIntent.getStringExtra("path") : null;
+        String directUri = launchIntent != null ? launchIntent.getStringExtra("uri") : null;
+        sourceDisplayName = launchIntent != null ? launchIntent.getStringExtra("name") : null;
+        if (directUri != null && !directUri.isEmpty()) {
+            try {
+                sourceUri = Uri.parse(directUri);
+                File temp = new File(getCacheDir(), "editor-" + System.nanoTime() + "-" +
+                        (sourceDisplayName == null ? "document.txt" : sourceDisplayName.replace('/', '_')));
+                try (InputStream in = getContentResolver().openInputStream(sourceUri);
+                     FileOutputStream out = new FileOutputStream(temp)) {
+                    if (in == null) throw new IOException("Cannot open document");
+                    byte[] buffer = new byte[1024 * 256];
+                    int read;
+                    while ((read = in.read(buffer)) >= 0) if (read > 0) out.write(buffer, 0, read);
+                }
+                mSharedPreference.edit().putString("path", temp.getAbsolutePath()).apply();
+                setTitle(sourceDisplayName == null ? "Text Editor" : sourceDisplayName);
+                new ReadFileThread().execute(temp.getAbsolutePath());
+            } catch (Exception error) {
+                Toast.makeText(this, error.getMessage() == null ? "Open failed" : error.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        } else if (directPath != null && !directPath.isEmpty() && new File(directPath).isFile()) {
+            mSharedPreference.edit().putString("path", directPath).apply();
+            setTitle(new File(directPath).getName());
+            new ReadFileThread().execute(directPath);
         } else if (mSharedPreference.contains("path")) {
             String path = mSharedPreference.getString("path", "");
             if (new File(path).exists()) {
@@ -227,7 +257,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // MTApktool owns storage access. The embedded editor uses the already granted app access.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             String permission = Manifest.permission.WRITE_EXTERNAL_STORAGE;
             if (!hasPermission(permission)) applyPermission(permission);
@@ -301,32 +330,32 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public boolean onPrepareOptionsMenu(Menu menu) {
         MenuItem moreMenu = menu.findItem(R.id.moreItems);
-        moreMenu.getIcon().setTint(getColor(R.color.mt_on_primary));
+        moreMenu.getIcon().setTint(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
         MenuItem saveMenu = menu.findItem(R.id.save);
         MenuItem undo = menu.findItem(R.id.undo);
         undo.setIcon(R.drawable.ic_undo);
         if (editView.canUndo() || mFileModifiedManually) {
-            saveMenu.getIcon().setTint(getColor(R.color.mt_on_primary));
+            saveMenu.getIcon().setTint(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
             saveMenu.setEnabled(true);
         } else {
-            saveMenu.getIcon().setTint(getColor(R.color.mt_on_surface_variant));
+            saveMenu.getIcon().setTint(themeColor(android.R.attr.textColorSecondary, Color.GRAY));
             saveMenu.setEnabled(false);
         }
 
         if (editView.canUndo()) {
-            undo.getIcon().setTint(getColor(R.color.mt_on_primary));
+            undo.getIcon().setTint(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
             undo.setEnabled(true);
         } else {
-            undo.getIcon().setTint(getColor(R.color.mt_on_surface_variant));
+            undo.getIcon().setTint(themeColor(android.R.attr.textColorSecondary, Color.GRAY));
             undo.setEnabled(false);
         }
         MenuItem redo = menu.findItem(R.id.redo);
         redo.setIcon(R.drawable.ic_redo);
         if (editView.canRedo()) {
-            redo.getIcon().setTint(getColor(R.color.mt_on_primary));
+            redo.getIcon().setTint(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
             redo.setEnabled(true);
         } else {
-            redo.getIcon().setTint(getColor(R.color.mt_on_surface_variant));
+            redo.getIcon().setTint(themeColor(android.R.attr.textColorSecondary, Color.GRAY));
             redo.setEnabled(false);
         }
 
@@ -745,6 +774,15 @@ public class MainActivity extends AppCompatActivity {
         protected Boolean doInBackground(String... params) {
             File file = new File(params[0]);
             try {
+                if (sourceUri == null && file.isFile() && editor_pref.getBoolean("generate_backup_file", false)) {
+                    File backup = new File(file.getParentFile(), file.getName() + ".bak");
+                    try (InputStream original = new java.io.FileInputStream(file);
+                         OutputStream copy = new java.io.FileOutputStream(backup)) {
+                        byte[] buffer = new byte[1024 * 256];
+                        int read;
+                        while ((read = original.read(buffer)) >= 0) if (read > 0) copy.write(buffer, 0, read);
+                    }
+                }
                 String content = editView.getBuffer().toString();
                 if (!"\n".equals(mLineSeparator)) {
                     content = content.replace("\n", mLineSeparator);
@@ -754,6 +792,16 @@ public class MainActivity extends AppCompatActivity {
                      java.io.OutputStreamWriter osw = new java.io.OutputStreamWriter(fos, mDefaultCharset)) {
                     osw.write(content);
                     osw.flush();
+                }
+                if (sourceUri != null) {
+                    try (InputStream in = new java.io.FileInputStream(file);
+                         OutputStream out = getContentResolver().openOutputStream(sourceUri, "wt")) {
+                        if (out == null) throw new IOException("Cannot write document");
+                        byte[] buffer = new byte[1024 * 256];
+                        int read;
+                        while ((read = in.read(buffer)) >= 0) if (read > 0) out.write(buffer, 0, read);
+                        out.flush();
+                    }
                 }
                 mFileModifiedManually = false;
             } catch (Exception e) {
@@ -771,21 +819,31 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
+    private int themeColor(int attr, int fallback) {
+        TypedValue out = new TypedValue();
+        if (getTheme().resolveAttribute(attr, out, true)) {
+            if (out.resourceId != 0) return getColor(out.resourceId);
+            return out.data;
+        }
+        return fallback;
+    }
+
     private void searchPanel() {
         edittext_find.requestFocus();
 
         search_pad.setVisibility(View.VISIBLE);
         if (!editView.getEditedMode()) {
             replace_btn.setEnabled(false);
-            replace_btn.setTextColor(getColor(R.color.mt_on_surface_variant));
+            replace_btn.setTextColor(themeColor(android.R.attr.textColorSecondary, Color.GRAY));
         } else {
-            replace_btn.setTextColor(getColor(R.color.mt_on_surface));
+            replace_btn.setTextColor(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
             replace_btn.setEnabled(true);
         }
         replace_btn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                replace_all_btn.setTextColor(getColor(R.color.mt_on_surface));
+                replace_all_btn.setTextColor(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
                 replace_all_btn.setEnabled(true);
                 if (linear_rep.getVisibility() == View.VISIBLE)
                     editView.replaceFirst(edittext_replace.getText().toString());
@@ -869,7 +927,7 @@ public class MainActivity extends AppCompatActivity {
             tv.setTag(symbol);
             tv.setBackground(getSelectableBackground());
             tv.setTextSize(18f);
-            tv.setTextColor(getColor(R.color.mt_on_surface));
+            tv.setTextColor(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
             tv.setPadding(30, 20, 30, 20);
             tv.setGravity(Gravity.CENTER);
 

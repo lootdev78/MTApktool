@@ -92,7 +92,7 @@ fun ArchiveCreateDialog(
                         value = format.label,
                         expanded = formatMenu,
                         onExpandedChange = { formatMenu = it },
-                        items = ArchiveFormat.entries.filter { it != ArchiveFormat.RAR }.map { it.label },
+                        items = ArchiveFormat.entries.map { it.label },
                         onSelect = { label -> updateExtension(ArchiveFormat.fromLabel(label)); formatMenu = false },
                         modifier = Modifier.weight(1f),
                     )

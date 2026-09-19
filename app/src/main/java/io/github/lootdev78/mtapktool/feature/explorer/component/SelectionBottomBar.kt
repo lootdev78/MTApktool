@@ -20,11 +20,11 @@ import androidx.compose.material.icons.filled.FlipToBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,7 +44,7 @@ fun SelectionBottomBar(
         modifier = modifier
             .fillMaxWidth()
             .height(52.dp)
-            .background(Color(0xFF212121)), // Dark MT Manager bottom bar
+            .background(MaterialTheme.colorScheme.surfaceVariant), // MTApktool explorer bottom bar
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
@@ -103,14 +103,14 @@ private fun BottomBarActionItem(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
             fontSize = 10.sp,
-            color = Color.White
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

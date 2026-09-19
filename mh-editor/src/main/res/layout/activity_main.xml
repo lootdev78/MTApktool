@@ -2,7 +2,6 @@
 <RelativeLayout
 	xmlns:android="http://schemas.android.com/apk/res/android"
 	android:id="@+id/rootLayout"
-	android:background="@color/mt_background"
 	android:layout_width="match_parent"
 	android:layout_height="match_parent">
 
@@ -33,7 +32,7 @@
 			android:id="@+id/linear_bottom_layout"
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:background="@color/mt_surface"
+			android:background="?android:attr/colorBackground"
 			android:gravity="center_horizontal|center_vertical"
 			android:orientation="vertical">
 
@@ -62,7 +61,7 @@
 				android:id="@+id/search_pad"
 				android:layout_width="match_parent"
 				android:layout_height="wrap_content"
-				android:background="@color/mt_surface"
+				android:background="?android:attr/colorBackground"
 				android:orientation="vertical"
 				android:visibility="gone">
 
@@ -70,7 +69,7 @@
 					android:id="@+id/searchTopDivider"
 					android:layout_width="match_parent"
 					android:layout_height="0.5dp"
-					android:background="@color/mt_surface_variant"
+					android:background="?android:attr/colorControlNormal"
 					android:orientation="horizontal"/>
 
 				<LinearLayout
@@ -87,7 +86,7 @@
 						android:gravity="center_horizontal|center_vertical"
 						android:text="Find"
 						style="@style/TextMaterialStyle"
-						android:textColor="@color/mt_on_surface"/>
+						android:textColor="?android:attr/textColorPrimary"/>
 
 					<EditText
 						android:id="@+id/edittext_find"
@@ -114,7 +113,7 @@
 						android:gravity="center_horizontal|center_vertical"
 						android:text="Rep "
 						style="@style/TextMaterialStyle"
-						android:textColor="@color/mt_on_surface"/>
+						android:textColor="?android:attr/textColorPrimary"/>
 
 					<EditText
 						android:id="@+id/edittext_replace"
@@ -129,7 +128,7 @@
 					android:id="@+id/searchBottomDivider"
 					android:layout_width="match_parent"
 					android:layout_height="0.63dp"
-					android:background="@color/mt_surface_variant"
+					android:background="?android:attr/colorControlNormal"
 					android:orientation="horizontal"/>
 
 				<LinearLayout
@@ -144,7 +143,7 @@
 						android:padding="8dp"
 						android:gravity="center_horizontal|center_vertical"
 						android:text="PREV"
-						android:textColor="@color/mt_on_surface"
+						android:textColor="?android:attr/textColorPrimary"
 						android:layout_weight="1"
 						android:background="?android:attr/selectableItemBackground"
 						style="@style/TextMaterialStyle"/>
@@ -156,7 +155,7 @@
 						android:padding="8dp"
 						android:gravity="center_horizontal|center_vertical"
 						android:text="NEXT"
-						android:textColor="@color/mt_on_surface"
+						android:textColor="?android:attr/textColorPrimary"
 						android:layout_weight="1"
 						android:background="?android:attr/selectableItemBackground"
 						style="@style/TextMaterialStyle"/>
@@ -168,7 +167,7 @@
 						android:padding="8dp"
 						android:gravity="center_horizontal|center_vertical"
 						android:text="REP"
-						android:textColor="@color/mt_on_surface"
+						android:textColor="?android:attr/textColorPrimary"
 						android:layout_weight="1"
 						android:background="?android:attr/selectableItemBackground"
 						style="@style/TextMaterialStyle"/>
@@ -180,7 +179,7 @@
 						android:padding="8dp"
 						android:gravity="center_horizontal|center_vertical"
 						android:text="ALL"
-						android:textColor="@color/mt_on_surface_variant"
+						android:textColor="?android:attr/textColorSecondary"
 						android:enabled="false"
 						android:clickable="false"
 						android:layout_weight="1"
@@ -197,7 +196,7 @@
 						android:paddingBottom="8dp"
 						android:gravity="center_horizontal|center_vertical"
 						android:text="⋮"
-						android:textColor="@color/mt_on_surface"
+						android:textColor="?android:attr/textColorPrimary"
 						android:layout_gravity="center_horizontal|center_vertical"
 						android:background="?android:attr/selectableItemBackground"
 						style="@style/TextMaterialStyle"/>
@@ -209,7 +208,7 @@
 		</LinearLayout>
 
 		<View
-			android:background="@color/mt_surface_variant"
+			android:background="?android:attr/colorControlNormal"
 			android:layout_width="match_parent"
 			android:layout_height="0.5dp"/>
 

@@ -63,6 +63,12 @@ private val AUDIO_EXTENSIONS = setOf(
 
 private val ARCHIVE_SUFFIXES = setOf(
     ".zip",
+    ".jar",
+    ".apk",
+    ".apks",
+    ".apkm",
+    ".xapk",
+    ".apkx",
     ".7z",
     ".tar",
     ".tar.gz",
@@ -72,16 +78,13 @@ private val ARCHIVE_SUFFIXES = setOf(
     ".tar.lz4",
     ".gz",
     ".xz",
-    ".rar",
-    ".jar",
-    ".apk",
 )
 
 private val APK_EXTENSIONS = setOf(
     "apk",
     "apks",
-    "xapk",
     "apkm",
+    "xapk",
     "apkx",
 )
 
@@ -118,11 +121,7 @@ private val WEB_EXTENSIONS = setOf(
     "tsx"
 )
 
-private fun FileItem.extension(): String {
-    return File(path)
-        .extension
-        .lowercase()
-}
+private fun FileItem.extension(): String = extensionName.lowercase()
 
 fun FileItem.isEditableTextFile(): Boolean {
     if (isDirectory) return false

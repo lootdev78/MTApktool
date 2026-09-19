@@ -71,11 +71,6 @@ jobs:
             apktool-android \
             apksig-android \
             zipalign-android \
-            antisplit-m \
-            apkextractor \
-            apkcloner \
-            mh-editview \
-            mh-editor \
             brut.apktool/apktool-lib \
             brut.apktool/apktool-cli
           do
@@ -91,6 +86,16 @@ jobs:
           grep -q 'options.release.set(mtapktoolJavaVersion)' build.gradle.kts
           grep -q 'jvmToolchain(mtapktoolJavaVersion)' app/build.gradle.kts
           grep -q 'JvmTarget.fromTarget(mtapktoolJavaVersion.toString())' app/build.gradle.kts
+          for module in antisplit-m apkextractor apkcloner mh-editview mh-editor; do
+            test -f "$module/build.gradle.kts"
+            grep -q 'mtapktool.javaVersion' "$module/build.gradle.kts"
+            grep -q 'mtapktool.compileSdk' "$module/build.gradle.kts"
+            grep -q 'mtapktool.minSdk' "$module/build.gradle.kts"
+            grep -q 'mtapktool.ndkVersion' "$module/build.gradle.kts"
+            grep -q 'JavaVersion.toVersion(javaProfile)' "$module/build.gradle.kts"
+          done
+          test ! -d antisplit-m/src/main/java/org/xmlpull/v1
+          ! grep -R -q 'setSyntaxDarkMode' mh-editor/src/main/java mh-editview/src/main/java
 
       - name: Check AAR metadata with Java 25
         run: ./gradlew25 :app:checkDebugAarMetadata --stacktrace --no-daemon

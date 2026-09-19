@@ -2,37 +2,19 @@ package io.github.lootdev78.mtapktool.feature.explorer.util
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
-import modder.hub.editor.MainActivity as TextEditorActivity
 
 object FileOpener {
-
-    private val editableExtensions = setOf(
-        "txt", "xml", "json", "json5", "yaml", "yml", "properties", "gradle", "kts",
-        "kt", "java", "smali", "md", "html", "htm", "css", "js", "ts", "sh", "bat",
-        "ini", "cfg", "conf", "toml", "csv", "log", "pro", "rules", "aidl"
-    )
 
     fun openFile(
         context: Context,
         file: File
     ) {
         val extension = file.extension.lowercase()
-
-        if (extension in editableExtensions) {
-            try {
-                context.startActivity(
-                    Intent(context, TextEditorActivity::class.java)
-                        .putExtra("path", file.absolutePath)
-                )
-                return
-            } catch (_: Exception) {
-                // Fall through to Android's external chooser if the embedded editor cannot open.
-            }
-        }
 
         val mimeType =
             MimeTypeMap
@@ -61,6 +43,22 @@ object FileOpener {
                 "No app found to open this file",
                 Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+
+    fun openUri(context: Context, uri: Uri, displayName: String, mimeType: String? = null) {
+        val resolvedMime = mimeType ?: MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(displayName.substringAfterLast('.', "").lowercase())
+            ?: "*/*"
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, resolvedMime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        try {
+            context.startActivity(Intent.createChooser(intent, "Open with"))
+        } catch (_: Exception) {
+            Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -30,6 +30,8 @@ data class PaneState(
     val items: List<FileItem> = emptyList(),
     val selectedPaths: Set<String> = emptySet(),
     val isLoading: Boolean = false,
+    val loadingProgress: Int? = null,
+    val loadingLabel: String? = null,
     val highlightedItemName: String? = null,
     val searchQuery: String = "",
     val showSystemHidden: Boolean = true,
@@ -40,6 +42,7 @@ data class PaneState(
     val recentlyChangedPaths: Set<String> = emptySet(),
     val archiveFilePath: String? = null,
     val archiveRootPath: String? = null,
+    val displayPathOverride: String? = null,
 ) {
 
     val isArchiveView: Boolean
@@ -47,6 +50,7 @@ data class PaneState(
 
     val displayPath: String
         get() {
+            displayPathOverride?.let { return it }
             val archivePath = archiveFilePath ?: return currentPath
             val rootPath = archiveRootPath ?: return currentPath
             val root = File(rootPath)

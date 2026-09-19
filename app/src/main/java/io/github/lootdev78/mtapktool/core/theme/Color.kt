@@ -3,7 +3,7 @@ package io.github.lootdev78.mtapktool.core.theme
 import androidx.compose.ui.graphics.Color
 
 // ==========================================
-// MT Manager Inspired Palette - Light
+// MTApktool reference palette - Light
 // ==========================================
 val MdThemeLightPrimary = Color(0xFF0061A4)
 val MdThemeLightOnPrimary = Color(0xFFFFFFFF)
@@ -15,30 +15,30 @@ val MdThemeLightOnSecondary = Color(0xFFFFFFFF)
 val MdThemeLightSecondaryContainer = Color(0xFFD7E3F7)
 val MdThemeLightOnSecondaryContainer = Color(0xFF101C2B)
 
-val MdThemeLightBackground = Color(0xFFF0F0F0) // Slightly grayish like MT classic
+val MdThemeLightBackground = Color(0xFFF6F3F7) // Slightly grayish like MT classic
 val MdThemeLightSurface = Color(0xFFFFFFFF)
-val MdThemeLightSurfaceVariant = Color(0xFFD6D6D6) // For dividers/dual pane split
-val MdThemeLightOnSurface = Color(0xFF1F1F1F)
-val MdThemeLightOnSurfaceVariant = Color(0xFF44474E)
+val MdThemeLightSurfaceVariant = Color(0xFFE6E1E8) // For dividers/dual pane split
+val MdThemeLightOnSurface = Color(0xFF1D1B20)
+val MdThemeLightOnSurfaceVariant = Color(0xFF49454F)
 
 // ==========================================
-// MT Manager Inspired Palette - Dark
+// MTApktool reference palette - Dark
 // ==========================================
-val MdThemeDarkPrimary = Color(0xFF9ECAFF)
-val MdThemeDarkOnPrimary = Color(0xFF003258)
-val MdThemeDarkPrimaryContainer = Color(0xFF00497D)
-val MdThemeDarkOnPrimaryContainer = Color(0xFFD1E4FF)
+val MdThemeDarkPrimary = Color(0xFF2196F3)
+val MdThemeDarkOnPrimary = Color(0xFFFFFFFF)
+val MdThemeDarkPrimaryContainer = Color(0xFF185A7A)
+val MdThemeDarkOnPrimaryContainer = Color(0xFFE8F3FF)
 
-val MdThemeDarkSecondary = Color(0xFFBBC7DB)
-val MdThemeDarkOnSecondary = Color(0xFF253140)
-val MdThemeDarkSecondaryContainer = Color(0xFF3B4858)
-val MdThemeDarkOnSecondaryContainer = Color(0xFFD7E3F7)
+val MdThemeDarkSecondary = Color(0xFFBDBDBD)
+val MdThemeDarkOnSecondary = Color(0xFF202020)
+val MdThemeDarkSecondaryContainer = Color(0xFF424242)
+val MdThemeDarkOnSecondaryContainer = Color(0xFFE0E0E0)
 
-val MdThemeDarkBackground = Color(0xFF111318)
-val MdThemeDarkSurface = Color(0xFF191C20)
-val MdThemeDarkSurfaceVariant = Color(0xFF2C2C2C) // For headers
-val MdThemeDarkOnSurface = Color(0xFFE2E2E6)
-val MdThemeDarkOnSurfaceVariant = Color(0xFFC4C6D0)
+val MdThemeDarkBackground = Color(0xFF303030)
+val MdThemeDarkSurface = Color(0xFF303030)
+val MdThemeDarkSurfaceVariant = Color(0xFF111111) // MT-style toolbar/bottom bar
+val MdThemeDarkOnSurface = Color(0xFFE0E0E0)
+val MdThemeDarkOnSurfaceVariant = Color(0xFF9E9E9E)
 
 // ==========================================
 // File Manager Special Badges & Category Colors

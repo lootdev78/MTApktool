@@ -11,7 +11,7 @@
 		android:layout_height="wrap_content"
 		android:paddingVertical="6dp"
 		android:paddingHorizontal="10dp"
-		android:textColor="@color/mt_editor_on_surface"
+		android:textColor="?android:attr/textColorPrimary"
 		android:textSize="14sp"
 		android:ellipsize="end"
 		android:singleLine="true"/>
@@ -19,7 +19,7 @@
 	<View
 		android:layout_width="match_parent"
 		android:layout_height="1dp"
-		android:background="@color/mt_editor_surface_variant"/>
+		android:background="?android:attr/colorBackground"/>
 
 </LinearLayout>
 

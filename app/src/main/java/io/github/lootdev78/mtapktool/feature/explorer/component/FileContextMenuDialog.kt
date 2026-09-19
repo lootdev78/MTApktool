@@ -16,26 +16,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -52,23 +53,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
-import io.github.lootdev78.mtapktool.apktool.isApkLike
-import io.github.lootdev78.mtapktool.apktool.isApktoolProject
-import io.github.lootdev78.mtapktool.archive.ArchiveEngine
-import io.github.lootdev78.mtapktool.feature.explorer.state.isArchiveFile
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
+import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
-import java.io.File
 
-data class MenuAction(
-    val title: String,
-    val icon: ImageVector,
-    val isEnabled: Boolean = true,
-    val onClick: () -> Unit
-)
-
+/**
+ * MT-style long-press menu. File-type-specific operations intentionally live behind
+ * "Tools" / "Open with…" instead of flooding the first menu with unrelated actions.
+ */
 @Composable
 fun FileContextMenuDialog(
     targetItem: FileItem?,
@@ -76,242 +70,128 @@ fun FileContextMenuDialog(
     onDismissRequest: () -> Unit,
     onCopy: () -> Unit,
     onMove: () -> Unit,
-    onLink: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onTools: () -> Unit,
     onCompress: () -> Unit,
     onProperty: () -> Unit,
     onShare: () -> Unit,
     onOpenWith: () -> Unit,
     onAddBookmark: () -> Unit,
-    readOnlyArchive: Boolean = false,
-    onApktool: () -> Unit = {},
-    onExtractArchive: () -> Unit = {},
 ) {
-
-
     var isVisible by remember { mutableStateOf(false) }
-    var isDeleteClicked by remember { mutableStateOf(false) }
-
-    if (isDeleteClicked){
-        ConfirmDialog(
-            title = "Are you sure you want to delete this file?",
-            subtitle = null,
-            onConfirm = {
-                onDelete()
-                isDeleteClicked = false
-            },
-            onDismiss = {
-                isDeleteClicked = false
-            }
-        )
-    }
     val scope = rememberCoroutineScope()
-    val targetFile = targetItem?.let { File(it.path) }
-    val apktoolCapable = targetFile?.let { isApkLike(it) || isApktoolProject(it) } == true
-    val apktoolBuild = targetFile?.let(::isApktoolProject) == true
-    val splitPackage = targetFile?.extension?.lowercase() in setOf("apks", "apkm", "xapk", "apkx")
-    val apktoolActionLabel = when {
-        apktoolBuild -> "Apktool build"
-        splitPackage -> "${targetFile?.extension?.uppercase()} → APK"
-        else -> "APK Funktionen"
-    }
-    val archiveCapable = targetItem?.isArchiveFile() == true && targetFile?.let(ArchiveEngine::supports) == true
+    val context = LocalContext.current
+    ExplorerPreferences.init(context)
+    val prefs by ExplorerPreferences.state.collectAsState()
 
-    val addArrow = fun(text: String): String{
-        return if (activePane == ActivePane.LEFT){
-            "$text ->"
-        } else {
-            "<- $text"
-        }
+    val addArrow: (String) -> String = { text ->
+        if (activePane == ActivePane.LEFT) "$text ->" else "<- $text"
     }
-
     val animateDismiss = {
         scope.launch {
             isVisible = false
-            delay(150.milliseconds) // Wait for exit animation to finish
+            delay(150.milliseconds)
             onDismissRequest()
         }
     }
 
-    LaunchedEffect(Unit) {
-        isVisible = true // Trigger enter animation when dialog mounts
-    }
+    LaunchedEffect(Unit) { isVisible = true }
 
     Dialog(
         onDismissRequest = { animateDismiss() },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false // Allows custom dialog sizing
-        )
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         AnimatedVisibility(
             visible = isVisible,
             enter = scaleIn(
-                initialScale = 0.85f,
+                initialScale = 0.88f,
                 transformOrigin = TransformOrigin(0.5f, 0.5f),
-                animationSpec = tween(durationMillis = 180)
-            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                animationSpec = tween(160),
+            ) + fadeIn(tween(160)),
             exit = scaleOut(
-                targetScale = 0.85f,
+                targetScale = 0.9f,
                 transformOrigin = TransformOrigin(0.5f, 0.5f),
-                animationSpec = tween(durationMillis = 150)
-            ) + fadeOut(animationSpec = tween(durationMillis = 150))
+                animationSpec = tween(130),
+            ) + fadeOut(tween(130)),
         ) {
             Surface(
                 shape = RoundedCornerShape(2.dp),
-                color = MaterialTheme.colorScheme.surface,
-                contentColor =  MaterialTheme.colorScheme.onSurface,
-                shadowElevation = 8.dp,
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .padding(8.dp)
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shadowElevation = 10.dp,
+                modifier = Modifier.fillMaxWidth(0.88f),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp, horizontal = 8.dp)
-                ) {
-                    // Grid Rows
-                    ActionRow(
-                        left = MenuAction(
-                            addArrow("Copy"),
-                            Icons.Outlined.ContentCopy,
-                            isEnabled = true,
-                            onClick = onCopy
-                        ),
-                        right = MenuAction(
-                            addArrow("Move"),
-                            Icons.AutoMirrored.Outlined.DriveFileMove,
-                            isEnabled = !readOnlyArchive,
-                            onClick = onMove
+                Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
+                    val actions = mapOf(
+                        "copy" to MenuAction(addArrow("Kopieren"), Icons.Outlined.ContentCopy, targetItem != null, onCopy),
+                        "move" to MenuAction(addArrow("Verschieben"), Icons.AutoMirrored.Outlined.DriveFileMove, targetItem != null, onMove),
+                        "delete" to MenuAction("Löschen", Icons.Default.Delete, targetItem != null, onDelete),
+                        "rename" to MenuAction("Umbenennen", Icons.Default.Edit, targetItem != null, onRename),
+                        "tools" to MenuAction("Tools", Icons.Default.Build, targetItem != null, onTools),
+                        "compress" to MenuAction("Komprimieren", Icons.Default.Archive, targetItem != null, onCompress),
+                        "properties" to MenuAction("Eigenschaften", Icons.Outlined.Info, targetItem != null, onProperty),
+                        "share" to MenuAction("Teilen", Icons.Default.Share, targetItem?.isDirectory == false, onShare),
+                        "open_with" to MenuAction("Öffnen mit…", Icons.Default.Check, targetItem?.isDirectory == false, onOpenWith),
+                        "bookmark" to MenuAction("Lesezeichen…", Icons.Outlined.BookmarkAdd, targetItem != null, onAddBookmark),
+                    )
+                    prefs.fileMenuOrder.mapNotNull(actions::get).chunked(2).forEach { pair ->
+                        ActionRow(
+                            left = pair[0],
+                            right = pair.getOrElse(1) { MenuAction("", Icons.Default.Check, false) {} },
                         )
-                    )
-
-                    ActionRow(
-                        left = MenuAction(
-                            addArrow("Link"),
-                            Icons.Outlined.Link,
-                            isEnabled = targetItem != null && !readOnlyArchive,
-                            onClick = onLink
-                        ),
-                        right = MenuAction(
-                            "Rename",
-                            Icons.Default.Edit,
-                            isEnabled = !readOnlyArchive,
-                            onClick = onRename
-                        )
-                    )
-
-                    ActionRow(
-                        left = MenuAction(
-                            "Delete",
-                            Icons.Default.Delete,
-                            isEnabled = !readOnlyArchive,
-                            onClick = {
-                                isDeleteClicked = true
-                            }
-                        ),
-                        right = MenuAction(
-                            "Compress",
-                            Icons.Default.Archive,
-                            isEnabled = targetItem != null,
-                            onClick = onCompress
-                        ) // Unhighlighted
-                    )
-
-                    ActionRow(
-                        left = MenuAction(
-                            "Property",
-                            Icons.Outlined.Info,
-                            isEnabled = true,
-                            onClick = onProperty
-                        ),
-                        right = MenuAction(
-                            "Share",
-                            Icons.Default.Share,
-                            isEnabled = targetItem?.isDirectory == false,
-                            onClick = onShare
-                        )
-                    )
-
-                    ActionRow(
-                        left = MenuAction(
-                            "Open with...",
-                            Icons.Default.Check,
-                            isEnabled = targetItem?.isDirectory == false,
-                            onClick = onOpenWith),
-                        right = MenuAction(
-                            "+ Bookmarks",
-                            Icons.Outlined.BookmarkAdd,
-                            isEnabled = targetItem != null,
-                            onClick = onAddBookmark
-                        ) // Unhighlighted
-                    )
-
-                    ActionRow(
-                        left = MenuAction(
-                            apktoolActionLabel,
-                            if (apktoolBuild) Icons.Default.Build else Icons.Default.Android,
-                            isEnabled = apktoolCapable,
-                            onClick = onApktool,
-                        ),
-                        right = MenuAction(
-                            "Extract",
-                            Icons.Default.Unarchive,
-                            isEnabled = archiveCapable,
-                            onClick = onExtractArchive,
-                        ),
-                    )
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { animateDismiss() }) { Text("SCHLIESSEN") }
+                    }
                 }
             }
         }
     }
 }
 
+private data class MenuAction(
+    val title: String,
+    val icon: ImageVector,
+    val isEnabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
 @Composable
-private fun ActionRow(
-    left: MenuAction,
-    right: MenuAction
-) {
+private fun ActionRow(left: MenuAction, right: MenuAction) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier.fillMaxWidth().height(54.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        ActionCell(action = left, modifier = Modifier.weight(1f))
-        ActionCell(action = right, modifier = Modifier.weight(1f))
+        ActionCell(left, Modifier.weight(1f))
+        ActionCell(right, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun ActionCell(
-    action: MenuAction,
-    modifier: Modifier = Modifier
-) {
-    val alpha = if (action.isEnabled) 1.0f else 0.35f // Dimmed appearance when unhighlighted
-    val textColor = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
-    val iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
-
+private fun ActionCell(action: MenuAction, modifier: Modifier = Modifier) {
+    val alpha = if (action.isEnabled) 1f else 0.34f
     Row(
         modifier = modifier
             .fillMaxHeight()
-            .clickable(enabled = action.isEnabled) { action.onClick() }
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable(enabled = action.isEnabled, onClick = action.onClick)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = action.icon,
-            contentDescription = action.title,
-            tint = iconColor,
-            modifier = Modifier.size(20.dp)
+            action.icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+            modifier = Modifier.size(24.dp),
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(Modifier.width(12.dp))
         Text(
-            text = action.title,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = textColor
+            action.title,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Normal,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+            maxLines = 1,
         )
     }
 }

@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -77,10 +79,15 @@ import io.github.lootdev78.mtapktool.core.theme.*
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.state.*
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveReader
+import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
+import io.github.lootdev78.mtapktool.settings.ExplorerPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ClassicFilePane(
@@ -98,6 +105,9 @@ fun ClassicFilePane(
 ) {
 
 
+    val context = LocalContext.current
+    ExplorerPreferences.init(context)
+    val explorerPrefs by ExplorerPreferences.state.collectAsState()
     val listState = rememberLazyListState()
     val pullToRefreshState = rememberPullToRefreshState()
 
@@ -118,6 +128,16 @@ fun ClassicFilePane(
         modifier = modifier
             .fillMaxHeight()
             .shadow(elevation = elevation, shape = RoundedCornerShape(0.dp))
+            // Focus on pointer-down before a child row consumes the gesture. This keeps the
+            // single path/header at the top synchronized with whichever pane the user touches.
+            .pointerInput(onFocus) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.any { it.pressed && !it.previousPressed }) onFocus()
+                    }
+                }
+            }
             // Clicking ANY empty area in the pane focuses it
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -128,8 +148,34 @@ fun ClassicFilePane(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (paneState.isLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                        Spacer(Modifier.height(12.dp))
+                        paneState.loadingLabel?.let { label ->
+                            Text(
+                                label,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        paneState.loadingProgress?.let { progress ->
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "${progress.coerceIn(0, 100)}%",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
                 }
             } else {
                 PullToRefreshBox(
@@ -146,44 +192,23 @@ fun ClassicFilePane(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 12.dp, top = 2.dp),
                     ) {
+                        // Project build action belongs at the very top and uses the same row metrics as files.
                         if (paneState.searchQuery.isEmpty()) {
-                            item(key = "__mtapktool_path__${paneState.currentPath}") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onFocus(); onPathClick() }
-                                        .padding(horizontal = 8.dp, vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = paneState.displayPath,
-                                        modifier = Modifier.weight(1f),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        }
-
-                        // 1. Static Parent Directory Item ".."
-                        if (paneState.searchQuery.isEmpty()) {
-                            item {
-                                ParentDirectoryRow(onClick = {
-                                    onFocus()
-                                    onNavigateUp()
-                                })
-                            }
-                            val currentProject = File(paneState.currentPath)
-                            if (File(currentProject, "apktool.yml").isFile) {
+                            val currentProject = if (paneState.currentPath.startsWith("content://")) null else File(paneState.currentPath)
+                            if (currentProject != null && File(currentProject, "apktool.yml").isFile) {
                                 item(key = "__mtapktool_build__${paneState.currentPath}") {
                                     ApktoolProjectBuildRow(
                                         project = currentProject,
+                                        prefs = explorerPrefs,
                                         onClick = { onFocus(); onBuildProject(currentProject) },
                                     )
                                 }
+                            }
+                            item {
+                                ParentDirectoryRow(prefs = explorerPrefs, onClick = {
+                                    onFocus()
+                                    onNavigateUp()
+                                })
                             }
                         }
 
@@ -195,7 +220,8 @@ fun ClassicFilePane(
                             val isHighlighted = item.name == paneState.highlightedItemName
                             ClassicFileRow(
                                 item = item,
-                                isSelected = paneState.selectedPaths.contains(item.path) || isHighlighted,
+                                prefs = explorerPrefs,
+                                isSelected = paneState.selectedPaths.contains(item.path),
                                 isRecentlyChanged = item.path in paneState.recentlyChangedPaths,
                                 onClick = {
                                     onFocus()
@@ -213,18 +239,25 @@ fun ClassicFilePane(
                 }
             }
             if (isActive) {
+                // MT-style active pane cue: a subtle inner shade on all four edges.
+                // It is deliberately neutral rather than a bright outline so the last-used
+                // pane reads as "pressed inward", matching the reference dual-pane UI.
+                val shade = Color.Black.copy(alpha = 0.16f)
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
+                    Modifier.fillMaxWidth().height(5.dp).align(Alignment.TopCenter)
+                        .background(Brush.verticalGradient(listOf(shade, Color.Transparent)))
+                )
+                Box(
+                    Modifier.fillMaxWidth().height(5.dp).align(Alignment.BottomCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, shade)))
+                )
+                Box(
+                    Modifier.fillMaxHeight().width(5.dp).align(Alignment.CenterStart)
+                        .background(Brush.horizontalGradient(listOf(shade, Color.Transparent)))
+                )
+                Box(
+                    Modifier.fillMaxHeight().width(5.dp).align(Alignment.CenterEnd)
+                        .background(Brush.horizontalGradient(listOf(Color.Transparent, shade)))
                 )
             }
         }
@@ -232,28 +265,29 @@ fun ClassicFilePane(
 }
 
 @Composable
-private fun ApktoolProjectBuildRow(project: File, onClick: () -> Unit) {
+private fun ApktoolProjectBuildRow(project: File, prefs: ExplorerPrefs, onClick: () -> Unit) {
+    val metrics = fileListMetrics(prefs.fileListSize)
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 7.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = metrics.verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(ColorApk.copy(alpha = 0.15f)),
+            modifier = Modifier.size(metrics.iconSize).clip(RoundedCornerShape(10.dp)).background(ColorApk.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = ColorApk, modifier = Modifier.size(25.dp))
+            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = ColorApk, modifier = Modifier.size(metrics.innerIconSize))
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Dieses Projekt kompilieren", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Text("${project.name} • apktool.yml", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Dieses Projekt kompilieren", fontSize = metrics.nameSize, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${project.name} • apktool.yml", fontSize = metrics.detailSize, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-private fun ParentDirectoryRow(onClick: () -> Unit) {
-
+private fun ParentDirectoryRow(prefs: ExplorerPrefs, onClick: () -> Unit) {
+    val metrics = fileListMetrics(prefs.fileListSize)
     var isPressed by remember { mutableStateOf(false) }
 
     val animatedBgColor by animateColorAsState(
@@ -280,28 +314,28 @@ private fun ParentDirectoryRow(onClick: () -> Unit) {
                     onTap = { onClick() }
                 )
             }
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .padding(horizontal = 6.dp, vertical = metrics.verticalPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Dark Squircle Icon
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(metrics.iconSize)
                 .clip(RoundedCornerShape(10.dp))
-                .background(ColorFolder.copy(alpha = 0.15f)),
+                .background(Color(0xFF111111)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector =  Icons.Default.Folder,
                 contentDescription = null,
-                tint = ColorFolder,
-                modifier = Modifier.size(22.dp)
+                tint = Color(0xFFD0D0D0),
+                modifier = Modifier.size(metrics.innerIconSize)
             )
         }
         Spacer(modifier = Modifier.width(10.dp))
         Text(
             text = "..",
-            fontSize = 15.sp,
+            fontSize = metrics.nameSize,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -311,6 +345,7 @@ private fun ParentDirectoryRow(onClick: () -> Unit) {
 @Composable
 private fun ClassicFileRow(
     item: FileItem,
+    prefs: ExplorerPrefs,
     isSelected: Boolean,
     isRecentlyChanged: Boolean,
     onClick: () -> Unit,
@@ -320,12 +355,13 @@ private fun ClassicFileRow(
     var isPressed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val metrics = fileListMetrics(prefs.fileListSize)
     val apkIcon by produceState<android.graphics.Bitmap?>(
         initialValue = null,
         key1 = item.path,
         key2 = item.modifiedAt,
     ) {
-        value = if (!item.isDirectory && item.isApkFile()) {
+        value = if (!item.isSaf && !item.isDirectory && item.extensionName == "apk") {
             withContext(Dispatchers.IO) { ApkArchiveReader.icon(context, item.file) }
         } else {
             null
@@ -338,8 +374,8 @@ private fun ClassicFileRow(
 
     // Dynamic background color state
     val targetBackgroundColor = when {
-        isPressed -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+        isPressed -> Color(0xFF365F6E)
+        isSelected -> Color(0xFF2B5666)
         else -> Color.Transparent
     }
 
@@ -413,13 +449,13 @@ private fun ClassicFileRow(
                     onLongPress = { onLongClick() }
                 )
             }
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+            .padding(horizontal = 6.dp, vertical = metrics.verticalPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val isApktoolProject = item.isDirectory && File(item.path, "apktool.yml").isFile
         val (icon, iconColor) = when {
             isApktoolProject -> Icons.Default.Build to ColorApk
-            item.isDirectory -> Icons.Default.Folder to ColorFolder
+            item.isDirectory -> Icons.Default.Folder to Color(0xFFD0D0D0)
 
             item.isApkFile() ->
                 Icons.Default.Android to ColorApk
@@ -449,11 +485,11 @@ private fun ClassicFileRow(
         // Dark Rounded Icon Container
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(metrics.iconSize)
                 .clip(RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (item.isImageFile()) {
+            if (item.isImageFile() && (!item.isSaf || prefs.loadExternalThumbnails)) {
                 AsyncImage(
                     model = item.path,
                     contentDescription = null,
@@ -471,14 +507,14 @@ private fun ClassicFileRow(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(iconColor.copy(alpha = 0.15f)),
+                        .background(if (item.isDirectory) Color(0xFF111111) else iconColor.copy(alpha = 0.18f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
                         tint = iconColor,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(metrics.innerIconSize)
                     )
                 }
             }
@@ -493,21 +529,21 @@ private fun ClassicFileRow(
         ) {
             Text(
                 text = item.name,
-                fontSize = 14.sp,
-                lineHeight = 15.sp,
+                fontSize = metrics.nameSize,
+                lineHeight = metrics.nameLineHeight,
                 style = LocalTextStyle.current.copy(
                     platformStyle = PlatformTextStyle(includeFontPadding = false)
                 ),
                 color = if (isRecentlyChanged) Color(0xFF2CBF4A) else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
+                maxLines = prefs.maxFileNameLines.coerceIn(1, 8),
                 overflow = TextOverflow.Ellipsis
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = item.formattedDate,
-                    fontSize = 11.sp,
-                    lineHeight = 12.sp,
+                    text = formatItemDate(item.modifiedAt, prefs),
+                    fontSize = metrics.detailSize,
+                    lineHeight = metrics.detailLineHeight,
                     style = LocalTextStyle.current.copy(
                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                     ),
@@ -518,8 +554,8 @@ private fun ClassicFileRow(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = item.sizeText,
-                        fontSize = 11.sp,
-                        lineHeight = 12.sp,
+                        fontSize = metrics.detailSize,
+                        lineHeight = metrics.detailLineHeight,
                         style = LocalTextStyle.current.copy(
                             platformStyle = PlatformTextStyle(includeFontPadding = false)
                         ),
@@ -529,4 +565,30 @@ private fun ClassicFileRow(
             }
         }
     }
+}
+
+private data class FileListMetrics(
+    val iconSize: androidx.compose.ui.unit.Dp,
+    val innerIconSize: androidx.compose.ui.unit.Dp,
+    val verticalPadding: androidx.compose.ui.unit.Dp,
+    val nameSize: androidx.compose.ui.unit.TextUnit,
+    val nameLineHeight: androidx.compose.ui.unit.TextUnit,
+    val detailSize: androidx.compose.ui.unit.TextUnit,
+    val detailLineHeight: androidx.compose.ui.unit.TextUnit,
+)
+
+private fun fileListMetrics(size: String): FileListMetrics = when (size) {
+    "big" -> FileListMetrics(46.dp, 28.dp, 8.dp, 18.sp, 20.sp, 13.sp, 15.sp)
+    "medium" -> FileListMetrics(39.dp, 24.dp, 6.dp, 16.sp, 18.sp, 12.sp, 14.sp)
+    else -> FileListMetrics(32.dp, 20.dp, 4.dp, 14.sp, 15.sp, 11.sp, 12.sp)
+}
+
+private fun formatItemDate(modifiedAt: Long, prefs: ExplorerPrefs): String {
+    if (modifiedAt <= 0L) return ""
+    val configured = prefs.dateTimeFormat.ifBlank { "dd-MM-yyyy HH:mm:ss" }
+    val pattern = if (prefs.fileListTimePreference == "hide_seconds_simplified_year") {
+        configured.replace(":ss", "").replace("yyyy", "yy")
+    } else configured
+    return runCatching { SimpleDateFormat(pattern, Locale.getDefault()).format(Date(modifiedAt)) }
+        .getOrElse { SimpleDateFormat("dd-MM-yy HH:mm", Locale.getDefault()).format(Date(modifiedAt)) }
 }

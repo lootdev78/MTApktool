@@ -6,10 +6,6 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Environment;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
 
 import io.github.lootdev78.mtapktool.antisplit.AntiSplitEngine;
 
@@ -24,45 +20,49 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-/** Integrated APKExtractor engine used by MTApktool's navigation screen. */
+/** Host-facing extraction engine; UI is provided by MTApktool Compose. */
 public final class ApkExtractorEngine {
     private ApkExtractorEngine() {}
-
-    public interface ProgressListener {
-        void onMessage(String message);
-    }
-
-    public enum SplitMode {
-        APKS_ARCHIVE,
-        MERGED_APK,
-        BASE_APK_ONLY
-    }
 
     public static final class AppEntry {
         public final String packageName;
         public final String label;
         public final String versionName;
         public final long versionCode;
-        public final long firstInstallTime;
-        public final long lastUpdateTime;
         public final boolean system;
         public final boolean split;
+        public final String sourceDir;
+        public final String dataDir;
+        public final long firstInstallTime;
+        public final long lastUpdateTime;
+        public final int uid;
+        public final int minSdk;
+        public final int targetSdk;
+        public final long baseSize;
+        public final long splitSize;
 
-        public AppEntry(String packageName, String label, String versionName, long versionCode, long firstInstallTime,
-                        long lastUpdateTime, boolean system, boolean split) {
+        public AppEntry(String packageName, String label, String versionName, long versionCode,
+                        boolean system, boolean split, String sourceDir, String dataDir,
+                        long firstInstallTime, long lastUpdateTime, int uid, int minSdk, int targetSdk,
+                        long baseSize, long splitSize) {
             this.packageName = packageName;
             this.label = label;
             this.versionName = versionName;
             this.versionCode = versionCode;
-            this.firstInstallTime = firstInstallTime;
-            this.lastUpdateTime = lastUpdateTime;
             this.system = system;
             this.split = split;
+            this.sourceDir = sourceDir;
+            this.dataDir = dataDir;
+            this.firstInstallTime = firstInstallTime;
+            this.lastUpdateTime = lastUpdateTime;
+            this.uid = uid;
+            this.minSdk = minSdk;
+            this.targetSdk = targetSdk;
+            this.baseSize = baseSize;
+            this.splitSize = splitSize;
         }
     }
 
@@ -70,12 +70,11 @@ public final class ApkExtractorEngine {
         return new File(Environment.getExternalStorageDirectory(), "apktool/apks");
     }
 
-    public static List<AppEntry> listInstalledApps(Context context, boolean includeSystem) {
+    public static List<AppEntry> listInstalled(Context context, boolean includeSystem) {
         PackageManager pm = context.getPackageManager();
         List<PackageInfo> packages;
-        if (Build.VERSION.SDK_INT >= 33) {
-            packages = pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0));
-        } else {
+        if (Build.VERSION.SDK_INT >= 33) packages = pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0));
+        else {
             //noinspection deprecation
             packages = pm.getInstalledPackages(0);
         }
@@ -86,279 +85,162 @@ public final class ApkExtractorEngine {
             boolean system = (app.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             if (!includeSystem && system) continue;
             String label;
-            try {
-                CharSequence value = pm.getApplicationLabel(app);
-                label = value == null ? info.packageName : value.toString();
-            } catch (Throwable ignored) {
-                label = info.packageName;
+            try { label = String.valueOf(pm.getApplicationLabel(app)); }
+            catch (Throwable t) { label = info.packageName; }
+            long baseSize = new File(app.sourceDir).length();
+            long splitSize = 0L;
+            if (app.splitSourceDirs != null) {
+                for (String splitPath : app.splitSourceDirs) {
+                    if (splitPath != null) splitSize += new File(splitPath).length();
+                }
             }
             result.add(new AppEntry(
                     info.packageName,
                     label,
                     info.versionName == null ? "" : info.versionName,
                     info.getLongVersionCode(),
+                    system,
+                    app.splitSourceDirs != null && app.splitSourceDirs.length > 0,
+                    app.sourceDir,
+                    app.dataDir,
                     info.firstInstallTime,
                     info.lastUpdateTime,
-                    system,
-                    app.splitSourceDirs != null && app.splitSourceDirs.length > 0
+                    app.uid,
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.N ? app.minSdkVersion : 0,
+                    app.targetSdkVersion,
+                    baseSize,
+                    splitSize
             ));
         }
         Collections.sort(result, Comparator.comparing(a -> a.label.toLowerCase(Locale.ROOT)));
         return result;
     }
 
-    public static File extract(
-            Context context,
-            String packageName,
-            File outputRoot,
-            SplitMode splitMode,
-            int compressionLevel,
-            ProgressListener listener
-    ) throws Exception {
-        return extract(context, packageName, outputRoot, splitMode, compressionLevel,
-                false, true, true, listener);
+    public static File extractBase(Context context, String packageName, File root) throws Exception {
+        return extractBase(context, packageName, root, safe(packageName) + ".apk");
     }
 
-    public static File extract(
-            Context context,
-            String packageName,
-            File outputRoot,
-            SplitMode splitMode,
-            int compressionLevel,
-            boolean antiSplitForceMerge,
-            boolean stripSplitMetadata,
-            boolean removeMetaInf,
-            ProgressListener listener
-    ) throws Exception {
-        PackageInfo packageInfo = getPackageInfo(context, packageName);
-        ApplicationInfo app = packageInfo.applicationInfo;
-        if (app == null || app.sourceDir == null) throw new IOException("APK path is unavailable for " + packageName);
-
-        File root = ensureOutputRoot(outputRoot);
-
-        String baseName = safeFileName(packageName);
-        File base = new File(app.sourceDir);
-        String[] splitPaths = app.splitSourceDirs;
-        boolean hasSplits = splitPaths != null && splitPaths.length > 0;
-
-        if (!hasSplits || splitMode == SplitMode.BASE_APK_ONLY) {
-            File out = uniqueFile(root, baseName + ".apk");
-            message(listener, "APKExtractor: copying base APK");
-            copy(base, out);
-            return out;
-        }
-
-        List<File> modules = new ArrayList<>();
-        modules.add(base);
-        for (String split : splitPaths) if (split != null) modules.add(new File(split));
-
-        if (splitMode == SplitMode.MERGED_APK) {
-            File out = uniqueFile(root, baseName + ".apk");
-            message(listener, "APKExtractor: AntiSplit-M merge");
-            AntiSplitEngine.Options options = new AntiSplitEngine.Options();
-            options.compressionLevel = Math.max(0, Math.min(9, compressionLevel));
-            options.forceMerge = antiSplitForceMerge;
-            options.stripSplitMetadata = stripSplitMetadata;
-            options.removeMetaInf = removeMetaInf;
-            return AntiSplitEngine.mergeApkFiles(modules, out, options, listener == null ? null : listener::onMessage);
-        }
-
-        File out = uniqueFile(root, baseName + ".apks");
-        message(listener, "APKExtractor: creating APKS archive");
-        writeApksArchive(modules, out, compressionLevel);
+    public static File extractBase(Context context, String packageName, File root, String outputName) throws Exception {
+        ApplicationInfo app = packageInfo(context, packageName).applicationInfo;
+        if (app == null || app.sourceDir == null) throw new IOException("Base APK unavailable");
+        File outRoot = ensureRoot(root);
+        String name = normalizeName(outputName, safe(packageName) + ".apk", ".apk");
+        File out = unique(outRoot, name);
+        copy(new File(app.sourceDir), out);
         return out;
     }
 
-    public static List<File> installedApkFiles(Context context, String packageName) throws Exception {
-        PackageInfo packageInfo = getPackageInfo(context, packageName);
-        ApplicationInfo app = packageInfo.applicationInfo;
-        if (app == null || app.sourceDir == null) throw new IOException("APK path is unavailable for " + packageName);
+    public static File createApks(Context context, String packageName, File root, int compression) throws Exception {
+        return createApks(context, packageName, root, compression, safe(packageName) + ".apks");
+    }
+
+    public static File createApks(Context context, String packageName, File root, int compression, String outputName) throws Exception {
+        List<File> modules = installedFiles(context, packageName);
+        File outRoot = ensureRoot(root);
+        String name = normalizeName(outputName, safe(packageName) + ".apks", ".apks");
+        File out = unique(outRoot, name);
+        try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(out)))) {
+            zip.setLevel(Math.max(0, Math.min(9, compression)));
+            for (int i = 0; i < modules.size(); i++) {
+                File module = modules.get(i);
+                ZipEntry entry = new ZipEntry(i == 0 ? "base.apk" : module.getName());
+                zip.putNextEntry(entry);
+                try (InputStream in = new FileInputStream(module)) { copy(in, zip); }
+                zip.closeEntry();
+            }
+        }
+        return out;
+    }
+
+    public static File mergeToApk(Context context, String packageName, File root, int compression, boolean force) throws Exception {
+        return mergeToApk(context, packageName, root, compression, force, safe(packageName) + ".apk");
+    }
+
+    public static File mergeToApk(Context context, String packageName, File root, int compression, boolean force, String outputName) throws Exception {
+        List<File> modules = installedFiles(context, packageName);
+        if (modules.size() <= 1) return extractBase(context, packageName, root, outputName);
+        File outRoot = ensureRoot(root);
+        File tempContainer = File.createTempFile("mtapktool-extractor-", ".apks", context.getCacheDir());
+        try {
+            try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(tempContainer)))) {
+                zip.setLevel(Math.max(0, Math.min(9, compression)));
+                for (int i = 0; i < modules.size(); i++) {
+                    File module = modules.get(i);
+                    ZipEntry entry = new ZipEntry(i == 0 ? "base.apk" : module.getName());
+                    zip.putNextEntry(entry);
+                    try (InputStream in = new FileInputStream(module)) { copy(in, zip); }
+                    zip.closeEntry();
+                }
+            }
+            String name = normalizeName(outputName, safe(packageName) + ".apk", ".apk");
+            File out = unique(outRoot, name);
+            AntiSplitEngine.Options options = new AntiSplitEngine.Options();
+            options.compressionLevel = Math.max(0, Math.min(9, compression));
+            options.forceMerge = force;
+            options.cleanMetaInf = true;
+            return AntiSplitEngine.mergeContainer(tempContainer, out, null, options, null);
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            tempContainer.delete();
+        }
+    }
+
+    private static List<File> installedFiles(Context context, String packageName) throws Exception {
+        ApplicationInfo app = packageInfo(context, packageName).applicationInfo;
+        if (app == null || app.sourceDir == null) throw new IOException("APK path unavailable");
         List<File> result = new ArrayList<>();
         result.add(new File(app.sourceDir));
-        if (app.splitSourceDirs != null) {
-            for (String split : app.splitSourceDirs) if (split != null) result.add(new File(split));
-        }
+        if (app.splitSourceDirs != null) for (String value : app.splitSourceDirs) if (value != null) result.add(new File(value));
         return result;
     }
 
-    public static File extractIcon(Context context, String packageName, File outputRoot, ProgressListener listener) throws Exception {
+    public static List<File> installedApkFiles(Context context, String packageName) throws Exception {
+        return new ArrayList<>(installedFiles(context, packageName));
+    }
+
+    private static String normalizeName(String candidate, String fallback, String requiredExtension) {
+        String value = candidate == null ? "" : candidate.trim();
+        if (value.isEmpty()) value = fallback;
+        value = value.replace('/', '_').replace('\\', '_');
+        if (!value.toLowerCase(Locale.ROOT).endsWith(requiredExtension)) {
+            int dot = value.lastIndexOf('.');
+            if (dot > 0) value = value.substring(0, dot);
+            value += requiredExtension;
+        }
+        return value;
+    }
+
+    private static PackageInfo packageInfo(Context context, String packageName) throws PackageManager.NameNotFoundException {
         PackageManager pm = context.getPackageManager();
-        PackageInfo packageInfo = getPackageInfo(context, packageName);
-        ApplicationInfo app = packageInfo.applicationInfo;
-        if (app == null) throw new IOException("ApplicationInfo is unavailable for " + packageName);
-        File root = ensureOutputRoot(outputRoot);
-        File output = uniqueFile(root, safeFileName(packageName) + "_icon.png");
-        message(listener, "APKExtractor: extracting app icon");
-        Drawable drawable = app.loadIcon(pm);
-        Bitmap bitmap;
-        if (drawable instanceof BitmapDrawable && ((BitmapDrawable) drawable).getBitmap() != null) {
-            bitmap = ((BitmapDrawable) drawable).getBitmap();
-        } else {
-            int width = Math.max(1, drawable.getIntrinsicWidth());
-            int height = Math.max(1, drawable.getIntrinsicHeight());
-            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bitmap);
-            drawable.setBounds(0, 0, width, height);
-            drawable.draw(canvas);
-        }
-        try (FileOutputStream stream = new FileOutputStream(output)) {
-            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) throw new IOException("Failed to encode icon PNG");
-        }
-        return output;
-    }
-
-    public static File extractManifest(Context context, String packageName, File outputRoot, ProgressListener listener) throws Exception {
-        List<File> modules = installedApkFiles(context, packageName);
-        File root = ensureOutputRoot(outputRoot);
-        File output = uniqueFile(root, safeFileName(packageName) + "_AndroidManifest.xml");
-        message(listener, "APKExtractor: extracting AndroidManifest.xml");
-        try (ZipFile zip = new ZipFile(modules.get(0))) {
-            ZipEntry entry = zip.getEntry("AndroidManifest.xml");
-            if (entry == null) throw new IOException("AndroidManifest.xml was not found");
-            try (InputStream input = zip.getInputStream(entry); FileOutputStream out = new FileOutputStream(output)) {
-                copyStream(input, out);
-            }
-        }
-        return output;
-    }
-
-    public static File extractDex(Context context, String packageName, File outputRoot, int compressionLevel, ProgressListener listener) throws Exception {
-        return extractMatchingEntries(context, packageName, outputRoot, "_dex.zip", compressionLevel,
-                name -> name.matches("classes([0-9]+)?\\.dex"), "DEX", listener);
-    }
-
-    public static File extractResources(Context context, String packageName, File outputRoot, int compressionLevel, ProgressListener listener) throws Exception {
-        return extractMatchingEntries(context, packageName, outputRoot, "_resources.zip", compressionLevel,
-                name -> name.equals("resources.arsc") || name.startsWith("res/"), "resources", listener);
-    }
-
-    public static File extractLibraries(Context context, String packageName, File outputRoot, int compressionLevel, ProgressListener listener) throws Exception {
-        return extractMatchingEntries(context, packageName, outputRoot, "_libs.zip", compressionLevel,
-                name -> name.startsWith("lib/") && !name.endsWith("/"), "native libraries", listener);
-    }
-
-    public static File extractSplitApk(Context context, String packageName, int splitIndex, File outputRoot, ProgressListener listener) throws Exception {
-        List<File> modules = installedApkFiles(context, packageName);
-        if (splitIndex < 0 || splitIndex >= modules.size()) throw new IOException("Invalid split index: " + splitIndex);
-        File root = ensureOutputRoot(outputRoot);
-        File source = modules.get(splitIndex);
-        String defaultName = splitIndex == 0 ? safeFileName(packageName) + "_base.apk" : safeFileName(packageName) + "_" + safeFileName(source.getName());
-        File output = uniqueFile(root, defaultName);
-        message(listener, "APKExtractor: copying " + source.getName());
-        copy(source, output);
-        return output;
-    }
-
-    private interface EntryMatcher { boolean matches(String name); }
-
-    private static File extractMatchingEntries(
-            Context context,
-            String packageName,
-            File outputRoot,
-            String suffix,
-            int compressionLevel,
-            EntryMatcher matcher,
-            String label,
-            ProgressListener listener
-    ) throws Exception {
-        List<File> modules = installedApkFiles(context, packageName);
-        File root = ensureOutputRoot(outputRoot);
-        File output = uniqueFile(root, safeFileName(packageName) + suffix);
-        int count = 0;
-        message(listener, "APKExtractor: extracting " + label);
-        try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))) {
-            zipOut.setLevel(Math.max(0, Math.min(9, compressionLevel)));
-            for (int moduleIndex = 0; moduleIndex < modules.size(); moduleIndex++) {
-                File module = modules.get(moduleIndex);
-                if (!module.isFile()) continue;
-                String modulePrefix = moduleIndex == 0 ? "base" : safeFileName(module.getName().replaceFirst("(?i)\\.apk$", ""));
-                try (ZipFile zip = new ZipFile(module)) {
-                    java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
-                    while (entries.hasMoreElements()) {
-                        ZipEntry entry = entries.nextElement();
-                        String name = entry.getName();
-                        if (entry.isDirectory() || !matcher.matches(name)) continue;
-                        ZipEntry outEntry = new ZipEntry(modulePrefix + "/" + name);
-                        zipOut.putNextEntry(outEntry);
-                        try (InputStream input = zip.getInputStream(entry)) { copyStream(input, zipOut); }
-                        zipOut.closeEntry();
-                        count++;
-                    }
-                }
-            }
-        }
-        if (count == 0) {
-            output.delete();
-            throw new IOException("No " + label + " entries found");
-        }
-        return output;
-    }
-
-    private static PackageInfo getPackageInfo(Context context, String packageName) throws PackageManager.NameNotFoundException {
-        PackageManager pm = context.getPackageManager();
-        if (Build.VERSION.SDK_INT >= 33) {
-            return pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0));
-        }
+        if (Build.VERSION.SDK_INT >= 33) return pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0));
         //noinspection deprecation
         return pm.getPackageInfo(packageName, 0);
     }
 
-    private static File ensureOutputRoot(File outputRoot) throws IOException {
-        File root = outputRoot == null ? defaultOutputRoot() : outputRoot;
-        if (!root.isDirectory() && !root.mkdirs()) throw new IOException("Cannot create " + root);
-        return root;
+    private static File ensureRoot(File root) throws IOException {
+        File value = root == null ? defaultOutputRoot() : root;
+        if (!value.isDirectory() && !value.mkdirs()) throw new IOException("Cannot create " + value);
+        return value;
     }
 
-    private static void copyStream(InputStream input, java.io.OutputStream output) throws IOException {
+    private static File unique(File dir, String name) {
+        File out = new File(dir, name);
+        if (!out.exists()) return out;
+        int dot = name.lastIndexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        String ext = dot > 0 ? name.substring(dot) : "";
+        int i = 1;
+        while (out.exists()) out = new File(dir, base + " (" + i++ + ")" + ext);
+        return out;
+    }
+
+    private static String safe(String value) { return value.replaceAll("[^A-Za-z0-9._-]+", "_"); }
+    private static void copy(File source, File target) throws IOException {
+        try (InputStream in = new FileInputStream(source); FileOutputStream out = new FileOutputStream(target)) { copy(in, out); }
+    }
+    private static void copy(InputStream in, java.io.OutputStream out) throws IOException {
         byte[] buffer = new byte[1024 * 1024];
         int read;
-        while ((read = input.read(buffer)) >= 0) if (read > 0) output.write(buffer, 0, read);
-    }
-
-    private static void writeApksArchive(List<File> modules, File output, int compressionLevel) throws IOException {
-        try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))) {
-            zip.setLevel(Math.max(0, Math.min(9, compressionLevel)));
-            for (int i = 0; i < modules.size(); i++) {
-                File module = modules.get(i);
-                if (!module.isFile()) continue;
-                String name = i == 0 ? "base.apk" : module.getName();
-                ZipEntry entry = new ZipEntry(name);
-                entry.setMethod(ZipEntry.DEFLATED);
-                zip.putNextEntry(entry);
-                try (InputStream in = new FileInputStream(module)) {
-                    byte[] buffer = new byte[1024 * 1024];
-                    int read;
-                    while ((read = in.read(buffer)) >= 0) if (read > 0) zip.write(buffer, 0, read);
-                }
-                zip.closeEntry();
-            }
-        }
-    }
-
-    private static void copy(File source, File destination) throws IOException {
-        try (InputStream in = new FileInputStream(source); FileOutputStream out = new FileOutputStream(destination)) {
-            byte[] buffer = new byte[1024 * 1024];
-            int read;
-            while ((read = in.read(buffer)) >= 0) if (read > 0) out.write(buffer, 0, read);
-        }
-    }
-
-    private static File uniqueFile(File directory, String name) {
-        String stem = name;
-        String ext = "";
-        int dot = name.lastIndexOf('.');
-        if (dot > 0) { stem = name.substring(0, dot); ext = name.substring(dot); }
-        File result = new File(directory, name);
-        int index = 1;
-        while (result.exists()) result = new File(directory, stem + " (" + index++ + ")" + ext);
-        return result;
-    }
-
-    private static String safeFileName(String value) {
-        return value.replaceAll("[^A-Za-z0-9._-]+", "_");
-    }
-
-    private static void message(ProgressListener listener, String message) {
-        if (listener != null) listener.onMessage(message);
+        while ((read = in.read(buffer)) >= 0) if (read > 0) out.write(buffer, 0, read);
     }
 }

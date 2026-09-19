@@ -12,8 +12,7 @@ enum class ArchiveFormat(val label: String, val extension: String) {
     TAR_BZ2("tar.bz2", ".tar.bz2"),
     TAR_LZ4("tar.lz4", ".tar.lz4"),
     GZIP("gzip", ".gz"),
-    XZ("xz", ".xz"),
-    RAR("rar (read-only)", ".rar");
+    XZ("xz", ".xz");
 
     companion object {
         fun fromLabel(value: String?): ArchiveFormat = entries.firstOrNull { it.label == value } ?: ZIP
@@ -21,7 +20,7 @@ enum class ArchiveFormat(val label: String, val extension: String) {
         /** Longest suffix wins so .tar.gz is not mistaken for plain .gz. */
         fun fromFile(file: File): ArchiveFormat? {
             val name = file.name.lowercase()
-            if (name.endsWith(".apk") || name.endsWith(".jar")) return ZIP
+            if (listOf(".apk", ".jar", ".apks", ".apkm", ".xapk", ".apkx").any(name::endsWith)) return ZIP
             return entries.sortedByDescending { it.extension.length }
                 .firstOrNull { name.endsWith(it.extension) }
         }

@@ -17,9 +17,8 @@ This update wires the file-manager UI to the bundled Apktool runtime instead of 
 
 ## Dual-pane navigation
 
-- Both file panes show their own clickable current path.
-- Tapping a pane path opens **Jump to path** for that pane.
-- The global active path is clickable as well.
+- The duplicate per-pane path rows are removed; only the top explorer navigation shows the active path.
+- Tapping the top path opens **Jump to path** for the active pane.
 - The Jump-to-path dialog now uses one state for typing/paste/OK, fixing the old stale-value behavior.
 
 ## Archive creation
@@ -92,10 +91,22 @@ The code was statically checked in the provided environment. A complete Android 
 - Archive virtual paths are shown as `<archive>!/path` while browsing; Jump to path understands the same virtual path.
 - ZIP, 7z, tar, tar.gz, tar.xz, tar.zst, tar.bz2, tar.lz4, gzip and xz are wired through the existing archive dependencies. No new Gradle dependency or shell helper script was added.
 
-## 2026-09-15 integrated source modules
 
-- Added real AntiSplit-M source module and wired APKS/APKM/XAPK/APKX conversion to it.
-- Added APK Extractor to the left navigation with default `/apktool/apks` output and centralized settings.
-- Added APK Cloner as an `.apk` function with pane-aware/custom output selection.
-- Added MH TextEditor source modules and MTApktool theme/settings integration.
-- New modules use the same shared compile SDK/min SDK/NDK and Java 17/Java 25 build profiles as the existing project.
+## MTApktool UI / SAF integration follow-up (2026-09-19)
+
+- Explorer content now consumes Android `safeDrawing` insets, so the toolbar, dual panes and bottom actions stay outside the status/navigation bars even with Android 15/16 edge-to-edge enforcement.
+- Dark colors are aligned to the supplied MTApktool reference screenshots: explorer background `#121318`, active surface `#191C21`, toolbar/bottom surface `#2C2C2C`, primary accent around `#9ECAFF`.
+- APK Split/AntiSplit and APK Extractor use the same host Material theme rather than a separate module theme.
+- `Add storage` requires a persistent writable SAF tree. A read-only grant is rejected instead of being silently added. Newly added storage immediately opens its name/options dialog. Long-press a storage location to rename or remove it.
+- Custom SAF storage supports create/rename/delete and real copy/move between left and right panes, including local↔SAF and SAF↔SAF transfers.
+- Long-press file actions include real copy/move to the opposite pane, open-as-text through MH TextEditor, and open-as-archive for supported archives.
+- AntiSplit-M no longer contains duplicate `org.xmlpull.v1` sources; it uses the shared XMLPull dependency. The obsolete `setSyntaxDarkMode` editor call is absent.
+
+## 2026-09-19 MT-classic core pass
+
+- Pane pointer focus now drives the single top path/status header; active pane gets a subtle inward shadow.
+- Added classic file-conflict workflow with overwrite/keep-both/skip/cancel/apply-all.
+- Added real recycle-bin routing including SAF -> local recycle bin, auto cleanup and drawer access.
+- Writable SAF locations now support rename/delete/hide/sort and persistent drawer/tool ordering.
+- Split-package merge gained automatic signing through the existing `:apksig-android` `SignWrapper` and MTApktool signature settings.
+- Drawer/task/pane surfaces and global shape system moved closer to the supplied black/gray/blue MT-style references.

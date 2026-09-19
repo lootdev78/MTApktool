@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
@@ -21,7 +20,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,10 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import io.github.lootdev78.mtapktool.feature.explorer.state.FileFilter
 import io.github.lootdev78.mtapktool.feature.explorer.state.SortField
 import io.github.lootdev78.mtapktool.feature.explorer.state.SortSpec
@@ -54,29 +49,14 @@ fun HiddenFilesDialog(
     onEditHidden: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Popup(
-        alignment = Alignment.TopEnd,
-        offset = IntOffset(-8, 58),
+    AlertDialog(
         onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true),
-    ) {
-        Surface(
-            modifier = Modifier.width(344.dp),
-            shape = RoundedCornerShape(2.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 8.dp,
-            shadowElevation = 10.dp,
-        ) {
-            Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-                Text(
-                    "Versteckte Dateien",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                )
-                Spacer(Modifier.width(1.dp))
+        title = { Text("Versteckte Dateien") },
+        text = {
+            Column {
                 HiddenToggleRow(Icons.Default.Visibility, "Systemdateien anzeigen", showSystemHidden, onShowSystemHidden)
                 HiddenToggleRow(Icons.Default.Visibility, "Manuell versteckte anzeigen", showManuallyHidden, onShowManuallyHidden)
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 ActionRow(
                     icon = Icons.Default.VisibilityOff,
                     label = if (selectedCount > 0) "Ausgewählte Dateien ausblenden ($selectedCount)" else "Ausgewählte Dateien ausblenden",
@@ -93,8 +73,9 @@ fun HiddenFilesDialog(
                     onClick = onEditHidden,
                 )
             }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } },
+    )
 }
 
 @Composable

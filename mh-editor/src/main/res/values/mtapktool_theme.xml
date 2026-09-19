@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="MTApktoolEditorTheme.Light" parent="@android:style/Theme.Material.Light.DarkActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#0061A4</item>
+        <item name="android:colorControlHighlight">#220061A4</item>
+        <item name="android:colorControlNormal">#49454F</item>
+        <item name="android:windowBackground">#F6F3F7</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowActionModeOverlay">false</item>
+        <item name="android:colorPrimary">#303236</item>
+        <item name="android:colorPrimaryDark">#000000</item>
+    </style>
+    <style name="MTApktoolEditorTheme.Dark" parent="@android:style/Theme.Material">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#9ECAFF</item>
+        <item name="android:colorControlHighlight">#339ECAFF</item>
+        <item name="android:colorControlNormal">#C4C7CF</item>
+        <item name="android:windowBackground">#121318</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowNoTitle">false</item>
+        <item name="android:windowActionModeOverlay">false</item>
+        <item name="android:colorPrimary">#191C21</item>
+        <item name="android:colorPrimaryDark">#000000</item>
+    </style>
+    <style name="MTApktoolEditorTheme" parent="MTApktoolEditorTheme.Dark" />
+</resources>

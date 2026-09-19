@@ -28,6 +28,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -82,8 +83,17 @@ object ArchiveEngine {
         return destination
     }
 
-    /** Used by the explorer's temporary archive workspace. Existing contents are replaced. */
-    fun extractToDirectory(archive: File, destination: File, password: String = "") {
+    /**
+     * Used by the explorer's temporary archive workspace. Existing contents are replaced.
+     * [onProgress] is intentionally lightweight and reports 0..100 so the owning pane can
+     * be frozen with an MT-style loading indicator until the archive is actually browsable.
+     */
+    fun extractToDirectory(
+        archive: File,
+        destination: File,
+        password: String = "",
+        onProgress: (Int) -> Unit = {},
+    ) {
         val format = ArchiveFormat.fromFile(archive)
             ?: throw IOException("Unsupported archive format: ${archive.name}")
         if (destination.exists() && !destination.isDirectory) {
@@ -93,19 +103,20 @@ object ArchiveEngine {
             throw IOException("Cannot create extraction target: ${destination.absolutePath}")
         }
 
+        onProgress(0)
         when (format) {
-            ArchiveFormat.ZIP -> extractZip(archive, destination, password)
-            ArchiveFormat.SEVEN_Z -> extract7z(archive, destination, password)
+            ArchiveFormat.ZIP -> extractZip(archive, destination, password, onProgress)
+            ArchiveFormat.SEVEN_Z -> extract7z(archive, destination, password, onProgress)
             ArchiveFormat.TAR,
             ArchiveFormat.TAR_GZ,
             ArchiveFormat.TAR_XZ,
             ArchiveFormat.TAR_ZST,
             ArchiveFormat.TAR_BZ2,
-            ArchiveFormat.TAR_LZ4 -> extractTar(archive, destination, format)
-            ArchiveFormat.GZIP -> extractSingleCompressed(archive, destination, ArchiveFormat.GZIP)
-            ArchiveFormat.XZ -> extractSingleCompressed(archive, destination, ArchiveFormat.XZ)
-            ArchiveFormat.RAR -> extractRar(archive, destination)
+            ArchiveFormat.TAR_LZ4 -> extractTar(archive, destination, format, onProgress)
+            ArchiveFormat.GZIP -> extractSingleCompressed(archive, destination, ArchiveFormat.GZIP, onProgress)
+            ArchiveFormat.XZ -> extractSingleCompressed(archive, destination, ArchiveFormat.XZ, onProgress)
         }
+        onProgress(100)
     }
 
     /**
@@ -120,7 +131,6 @@ object ArchiveEngine {
     ) {
         val format = ArchiveFormat.fromFile(archive)
             ?: throw IOException("Unsupported archive format: ${archive.name}")
-        if (format == ArchiveFormat.RAR) throw IOException("RAR archives are read-only")
         val sources = workspace.listFiles()?.sortedBy { it.name.lowercase() }?.toList().orEmpty()
         if ((format == ArchiveFormat.GZIP || format == ArchiveFormat.XZ) &&
             (sources.size != 1 || !sources.single().isFile)
@@ -149,7 +159,6 @@ object ArchiveEngine {
     }
 
     private fun createSingle(sources: List<File>, request: ArchiveRequest): List<File> {
-        if (request.format == ArchiveFormat.RAR) throw IOException("RAR creation is not supported; RAR is read-only")
         if ((request.format == ArchiveFormat.GZIP || request.format == ArchiveFormat.XZ) &&
             (sources.size != 1 || !sources.single().isFile)
         ) {
@@ -177,7 +186,6 @@ object ArchiveEngine {
             ArchiveFormat.TAR_LZ4 -> createTar(output, sources) { FramedLZ4CompressorOutputStream(it) }
             ArchiveFormat.GZIP -> compressSingle(output, sources.single()) { gzipStream(it, level) }
             ArchiveFormat.XZ -> compressSingle(output, sources.single()) { XZCompressorOutputStream(it, level.preset()) }
-            ArchiveFormat.RAR -> throw IOException("RAR archives are read-only")
         }
     }
 
@@ -274,17 +282,33 @@ object ArchiveEngine {
         if (file.isDirectory) file.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { addToTar(tar, base, it) }
     }
 
-    private fun extractZip(archive: File, destination: File, password: String) {
+    private fun extractZip(archive: File, destination: File, password: String, onProgress: (Int) -> Unit) {
         val zip = if (password.isBlank()) ZipFile(archive) else ZipFile(archive, password.toCharArray())
         if (zip.isEncrypted && password.isBlank()) throw IOException("Password required for ${archive.name}")
-        zip.extractAll(destination.absolutePath)
+        val headers = zip.fileHeaders.orEmpty()
+        if (headers.isEmpty()) {
+            onProgress(100)
+            return
+        }
+        headers.forEachIndexed { index, header ->
+            zip.extractFile(header, destination.absolutePath)
+            onProgress(((index + 1) * 100 / headers.size).coerceIn(0, 100))
+        }
     }
 
-    private fun extract7z(archive: File, destination: File, password: String) {
-        val builder = SevenZFile.builder().setFile(archive)
-        if (password.isNotBlank()) builder.setPassword(password.toCharArray())
-        builder.get().use { seven ->
+    private fun extract7z(archive: File, destination: File, password: String, onProgress: (Int) -> Unit) {
+        fun openSeven() = SevenZFile.builder().setFile(archive).let { builder ->
+            if (password.isNotBlank()) builder.setPassword(password.toCharArray())
+            builder.get()
+        }
+        val totalEntries = openSeven().use { seven ->
+            var count = 0
+            while (seven.nextEntry != null) count++
+            count.coerceAtLeast(1)
+        }
+        openSeven().use { seven ->
             val buffer = ByteArray(64 * 1024)
+            var processed = 0
             while (true) {
                 val entry = seven.nextEntry ?: break
                 val output = safeDestination(destination, entry.name)
@@ -303,54 +327,39 @@ object ArchiveEngine {
                     }
                     if (entry.hasLastModifiedDate) output.setLastModified(entry.lastModifiedDate.time)
                 }
+                processed++
+                onProgress((processed * 100 / totalEntries).coerceIn(0, 100))
             }
         }
     }
 
-    private fun extractRar(archiveFile: File, destination: File) {
-        val archive = com.github.junrar.Archive(archiveFile)
-        try {
-            archive.fileHeaders.forEach { header ->
-                val name = header.fileNameString.orEmpty().replace('\\', '/')
-                if (name.isBlank()) return@forEach
-                val output = safeDestination(destination, name)
-                if (header.isDirectory) {
-                    if (!output.exists() && !output.mkdirs()) throw IOException("Cannot create directory: $output")
-                } else {
-                    output.parentFile?.let { parent -> if (!parent.exists() && !parent.mkdirs()) throw IOException("Cannot create directory: $parent") }
-                    BufferedOutputStream(FileOutputStream(output)).use { out -> archive.extractFile(header, out) }
+    private fun extractTar(archive: File, destination: File, format: ArchiveFormat, onProgress: (Int) -> Unit) {
+        ProgressInputStream(FileInputStream(archive), archive.length(), onProgress).use { progressRaw ->
+            BufferedInputStream(progressRaw).use { raw ->
+                val wrapped: InputStream = when (format) {
+                    ArchiveFormat.TAR -> raw
+                    ArchiveFormat.TAR_GZ -> GzipCompressorInputStream(raw)
+                    ArchiveFormat.TAR_XZ -> XZCompressorInputStream(raw)
+                    ArchiveFormat.TAR_ZST -> ZstdCompressorInputStream(raw)
+                    ArchiveFormat.TAR_BZ2 -> BZip2CompressorInputStream(raw)
+                    ArchiveFormat.TAR_LZ4 -> FramedLZ4CompressorInputStream(raw)
+                    else -> throw IOException("Not a tar archive: ${archive.name}")
                 }
-            }
-        } finally {
-            archive.close()
-        }
-    }
-
-    private fun extractTar(archive: File, destination: File, format: ArchiveFormat) {
-        BufferedInputStream(FileInputStream(archive)).use { raw ->
-            val wrapped: InputStream = when (format) {
-                ArchiveFormat.TAR -> raw
-                ArchiveFormat.TAR_GZ -> GzipCompressorInputStream(raw)
-                ArchiveFormat.TAR_XZ -> XZCompressorInputStream(raw)
-                ArchiveFormat.TAR_ZST -> ZstdCompressorInputStream(raw)
-                ArchiveFormat.TAR_BZ2 -> BZip2CompressorInputStream(raw)
-                ArchiveFormat.TAR_LZ4 -> FramedLZ4CompressorInputStream(raw)
-                else -> throw IOException("Not a tar archive: ${archive.name}")
-            }
-            wrapped.use { input ->
-                TarArchiveInputStream(input).use { tar ->
-                    while (true) {
-                        val entry = tar.nextTarEntry ?: break
-                        if (entry.isSymbolicLink || entry.isLink) continue
-                        val output = safeDestination(destination, entry.name)
-                        if (entry.isDirectory) {
-                            if (!output.exists() && !output.mkdirs()) throw IOException("Cannot create directory: $output")
-                        } else {
-                            output.parentFile?.let { parent ->
-                                if (!parent.exists() && !parent.mkdirs()) throw IOException("Cannot create directory: $parent")
+                wrapped.use { input ->
+                    TarArchiveInputStream(input).use { tar ->
+                        while (true) {
+                            val entry = tar.nextTarEntry ?: break
+                            if (entry.isSymbolicLink || entry.isLink) continue
+                            val output = safeDestination(destination, entry.name)
+                            if (entry.isDirectory) {
+                                if (!output.exists() && !output.mkdirs()) throw IOException("Cannot create directory: $output")
+                            } else {
+                                output.parentFile?.let { parent ->
+                                    if (!parent.exists() && !parent.mkdirs()) throw IOException("Cannot create directory: $parent")
+                                }
+                                BufferedOutputStream(FileOutputStream(output)).use { out -> tar.copyTo(out) }
+                                output.setLastModified(entry.lastModifiedDate.time)
                             }
-                            BufferedOutputStream(FileOutputStream(output)).use { out -> tar.copyTo(out) }
-                            output.setLastModified(entry.lastModifiedDate.time)
                         }
                     }
                 }
@@ -358,21 +367,53 @@ object ArchiveEngine {
         }
     }
 
-    private fun extractSingleCompressed(archive: File, destination: File, format: ArchiveFormat) {
+    private fun extractSingleCompressed(archive: File, destination: File, format: ArchiveFormat, onProgress: (Int) -> Unit) {
         val outputName = when (format) {
             ArchiveFormat.GZIP -> archive.name.removeSuffix(".gz").ifBlank { "content" }
             ArchiveFormat.XZ -> archive.name.removeSuffix(".xz").ifBlank { "content" }
             else -> throw IOException("Unsupported single-stream archive")
         }
         val output = safeDestination(destination, outputName)
-        BufferedInputStream(FileInputStream(archive)).use { raw ->
-            val input: InputStream = when (format) {
-                ArchiveFormat.GZIP -> GzipCompressorInputStream(raw)
-                ArchiveFormat.XZ -> XZCompressorInputStream(raw)
-                else -> raw
+        ProgressInputStream(FileInputStream(archive), archive.length(), onProgress).use { progressRaw ->
+            BufferedInputStream(progressRaw).use { raw ->
+                val input: InputStream = when (format) {
+                    ArchiveFormat.GZIP -> GzipCompressorInputStream(raw)
+                    ArchiveFormat.XZ -> XZCompressorInputStream(raw)
+                    else -> raw
+                }
+                input.use { compressed ->
+                    BufferedOutputStream(FileOutputStream(output)).use { out -> compressed.copyTo(out) }
+                }
             }
-            input.use { compressed ->
-                BufferedOutputStream(FileOutputStream(output)).use { out -> compressed.copyTo(out) }
+        }
+    }
+
+    private class ProgressInputStream(
+        input: InputStream,
+        private val totalBytes: Long,
+        private val onProgress: (Int) -> Unit,
+    ) : FilterInputStream(input) {
+        private var readBytes = 0L
+        private var lastProgress = -1
+
+        override fun read(): Int {
+            val value = super.read()
+            if (value >= 0) report(1)
+            return value
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val read = super.read(buffer, offset, length)
+            if (read > 0) report(read.toLong())
+            return read
+        }
+
+        private fun report(delta: Long) {
+            readBytes += delta
+            val progress = if (totalBytes <= 0L) 0 else ((readBytes * 100L) / totalBytes).toInt().coerceIn(0, 99)
+            if (progress != lastProgress) {
+                lastProgress = progress
+                onProgress(progress)
             }
         }
     }

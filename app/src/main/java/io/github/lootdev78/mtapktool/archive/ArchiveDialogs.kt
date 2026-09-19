@@ -48,7 +48,7 @@ fun ArchiveActionDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "Öffnen zeigt den Inhalt schreibgeschützt im aktuell verwendeten Panel. Dateien werden per Kopieren/Entpacken in einen normalen Ordner herausgeholt; das Archiv selbst wird nicht verändert.",
+                    "Öffnen zeigt den Inhalt im aktuell verwendeten Panel. Änderungen werden beim Verlassen des Archivs zurückgeschrieben.",
                     modifier = Modifier.padding(top = 10.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

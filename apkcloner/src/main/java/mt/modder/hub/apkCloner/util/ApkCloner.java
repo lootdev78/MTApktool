@@ -89,9 +89,7 @@ public class ApkCloner {
 		tempApk = new File(parent, ".mtapktool-clone-" + System.nanoTime() + ".tmp").getAbsolutePath();
 	}
 
-	public String getOutputPath() {
-		return outApk;
-	}
+	public String getOutputPath() { return outApk; }
 
 	// Main method to process the APK
 	public void ProcessApk() throws Exception {
@@ -166,24 +164,12 @@ public class ApkCloner {
 				while (entry.hasMoreElements()) {
 					ZipEntry newEntry = entry.nextElement();
 					String entryName = newEntry.getName();
-					String upperEntryName = entryName.toUpperCase(Locale.ROOT);
-					boolean staleSignature = upperEntryName.startsWith("META-INF/") && (
-							upperEntryName.equals("META-INF/MANIFEST.MF")
-								|| upperEntryName.endsWith(".SF")
-								|| upperEntryName.endsWith(".RSA")
-								|| upperEntryName.endsWith(".DSA")
-								|| upperEntryName.endsWith(".EC")
-					);
-
-					// The package name and resources are modified, so the source APK's signing
-					// metadata is no longer valid. Keep non-signing META-INF content, but drop
-					// stale signatures so MTApktool can sign the clone cleanly afterwards.
-					if (!entryName.equals(AndroidManifest)
-							&& !entryName.equals(resourcesArsc)
-							&& !staleSignature) {
+					String upper = entryName.toUpperCase(Locale.ROOT);
+					boolean staleSignature = upper.startsWith("META-INF/") && (upper.equals("META-INF/MANIFEST.MF") || upper.endsWith(".SF") || upper.endsWith(".RSA") || upper.endsWith(".DSA") || upper.endsWith(".EC"));
+					if (!entryName.equals(AndroidManifest) && !entryName.equals(resourcesArsc) && !staleSignature) {
 						zos.copyZipEntry(newEntry, zipFile);
 						copiedFiles++;
-						mCallBack.onProgress(copiedFiles, totalFilesInZip.size()); // Update progress
+						mCallBack.onProgress(copiedFiles, totalFilesInZip.size());
 					}
 				}
 
