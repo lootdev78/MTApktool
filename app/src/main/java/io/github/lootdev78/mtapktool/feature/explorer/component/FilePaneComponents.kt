@@ -2,6 +2,7 @@ package io.github.lootdev78.mtapktool.feature.explorer.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -69,12 +70,14 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.core.theme.*
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.state.*
@@ -113,8 +116,16 @@ fun ClassicFilePane(
 
 
     // Highlight border for active pane (optional visual clue)
-    val paneBgColor = if (isActive) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background
-    val elevation = if (isActive) 2.dp else 0.dp
+    val paneBgColor by animateColorAsState(
+        targetValue = if (isActive) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background,
+        animationSpec = tween(140),
+        label = "paneBackground",
+    )
+    val elevation by animateDpAsState(
+        targetValue = if (isActive) 2.dp else 0.dp,
+        animationSpec = tween(140),
+        label = "paneElevation",
+    )
 
     LaunchedEffect(paneState.highlightedItemName) {
         val targetIndex = paneState.items.indexOfFirst { it.name == paneState.highlightedItemName }
@@ -321,14 +332,14 @@ private fun ParentDirectoryRow(prefs: ExplorerPrefs, onClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(metrics.iconSize)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF111111)),
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector =  Icons.Default.Folder,
+                painter = painterResource(R.drawable.mt_ic_folder),
                 contentDescription = null,
-                tint = Color(0xFFD0D0D0),
+                tint = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.size(metrics.innerIconSize)
             )
         }
@@ -374,8 +385,8 @@ private fun ClassicFileRow(
 
     // Dynamic background color state
     val targetBackgroundColor = when {
-        isPressed -> Color(0xFF365F6E)
-        isSelected -> Color(0xFF2B5666)
+        isPressed -> MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
         else -> Color.Transparent
     }
 
@@ -455,7 +466,7 @@ private fun ClassicFileRow(
         val isApktoolProject = item.isDirectory && File(item.path, "apktool.yml").isFile
         val (icon, iconColor) = when {
             isApktoolProject -> Icons.Default.Build to ColorApk
-            item.isDirectory -> Icons.Default.Folder to Color(0xFFD0D0D0)
+            item.isDirectory -> Icons.Default.Folder to MaterialTheme.colorScheme.tertiary
 
             item.isApkFile() ->
                 Icons.Default.Android to ColorApk
@@ -507,15 +518,24 @@ private fun ClassicFileRow(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(if (item.isDirectory) Color(0xFF111111) else iconColor.copy(alpha = 0.18f)),
+                        .background(if (item.isDirectory) MaterialTheme.colorScheme.surfaceContainerHigh else iconColor.copy(alpha = 0.18f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = iconColor,
-                        modifier = Modifier.size(metrics.innerIconSize)
-                    )
+                    if (item.isDirectory && !isApktoolProject) {
+                        Icon(
+                            painter = painterResource(R.drawable.mt_ic_folder),
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(metrics.innerIconSize),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(metrics.innerIconSize)
+                        )
+                    }
                 }
             }
         }

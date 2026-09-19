@@ -110,7 +110,7 @@ fun ArchiveExtractDialog(
                     onClick = { useSubdirectory = false },
                 )
                 ExtractRadioRow(
-                    label = "Path to extract to...",
+                    label = "Extract to separate folder",
                     selected = useSubdirectory,
                     onClick = { useSubdirectory = true },
                 )
@@ -119,7 +119,7 @@ fun ArchiveExtractDialog(
                     onValueChange = { relativePath = it },
                     enabled = useSubdirectory,
                     singleLine = true,
-                    label = { Text("Relative path") },
+                    label = { Text("Path to extract to…") },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
@@ -136,7 +136,7 @@ fun ArchiveExtractDialog(
                     onChecked = { toOtherPane = it },
                 )
                 ExtractCheckRow(
-                    label = "Delete source file after extraction",
+                    label = "Delete original",
                     checked = deleteSource,
                     onChecked = { deleteSource = it },
                 )

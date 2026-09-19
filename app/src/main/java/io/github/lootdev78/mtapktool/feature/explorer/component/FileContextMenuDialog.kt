@@ -1,5 +1,6 @@
 package io.github.lootdev78.mtapktool.feature.explorer.component
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -17,25 +18,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.outlined.BookmarkAdd
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,14 +33,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
@@ -59,8 +50,8 @@ import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * MT-style long-press menu. File-type-specific operations intentionally live behind
- * "Tools" / "Open with…" instead of flooding the first menu with unrelated actions.
+ * File action dialog using the same action grouping and icon geometry as the MT
+ * file manager. All operations are implemented by MTApktool callbacks.
  */
 @Composable
 fun FileContextMenuDialog(
@@ -123,21 +114,21 @@ fun FileContextMenuDialog(
             ) {
                 Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
                     val actions = mapOf(
-                        "copy" to MenuAction(addArrow("Kopieren"), Icons.Outlined.ContentCopy, targetItem != null, onCopy),
-                        "move" to MenuAction(addArrow("Verschieben"), Icons.AutoMirrored.Outlined.DriveFileMove, targetItem != null, onMove),
-                        "delete" to MenuAction("Löschen", Icons.Default.Delete, targetItem != null, onDelete),
-                        "rename" to MenuAction("Umbenennen", Icons.Default.Edit, targetItem != null, onRename),
-                        "tools" to MenuAction("Tools", Icons.Default.Build, targetItem != null, onTools),
-                        "compress" to MenuAction("Komprimieren", Icons.Default.Archive, targetItem != null, onCompress),
-                        "properties" to MenuAction("Eigenschaften", Icons.Outlined.Info, targetItem != null, onProperty),
-                        "share" to MenuAction("Teilen", Icons.Default.Share, targetItem?.isDirectory == false, onShare),
-                        "open_with" to MenuAction("Öffnen mit…", Icons.Default.Check, targetItem?.isDirectory == false, onOpenWith),
-                        "bookmark" to MenuAction("Lesezeichen…", Icons.Outlined.BookmarkAdd, targetItem != null, onAddBookmark),
+                        "copy" to MenuAction(addArrow("Kopieren"), R.drawable.mt_ic_copy, targetItem != null, onCopy),
+                        "move" to MenuAction(addArrow("Verschieben"), R.drawable.mt_ic_move, targetItem != null, onMove),
+                        "tools" to MenuAction("Tools", R.drawable.mt_ic_tools, targetItem != null, onTools),
+                        "rename" to MenuAction("Umbenennen", R.drawable.mt_ic_rename, targetItem != null, onRename),
+                        "delete" to MenuAction("Löschen", R.drawable.mt_ic_delete, targetItem != null, onDelete),
+                        "compress" to MenuAction("Komprimieren", R.drawable.mt_ic_compress, targetItem != null, onCompress),
+                        "properties" to MenuAction("Eigenschaften", R.drawable.mt_ic_properties, targetItem != null, onProperty),
+                        "share" to MenuAction("Teilen", R.drawable.mt_ic_share, targetItem?.isDirectory == false, onShare),
+                        "open_with" to MenuAction("Öffnen mit…", R.drawable.mt_ic_open_with, targetItem?.isDirectory == false, onOpenWith),
+                        "bookmark" to MenuAction("Lesezeichen…", R.drawable.mt_ic_bookmark_add, targetItem != null, onAddBookmark),
                     )
                     prefs.fileMenuOrder.mapNotNull(actions::get).chunked(2).forEach { pair ->
                         ActionRow(
                             left = pair[0],
-                            right = pair.getOrElse(1) { MenuAction("", Icons.Default.Check, false) {} },
+                            right = pair.getOrElse(1) { MenuAction("", R.drawable.mt_ic_open_with, false) {} },
                         )
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -152,7 +143,7 @@ fun FileContextMenuDialog(
 
 private data class MenuAction(
     val title: String,
-    val icon: ImageVector,
+    @DrawableRes val iconRes: Int,
     val isEnabled: Boolean = true,
     val onClick: () -> Unit,
 )
@@ -179,7 +170,7 @@ private fun ActionCell(action: MenuAction, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            action.icon,
+            painter = painterResource(action.iconRes),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
             modifier = Modifier.size(24.dp),

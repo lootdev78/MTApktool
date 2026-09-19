@@ -24,19 +24,21 @@ private val DarkColorScheme = darkColorScheme(
     onSecondary = MdThemeDarkOnSecondary,
     secondaryContainer = MdThemeDarkSecondaryContainer,
     onSecondaryContainer = MdThemeDarkOnSecondaryContainer,
+    tertiary = MdThemeDarkTertiary,
+    onTertiary = MdThemeDarkOnTertiary,
     background = MdThemeDarkBackground,
     onBackground = MdThemeDarkOnSurface,
     surface = MdThemeDarkSurface,
     onSurface = MdThemeDarkOnSurface,
     surfaceVariant = MdThemeDarkSurfaceVariant,
     onSurfaceVariant = MdThemeDarkOnSurfaceVariant,
-    surfaceContainerLowest = Color(0xFF0F0F0F),
-    surfaceContainerLow = Color(0xFF242424),
+    surfaceContainerLowest = Color(0xFF202020),
+    surfaceContainerLow = Color(0xFF28282A),
     surfaceContainer = Color(0xFF303030),
-    surfaceContainerHigh = Color(0xFF484848),
-    surfaceContainerHighest = Color(0xFF505050),
-    outline = Color(0xFF666666),
-    outlineVariant = Color(0xFF3D3D3D),
+    surfaceContainerHigh = Color(0xFF36383A),
+    surfaceContainerHighest = Color(0xFF3F3F3F),
+    outline = Color(0xFF555555),
+    outlineVariant = Color(0xFF505050),
     scrim = Color.Black,
 )
 
@@ -49,12 +51,22 @@ private val LightColorScheme = lightColorScheme(
     onSecondary = MdThemeLightOnSecondary,
     secondaryContainer = MdThemeLightSecondaryContainer,
     onSecondaryContainer = MdThemeLightOnSecondaryContainer,
+    tertiary = MdThemeLightTertiary,
+    onTertiary = MdThemeLightOnTertiary,
     background = MdThemeLightBackground,
     onBackground = MdThemeLightOnSurface,
     surface = MdThemeLightSurface,
     onSurface = MdThemeLightOnSurface,
     surfaceVariant = MdThemeLightSurfaceVariant,
-    onSurfaceVariant = MdThemeLightOnSurfaceVariant
+    onSurfaceVariant = MdThemeLightOnSurfaceVariant,
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFAFAFA),
+    surfaceContainer = Color(0xFFF5F5F5),
+    surfaceContainerHigh = Color(0xFFF0F0F0),
+    surfaceContainerHighest = Color(0xFFE8E8E8),
+    outline = Color(0xFFD0D0D0),
+    outlineVariant = Color(0xFFE0E0E0),
+    scrim = Color.Black,
 )
 
 
@@ -116,5 +128,5 @@ private fun accentForKey(key: String, dark: Boolean): Color = when (key) {
     "lime" -> if (dark) Color(0xFFB7D98B) else Color(0xFF5A8238)
     "green" -> if (dark) Color(0xFF85D58B) else Color(0xFF266C2D)
     "teal_dark" -> if (dark) Color(0xFF6BD4C7) else Color(0xFF00695C)
-    else -> if (dark) Color(0xFF2196F3) else Color(0xFF1976C8)
+    else -> if (dark) Color(0xFF1976D2) else Color(0xFF42A5F5)
 }

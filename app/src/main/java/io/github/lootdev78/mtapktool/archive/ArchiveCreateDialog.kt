@@ -143,7 +143,7 @@ fun ArchiveCreateDialog(
                 }
 
                 ArchiveSwitchRow("Compress each file/folder independently", each) { each = it }
-                ArchiveSwitchRow("Delete source files after compression", deleteSources) { deleteSources = it }
+                ArchiveSwitchRow("Delete original", deleteSources) { deleteSources = it }
                 ArchiveSwitchRow(
                     "Compress to another window path\n${oppositeDirectory.absolutePath}",
                     toOtherPane,

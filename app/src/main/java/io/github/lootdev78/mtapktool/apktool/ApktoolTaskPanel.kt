@@ -30,7 +30,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -56,6 +58,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.lootdev78.mtapktool.archive.ArchiveTaskInfo
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -63,9 +66,12 @@ import kotlin.math.abs
 fun ApktoolTaskPanel(
     visible: Boolean,
     jobs: List<ApktoolJobInfo>,
+    archiveTasks: List<ArchiveTaskInfo>,
     onOpenJob: (String) -> Unit,
     onCancel: (String) -> Unit,
     onCancelAll: () -> Unit,
+    onCancelArchive: (String) -> Unit,
+    onCancelAllArchive: () -> Unit,
     onRemove: (String) -> Unit,
     onClearFinished: () -> Unit,
     onDismiss: () -> Unit,
@@ -106,7 +112,7 @@ fun ApktoolTaskPanel(
                         IconButton(onClick = onDismiss) { Icon(Icons.Default.Check, contentDescription = "Schliessen") }
                         Column(Modifier.weight(1f)) {
                             Text("Tasks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Normal)
-                            val active = jobs.count { !it.isTerminal }
+                            val active = jobs.count { !it.isTerminal } + archiveTasks.size
                             if (active > 0) Text("$active aktiv", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (jobs.any { it.isTerminal }) {
@@ -114,12 +120,15 @@ fun ApktoolTaskPanel(
                                 Icon(Icons.Default.DeleteSweep, contentDescription = "Fertige Tasks leeren")
                             }
                         }
-                        if (jobs.any { !it.isTerminal }) {
-                            TextButton(onClick = onCancelAll) { Text("ALLE STOPPEN") }
+                        if (jobs.any { !it.isTerminal } || archiveTasks.isNotEmpty()) {
+                            TextButton(onClick = {
+                                onCancelAll()
+                                onCancelAllArchive()
+                            }) { Text("ALLE STOPPEN") }
                         }
                     }
 
-                    if (jobs.isEmpty()) {
+                    if (jobs.isEmpty() && archiveTasks.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
                                 "Noch keine Task-Informationen",
@@ -132,6 +141,12 @@ fun ApktoolTaskPanel(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
+                            items(archiveTasks, key = { it.id }) { task ->
+                                ArchiveTaskCard(
+                                    task = task,
+                                    onCancel = onCancelArchive,
+                                )
+                            }
                             items(jobs, key = { it.id }) { job ->
                                 TaskCard(
                                     job = job,
@@ -146,6 +161,63 @@ fun ApktoolTaskPanel(
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun ArchiveTaskCard(
+    task: ArchiveTaskInfo,
+    onCancel: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (task.title.equals("Extract", ignoreCase = true)) Icons.Default.Unarchive else Icons.Default.Archive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(task.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        task.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                task.progress?.let { progress ->
+                    Text("${progress.coerceIn(0, 100)}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Spacer(Modifier.height(7.dp))
+            val progress = task.progress
+            if (progress == null) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant,
+                )
+            } else {
+                LinearProgressIndicator(
+                    progress = { progress.coerceIn(0, 100) / 100f },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { onCancel(task.id) }) { Text("STOP") }
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

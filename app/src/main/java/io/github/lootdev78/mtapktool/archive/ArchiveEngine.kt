@@ -38,7 +38,8 @@ import java.nio.file.StandardCopyOption
 object ArchiveEngine {
     fun supports(file: File): Boolean = file.isFile && ArchiveFormat.fromFile(file) != null
 
-    fun create(request: ArchiveRequest): List<File> {
+    fun create(request: ArchiveRequest, onProgress: (Int) -> Unit = {}): List<File> {
+        onProgress(0)
         require(request.sources.isNotEmpty()) { "No source files selected" }
         request.sources.forEach { require(it.exists()) { "Source does not exist: ${it.absolutePath}" } }
         if (!request.outputDirectory.isDirectory && !request.outputDirectory.mkdirs()) {
@@ -49,12 +50,15 @@ object ArchiveEngine {
         }
 
         val outputs = if (request.compressEachIndependently) {
-            request.sources.flatMap { source ->
+            request.sources.flatMapIndexed { index, source ->
                 val requested = if (request.sources.size == 1) request.fileName else source.nameWithoutExtension.ifBlank { source.name }
-                createSingle(listOf(source), request.copy(sources = listOf(source), fileName = requested))
+                val created = createSingle(listOf(source), request.copy(sources = listOf(source), fileName = requested))
+                onProgress((((index + 1) * 95) / request.sources.size).coerceIn(1, 95))
+                created
             }
         } else {
-            createSingle(request.sources, request)
+            onProgress(5)
+            createSingle(request.sources, request).also { onProgress(95) }
         }
 
         if (request.deleteSourcesAfterCompression) {
@@ -63,11 +67,12 @@ object ArchiveEngine {
                 else if (!source.deleteRecursively() && source.exists()) throw IOException("Cannot delete source: $source")
             }
         }
+        onProgress(100)
         return outputs
     }
 
     /** Extracts a supported archive into [ArchiveExtractRequest.outputDirectory]. */
-    fun extract(request: ArchiveExtractRequest): File {
+    fun extract(request: ArchiveExtractRequest, onProgress: (Int) -> Unit = {}): File {
         val archive = request.archive
         require(archive.isFile) { "Archive does not exist: ${archive.absolutePath}" }
         val destination = request.outputDirectory
@@ -76,7 +81,7 @@ object ArchiveEngine {
         }
         if (!destination.isDirectory) throw IOException("Extraction target is not a directory: ${destination.absolutePath}")
 
-        extractToDirectory(archive, destination, request.password)
+        extractToDirectory(archive, destination, request.password, onProgress)
         if (request.deleteSourceAfterExtraction && !archive.delete()) {
             throw IOException("Archive extracted, but source could not be deleted: ${archive.absolutePath}")
         }

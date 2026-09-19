@@ -187,6 +187,10 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
                     item { PreferenceValue("Custom MTApktool directory", prefs.customWorkspace) { workspaceDialog = true } }
 
                     item { Divider() }
+                    item { SectionTitle("Lesezeichen & untere Leiste") }
+                    item { PreferenceSwitch("Lesezeichen in Seitenleiste anzeigen", "Wie bei MT wird dort nur die Standardgruppe angezeigt; alle Gruppen sind über Hochziehen der unteren Leiste erreichbar.", prefs.showBookmarksInSidebar) { update(context) { copy(showBookmarksInSidebar = it) } } }
+
+                    item { Divider() }
                     item { SectionTitle("Recycle Bin") }
                     item { PreferenceSwitch("Enable recycle bin feature", "Gelöschte lokale Dateien können zuerst in den Papierkorb verschoben werden.", prefs.recycleBinEnabled) { update(context) { copy(recycleBinEnabled = it) } } }
                     item { PreferenceSwitch("Move to recycle bin by default", "Beim Löschen standardmäßig in den Papierkorb verschieben.", prefs.moveToRecycleBinByDefault, enabled = prefs.recycleBinEnabled) { update(context) { copy(moveToRecycleBinByDefault = it) } } }

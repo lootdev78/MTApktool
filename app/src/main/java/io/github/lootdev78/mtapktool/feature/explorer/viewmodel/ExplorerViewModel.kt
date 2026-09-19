@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.lootdev78.mtapktool.archive.ArchiveEngine
 import io.github.lootdev78.mtapktool.archive.ArchiveExtractRequest
 import io.github.lootdev78.mtapktool.archive.ArchiveRequest
+import io.github.lootdev78.mtapktool.archive.ArchiveTaskInfo
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.saf.SafFileSystem
 import io.github.lootdev78.mtapktool.feature.explorer.state.FileFilter
@@ -15,8 +16,12 @@ import io.github.lootdev78.mtapktool.feature.explorer.state.PaneState
 import io.github.lootdev78.mtapktool.feature.explorer.state.SortSpec
 import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -69,6 +74,11 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     private val _operationMessages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val operationMessages: SharedFlow<String> = _operationMessages.asSharedFlow()
+
+    private val _archiveTasks = MutableStateFlow<List<ArchiveTaskInfo>>(emptyList())
+    val archiveTasks: StateFlow<List<ArchiveTaskInfo>> = _archiveTasks.asStateFlow()
+    private val archiveTaskJobs = ConcurrentHashMap<String, Job>()
+    private val archiveTaskId = AtomicLong(0L)
 
     private val _fileConflict = MutableStateFlow<FileConflictRequest?>(null)
     val fileConflict: StateFlow<FileConflictRequest?> = _fileConflict.asStateFlow()
@@ -572,22 +582,35 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
      * destination may intentionally be the opposite pane.
      */
     fun createArchive(pane: ActivePane, request: ArchiveRequest) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { ArchiveEngine.create(request) }
-                .onSuccess { outputs ->
-                    scheduleArchiveCommit(ActivePane.LEFT)
-                    scheduleArchiveCommit(ActivePane.RIGHT)
-                    refreshDirectory(ActivePane.LEFT)
-                    refreshDirectory(ActivePane.RIGHT)
-                    clearSelection(pane)
-                    outputs.firstOrNull()?.let { revealOutput(pane, it.absolutePath) }
-                    val names = outputs.joinToString { it.name }
-                    _operationMessages.tryEmit("Created $names")
+        val taskId = beginArchiveTask(
+            title = "Compress",
+            detail = request.fileName.ifBlank { request.sources.joinToString { it.name } },
+        )
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                val outputs = ArchiveEngine.create(request) { progress ->
+                    coroutineContext.ensureActive()
+                    updateArchiveTaskProgress(taskId, progress)
                 }
-                .onFailure { e ->
-                    _operationMessages.tryEmit("Compression failed: ${e.message ?: e.javaClass.simpleName}")
-                }
+                scheduleArchiveCommit(ActivePane.LEFT)
+                scheduleArchiveCommit(ActivePane.RIGHT)
+                refreshDirectory(ActivePane.LEFT)
+                refreshDirectory(ActivePane.RIGHT)
+                clearSelection(pane)
+                outputs.firstOrNull()?.let { revealOutput(pane, it.absolutePath) }
+                val names = outputs.joinToString { it.name }
+                _operationMessages.tryEmit("Created $names")
+            } catch (cancelled: CancellationException) {
+                _operationMessages.tryEmit("Compression cancelled")
+                throw cancelled
+            } catch (e: Throwable) {
+                _operationMessages.tryEmit("Compression failed: ${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                finishArchiveTask(taskId)
+            }
         }
+        archiveTaskJobs[taskId] = job
+        job.start()
     }
 
     fun openArchive(pane: ActivePane, archive: File, password: String = "") {
@@ -656,21 +679,63 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun extractArchive(pane: ActivePane, request: ArchiveExtractRequest) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { ArchiveEngine.extract(request) }
-                .onSuccess { destination ->
-                    // Extraction can target either pane. If that pane currently displays
-                    // an archive workspace, the newly extracted files are archive edits too.
-                    scheduleArchivesAffectedBy(request.archive, destination)
-                    refreshDirectory(ActivePane.LEFT)
-                    refreshDirectory(ActivePane.RIGHT)
-                    revealOutput(pane, destination.absolutePath)
-                    _operationMessages.tryEmit("Extracted to ${destination.absolutePath}")
+        val taskId = beginArchiveTask(
+            title = "Extract",
+            detail = request.archive.name,
+        )
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                val destination = ArchiveEngine.extract(request) { progress ->
+                    coroutineContext.ensureActive()
+                    updateArchiveTaskProgress(taskId, progress)
                 }
-                .onFailure { error ->
-                    _operationMessages.tryEmit("Extraction failed: ${error.message ?: error.javaClass.simpleName}")
-                }
+                // Extraction can target either pane. If that pane currently displays
+                // an archive workspace, the newly extracted files are archive edits too.
+                scheduleArchivesAffectedBy(request.archive, destination)
+                refreshDirectory(ActivePane.LEFT)
+                refreshDirectory(ActivePane.RIGHT)
+                revealOutput(pane, destination.absolutePath)
+                _operationMessages.tryEmit("Extracted to ${destination.absolutePath}")
+            } catch (cancelled: CancellationException) {
+                _operationMessages.tryEmit("Extraction cancelled")
+                throw cancelled
+            } catch (error: Throwable) {
+                _operationMessages.tryEmit("Extraction failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                finishArchiveTask(taskId)
+            }
         }
+        archiveTaskJobs[taskId] = job
+        job.start()
+    }
+
+    fun cancelArchiveTask(id: String) {
+        archiveTaskJobs[id]?.cancel()
+    }
+
+    fun cancelAllArchiveTasks() {
+        archiveTaskJobs.values.toList().forEach { it.cancel() }
+    }
+
+    private fun beginArchiveTask(title: String, detail: String): String {
+        val id = "archive-${System.currentTimeMillis()}-${archiveTaskId.incrementAndGet()}"
+        _archiveTasks.update { tasks ->
+            listOf(ArchiveTaskInfo(id = id, title = title, detail = detail, progress = 0)) + tasks
+        }
+        return id
+    }
+
+    private fun updateArchiveTaskProgress(id: String, progress: Int) {
+        _archiveTasks.update { tasks ->
+            tasks.map { task ->
+                if (task.id == id) task.copy(progress = progress.coerceIn(0, 100)) else task
+            }
+        }
+    }
+
+    private fun finishArchiveTask(id: String) {
+        archiveTaskJobs.remove(id)
+        _archiveTasks.update { tasks -> tasks.filterNot { it.id == id } }
     }
 
     fun commitMountedArchives() {

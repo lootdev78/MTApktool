@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
@@ -59,11 +58,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.feature.explorer.model.StorageInfo
 import io.github.lootdev78.mtapktool.feature.explorer.model.formatSize
 import io.github.lootdev78.mtapktool.feature.explorer.model.getStorageRoots
@@ -138,30 +139,34 @@ fun SideBar(
             if (sortMode) {
                 IconButton(onClick = { sortMode = false }) { Icon(Icons.Default.Check, contentDescription = "Sortierung beenden") }
             } else {
-                IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Brightness6, contentDescription = "Theme") }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(painterResource(R.drawable.mt_ic_settings), contentDescription = "Theme")
+                }
                 Box {
-                    IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Menü") }
+                    IconButton(onClick = { headerMenu = true }) {
+                        Icon(painterResource(R.drawable.mt_ic_more), contentDescription = "Menü")
+                    }
                     DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
                         DropdownMenuItem(
                             text = { Text("Lokalen Speicher hinzufügen") },
-                            leadingIcon = { Icon(Icons.Default.Add, null) },
+                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_add), null) },
                             onClick = { headerMenu = false; onAddLocation() },
                         )
                         DropdownMenuItem(
                             text = { Text("Speicher/Tools sortieren") },
-                            leadingIcon = { Icon(Icons.Default.Sort, null) },
+                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_sort), null) },
                             onClick = { headerMenu = false; sortMode = true },
                         )
                         if (customLocations.any { it.hidden }) {
                             DropdownMenuItem(
                                 text = { Text(if (showHiddenLocations) "Verborgene Speicher ausblenden" else "Verborgene Speicher anzeigen") },
-                                leadingIcon = { Icon(if (showHiddenLocations) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) },
+                                leadingIcon = { Icon(painterResource(R.drawable.mt_ic_visibility), null) },
                                 onClick = { headerMenu = false; showHiddenLocations = !showHiddenLocations },
                             )
                         }
                         DropdownMenuItem(
                             text = { Text("Preferences") },
-                            leadingIcon = { Icon(Icons.Default.Settings, null) },
+                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_settings), null) },
                             onClick = { headerMenu = false; onOpenSettings() },
                         )
                     }
@@ -204,7 +209,7 @@ fun SideBar(
             modifier = Modifier.fillMaxWidth().clickable { onAddLocation() }.padding(horizontal = 18.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(22.dp))
+            Icon(painterResource(R.drawable.mt_ic_add), contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
             Text("Speicher hinzufügen")
         }
@@ -217,20 +222,14 @@ fun SideBar(
                     modifier = Modifier.fillMaxWidth().clickable { onClose(); onBookmarkClick(path) }.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(painterResource(R.drawable.mt_ic_folder), contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
                     Text(File(path).name.ifBlank { path }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    IconButton(onClick = { onRemoveBookmark(path) }) { Icon(Icons.Default.DeleteOutline, contentDescription = "Lesezeichen entfernen") }
+                    IconButton(onClick = { onRemoveBookmark(path) }) {
+                        Icon(painterResource(R.drawable.mt_ic_delete), contentDescription = "Lesezeichen entfernen")
+                    }
                 }
             }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Network", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Icon(Icons.Default.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Row(
@@ -274,7 +273,12 @@ fun StorageItem(storage: StorageInfo, onStorageClick: () -> Unit) {
             modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(storage.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
+            Icon(
+                painter = painterResource(R.drawable.mt_ic_storage),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(22.dp),
+            )
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -312,7 +316,12 @@ private fun CustomLocationItem(
             modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
+            Icon(
+                painter = painterResource(R.drawable.mt_ic_folder),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(22.dp),
+            )
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -330,14 +339,14 @@ private fun CustomLocationItem(
         }
         Box {
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onRename() })
-                DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { menu = false; onDelete() })
+                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_rename), null) }, onClick = { menu = false; onRename() })
+                DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_delete), null) }, onClick = { menu = false; onDelete() })
                 DropdownMenuItem(
                     text = { Text(if (location.hidden) "Show" else "Hide") },
-                    leadingIcon = { Icon(if (location.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) },
+                    leadingIcon = { Icon(painterResource(R.drawable.mt_ic_visibility), null) },
                     onClick = { menu = false; onHide() },
                 )
-                DropdownMenuItem(text = { Text("Sort") }, leadingIcon = { Icon(Icons.Default.Sort, null) }, onClick = { menu = false; onSort() })
+                DropdownMenuItem(text = { Text("Sort") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_sort), null) }, onClick = { menu = false; onSort() })
             }
         }
     }

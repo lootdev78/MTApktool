@@ -27,6 +27,7 @@ import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -80,6 +81,7 @@ public class MainActivity extends Activity {
     private LinearLayout search_pad, linear_rep;
 
     private FrameLayout editorContainer;
+    private FrameLayout bottomFrame;
     private LinearLayout functionBar;
 
     private static final List<String> SYMBOLS = Arrays.asList(
@@ -145,7 +147,9 @@ public class MainActivity extends Activity {
         linear_rep = findViewById(R.id.linear_rep);
 
         editorContainer = findViewById(R.id.editorContainer);
+        bottomFrame = findViewById(R.id.frameLayout);
         functionBar = findViewById(R.id.functionBar);
+        applyBottomSystemInsets();
 
         editView = new EditView(this);
         editView.setWordWrap(editor_pref.getBoolean("word_wrap", false));
@@ -155,6 +159,30 @@ public class MainActivity extends Activity {
         editView.setShowIndentGuides(editor_pref.getBoolean("show_indent_guides", true));
         editView.setShowWrapArrows(editor_pref.getBoolean("show_wrap_arrows", true));
         editView.setAutoIndentEnabled(editor_pref.getBoolean("auto_indent", true));
+    }
+
+    /** Keep the symbol/search strip above Android's gesture/navigation area. */
+    private void applyBottomSystemInsets() {
+        final View root = findViewById(R.id.rootLayout);
+        if (root == null || bottomFrame == null) return;
+        final int baseLeft = bottomFrame.getPaddingLeft();
+        final int baseTop = bottomFrame.getPaddingTop();
+        final int baseRight = bottomFrame.getPaddingRight();
+        final int baseBottom = bottomFrame.getPaddingBottom();
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int navigationBottom;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                navigationBottom = insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
+            } else {
+                navigationBottom = insets.getSystemWindowInsetBottom();
+            }
+            // Android 15+ enforces edge-to-edge for modern targets. On older Android
+            // decorFitsSystemWindows already reserves the navigation bar area.
+            int extraBottom = Build.VERSION.SDK_INT >= 35 ? navigationBottom : 0;
+            bottomFrame.setPadding(baseLeft, baseTop, baseRight, baseBottom + extraBottom);
+            return insets;
+        });
+        root.requestApplyInsets();
     }
 
     private void initializeLogic() {
@@ -916,7 +944,6 @@ public class MainActivity extends Activity {
     }
 
     public void addFunctionBar(LinearLayout container, final EditView editView) {
-        Toast.makeText(getApplication(), "A basic implantation has done here.. Currently i am studing about it to fix the known issues", Toast.LENGTH_SHORT).show();
         container.setOrientation(LinearLayout.HORIZONTAL);
         container.removeAllViews();
 
