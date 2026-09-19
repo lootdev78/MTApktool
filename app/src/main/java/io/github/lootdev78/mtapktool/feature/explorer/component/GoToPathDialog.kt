@@ -58,7 +58,7 @@ fun GoToPathDialog(
             modifier = Modifier.width(420.dp),
         ) {
             Column(Modifier.padding(start = 28.dp, top = 24.dp, end = 20.dp, bottom = 12.dp)) {
-                Text("Jump to path", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Jump to path"), fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(12.dp))
                 TextField(
                     value = pathValue,
@@ -83,15 +83,15 @@ fun GoToPathDialog(
                             }
                         },
                         contentPadding = PaddingValues(horizontal = 12.dp),
-                    ) { Text("PASTE", fontWeight = FontWeight.Bold) }
+                    ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("PASTE"), fontWeight = FontWeight.Bold) }
                     Row {
                         TextButton(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 12.dp)) {
-                            Text("CANCEL", fontWeight = FontWeight.Bold)
+                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CANCEL"), fontWeight = FontWeight.Bold)
                         }
                         TextButton(
                             onClick = { pathValue.text.trim().takeIf(String::isNotBlank)?.let(onGo) },
                             contentPadding = PaddingValues(horizontal = 12.dp),
-                        ) { Text("OK", fontWeight = FontWeight.Bold) }
+                        ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK"), fontWeight = FontWeight.Bold) }
                     }
                 }
             }

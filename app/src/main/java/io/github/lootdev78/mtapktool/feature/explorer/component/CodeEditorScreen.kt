@@ -117,11 +117,11 @@ fun CodeEditorScreen(
                                 file.writeText(content)
                             }.onSuccess {
                                 withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, "File saved", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, UiText.t("File saved", "Datei gespeichert"), Toast.LENGTH_SHORT).show()
                                 }
                             }.onFailure { e ->
                                 withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, "Error saving: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, UiText.t("Error saving: ${e.localizedMessage}", "Fehler beim Speichern: ${e.localizedMessage}"), Toast.LENGTH_LONG).show()
                                 }
                             }
                         }
@@ -174,7 +174,7 @@ fun CodeEditorScreen(
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Word Wrap")
+                                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Word Wrap"))
                                     Spacer(modifier = Modifier.weight(1f))
                                     Checkbox(checked = isWordWrap, onCheckedChange = null)
                                 }
@@ -185,7 +185,7 @@ fun CodeEditorScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("File Info") },
+                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("File Info")) },
                             leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
                             onClick = {
                                 showFileInfo = true
@@ -235,7 +235,7 @@ fun CodeEditorScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Find") },
+                            placeholder = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Find")) },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -254,7 +254,7 @@ fun CodeEditorScreen(
                                 DropdownMenuItem(
                                     text = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Regex")
+                                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Regex"))
                                             Spacer(modifier = Modifier.weight(1f))
                                             Checkbox(checked = isRegex, onCheckedChange = { isRegex = it })
                                         }
@@ -265,7 +265,7 @@ fun CodeEditorScreen(
                                 DropdownMenuItem(
                                     text = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Match case")
+                                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Match case"))
                                             Spacer(modifier = Modifier.weight(1f))
                                             Checkbox(checked = isMatchCase, onCheckedChange = { isMatchCase = it })
                                         }
@@ -283,11 +283,11 @@ fun CodeEditorScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { /* Previous Match */ }) { Text("PREV") }
-                        TextButton(onClick = { /* Next Match */ }) { Text("NEXT") }
-                        TextButton(onClick = { /* Replace Current */ }) { Text("REP") }
-                        TextButton(onClick = { /* Replace All */ }) { Text("ALL") }
-                        TextButton(onClick = { showSearchPanel = false }) { Text("CLOSE") }
+                        TextButton(onClick = { /* Previous Match */ }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("PREV")) }
+                        TextButton(onClick = { /* Next Match */ }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("NEXT")) }
+                        TextButton(onClick = { /* Replace Current */ }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("REP")) }
+                        TextButton(onClick = { /* Replace All */ }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ALL")) }
+                        TextButton(onClick = { showSearchPanel = false }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CLOSE")) }
                     }
                 }
             }

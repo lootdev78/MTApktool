@@ -2,17 +2,17 @@ package io.github.lootdev78.mtapktool.core.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 private val DarkColorScheme = darkColorScheme(
@@ -24,8 +24,6 @@ private val DarkColorScheme = darkColorScheme(
     onSecondary = MdThemeDarkOnSecondary,
     secondaryContainer = MdThemeDarkSecondaryContainer,
     onSecondaryContainer = MdThemeDarkOnSecondaryContainer,
-    tertiary = MdThemeDarkTertiary,
-    onTertiary = MdThemeDarkOnTertiary,
     background = MdThemeDarkBackground,
     onBackground = MdThemeDarkOnSurface,
     surface = MdThemeDarkSurface,
@@ -51,15 +49,13 @@ private val LightColorScheme = lightColorScheme(
     onSecondary = MdThemeLightOnSecondary,
     secondaryContainer = MdThemeLightSecondaryContainer,
     onSecondaryContainer = MdThemeLightOnSecondaryContainer,
-    tertiary = MdThemeLightTertiary,
-    onTertiary = MdThemeLightOnTertiary,
     background = MdThemeLightBackground,
     onBackground = MdThemeLightOnSurface,
     surface = MdThemeLightSurface,
     onSurface = MdThemeLightOnSurface,
     surfaceVariant = MdThemeLightSurfaceVariant,
     onSurfaceVariant = MdThemeLightOnSurfaceVariant,
-    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLowest = Color.White,
     surfaceContainerLow = Color(0xFFFAFAFA),
     surfaceContainer = Color(0xFFF5F5F5),
     surfaceContainerHigh = Color(0xFFF0F0F0),
@@ -69,7 +65,6 @@ private val LightColorScheme = lightColorScheme(
     scrim = Color.Black,
 )
 
-
 private val MtClassicShapes = Shapes(
     extraSmall = RoundedCornerShape(0.dp),
     small = RoundedCornerShape(0.dp),
@@ -77,44 +72,37 @@ private val MtClassicShapes = Shapes(
     large = RoundedCornerShape(2.dp),
     extraLarge = RoundedCornerShape(2.dp),
 )
+
 @Composable
 fun MTExplorerTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColor: Boolean = false,
     accentKey: String = "blue",
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
-    val darkTheme = when (themeMode) {
+    val dark = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-
     val context = LocalContext.current
     val useMonet = accentKey.startsWith("monet") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val baseScheme = when {
-        (dynamicColor || useMonet) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
+    val base = when {
+        (dynamicColor || useMonet) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        dark -> DarkColorScheme
         else -> LightColorScheme
     }
-    val accent = if (useMonet) baseScheme.primary else accentForKey(accentKey, darkTheme)
+    val accent = if (useMonet) base.primary else accentForKey(accentKey, dark)
     val onAccent = if (accent.luminance() > 0.55f) Color(0xFF111318) else Color.White
-    val colorScheme = baseScheme.copy(
+    val scheme = base.copy(
         primary = accent,
         onPrimary = onAccent,
+        primaryContainer = accent.copy(alpha = if (dark) 0.34f else 0.16f),
         secondary = accent,
+        tertiary = accent,
     )
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        shapes = MtClassicShapes,
-        content = content
-    )
+    MaterialTheme(colorScheme = scheme, typography = Typography, shapes = MtClassicShapes, content = content)
 }
-
 
 private fun accentForKey(key: String, dark: Boolean): Color = when (key) {
     "black" -> if (dark) Color(0xFFBDBDBD) else Color(0xFF202124)

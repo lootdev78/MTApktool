@@ -34,7 +34,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = onOpenExplorer) {
-                Text("Open Dual File Manager")
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Open Dual File Manager"))
             }
         }
     }

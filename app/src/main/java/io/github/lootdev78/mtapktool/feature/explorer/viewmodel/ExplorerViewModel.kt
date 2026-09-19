@@ -6,9 +6,13 @@ import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.lootdev78.mtapktool.archive.ArchiveEngine
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 import io.github.lootdev78.mtapktool.archive.ArchiveExtractRequest
 import io.github.lootdev78.mtapktool.archive.ArchiveRequest
 import io.github.lootdev78.mtapktool.archive.ArchiveTaskInfo
+import io.github.lootdev78.mtapktool.archive.ArchiveUpdateRequest
+import io.github.lootdev78.mtapktool.archive.ExplorerTaskKind
+import io.github.lootdev78.mtapktool.archive.ArchiveFormat
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.saf.SafFileSystem
 import io.github.lootdev78.mtapktool.feature.explorer.state.FileFilter
@@ -80,6 +84,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private val archiveTaskJobs = ConcurrentHashMap<String, Job>()
     private val archiveTaskId = AtomicLong(0L)
 
+    private val _archiveUpdateRequest = MutableStateFlow<ArchiveUpdateRequest?>(null)
+    val archiveUpdateRequest: StateFlow<ArchiveUpdateRequest?> = _archiveUpdateRequest.asStateFlow()
+
     private val _fileConflict = MutableStateFlow<FileConflictRequest?>(null)
     val fileConflict: StateFlow<FileConflictRequest?> = _fileConflict.asStateFlow()
     private val conflictId = AtomicLong(0L)
@@ -116,6 +123,26 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     )
 
     private val archiveSessions = ConcurrentHashMap<ActivePane, ArchiveSession>()
+
+    private fun mountedArchiveReadOnlyLabel(pane: ActivePane): String? {
+        val session = archiveSessions[pane] ?: return null
+        val format = ArchiveFormat.fromFile(session.archive) ?: return "Archive"
+        return if (format.canUpdate) null else format.label
+    }
+
+    private fun ensureMountedArchiveWritable(pane: ActivePane, action: String): Boolean {
+        val label = mountedArchiveReadOnlyLabel(pane) ?: return true
+        _operationMessages.tryEmit("$label is read-only; $action is not available inside this archive")
+        return false
+    }
+
+    private fun readOnlyArchiveContaining(file: File): String? {
+        return archiveSessions.values.firstNotNullOfOrNull { session ->
+            if (!isInside(file, session.workspaceRoot)) return@firstNotNullOfOrNull null
+            val format = ArchiveFormat.fromFile(session.archive)
+            if (format?.canUpdate == false) format.label else null
+        }
+    }
 
     init {
         ExplorerPreferences.init(app)
@@ -269,6 +296,18 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     // --- Navigation History Controls ---
+    fun canNavigateHistoryBack(pane: ActivePane): Boolean {
+        if (archiveSessions.containsKey(pane)) return canNavigateUp(pane)
+        val backStack = if (pane == ActivePane.LEFT) leftBackStack else rightBackStack
+        return backStack.isNotEmpty()
+    }
+
+    fun canNavigateHistoryForward(pane: ActivePane): Boolean {
+        if (archiveSessions.containsKey(pane)) return false
+        val forwardStack = if (pane == ActivePane.LEFT) leftForwardStack else rightForwardStack
+        return forwardStack.isNotEmpty()
+    }
+
     fun navigateHistoryBack(pane: ActivePane) {
         if (archiveSessions.containsKey(pane)) {
             navigateUp(pane)
@@ -372,7 +411,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             val currentFile = File(current)
             val root = session.workspaceRoot
             if (sameFile(currentFile, root)) {
-                closeArchive(pane, saveChanges = true)
+                requestArchiveClose(pane)
                 return
             }
             val parent = currentFile.parentFile
@@ -380,7 +419,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 loadDirectory(pane, parent.absolutePath)
                 return
             }
-            closeArchive(pane, saveChanges = true)
+            requestArchiveClose(pane)
             return
         }
 
@@ -459,32 +498,38 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         val targetPath = paneState(targetPane).currentPath
         val selected = sourceState.selectedPaths.mapNotNull { path -> sourceState.items.firstOrNull { it.path == path } }
         if (selected.isEmpty()) return
+        if (!ensureMountedArchiveWritable(targetPane, "copy")) return
 
         beginTransferBatch()
-        setPaneBusy(targetPane, true, "Kopieren …", 0)
-        viewModelScope.launch(Dispatchers.IO) {
+        setPaneBusy(targetPane, true, UiText.t("Copying…", "Kopiere…"), 0)
+        val taskId = beginArchiveTask("Copy", selected.joinToString(limit = 2) { it.name }, ExplorerTaskKind.COPY)
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             val copiedNames = mutableListOf<String>()
-            runCatching {
+            try {
                 selected.forEachIndexed { index, item ->
+                    coroutineContext.ensureActive()
                     if (copyItemToTarget(item, targetPath)) copiedNames += item.name
-                    setPaneBusy(targetPane, true, "Kopieren: ${item.name}", ((index + 1) * 100 / selected.size).coerceIn(0, 100))
+                    val progress = ((index + 1) * 100 / selected.size).coerceIn(0, 100)
+                    setPaneBusy(targetPane, true, UiText.t("Copying: ${item.name}", "Kopiere: ${item.name}"), progress)
+                    updateArchiveTaskProgress(taskId, progress)
                 }
-            }.onSuccess {
-                setPaneBusy(targetPane, false)
                 scheduleArchiveCommit(targetPane)
                 refreshDirectory(targetPane)
                 highlightTransferredItems(targetPane, copiedNames)
                 clearSelection(fromPane)
                 _operationMessages.tryEmit("Copied ${copiedNames.size} item(s)")
-            }.onFailure { e ->
+            } catch (cancelled: CancellationException) {
+                _operationMessages.tryEmit("Copy cancelled")
+                throw cancelled
+            } catch (error: Throwable) {
+                _operationMessages.tryEmit("Copy failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
                 setPaneBusy(targetPane, false)
-                if (e is TransferCancelledException) {
-                    _operationMessages.tryEmit("Copy cancelled")
-                } else {
-                    _operationMessages.tryEmit("Copy failed: ${e.message ?: e.javaClass.simpleName}")
-                }
+                finishArchiveTask(taskId)
             }
         }
+        archiveTaskJobs[taskId] = job
+        job.start()
     }
 
     fun moveSelectedToOppositePane(fromPane: ActivePane) {
@@ -493,13 +538,17 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         val targetPath = paneState(targetPane).currentPath
         val selected = sourceState.selectedPaths.mapNotNull { path -> sourceState.items.firstOrNull { it.path == path } }
         if (selected.isEmpty()) return
+        if (!ensureMountedArchiveWritable(fromPane, "move")) return
+        if (!ensureMountedArchiveWritable(targetPane, "move")) return
 
         beginTransferBatch()
-        setPaneBusy(targetPane, true, "Verschieben …", 0)
-        viewModelScope.launch(Dispatchers.IO) {
+        setPaneBusy(targetPane, true, UiText.t("Moving…", "Verschiebe…"), 0)
+        val taskId = beginArchiveTask("Move", selected.joinToString(limit = 2) { it.name }, ExplorerTaskKind.MOVE)
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             val movedNames = mutableListOf<String>()
-            runCatching {
+            try {
                 selected.forEachIndexed { index, item ->
+                    coroutineContext.ensureActive()
                     if (!item.isSaf && !SafFileSystem.isSafPath(targetPath)) {
                         val source = File(item.path)
                         var destination = File(targetPath, item.name)
@@ -519,16 +568,14 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                             } else if (!source.delete()) throw IOException("Copied but could not remove ${source.name}")
                         }
                         movedNames += destination.name
-                    } else {
-                        if (copyItemToTarget(item, targetPath)) {
-                            deleteItem(item, recycleOverride = false)
-                            movedNames += item.name
-                        }
+                    } else if (copyItemToTarget(item, targetPath)) {
+                        deleteItem(item, recycleOverride = false)
+                        movedNames += item.name
                     }
-                    setPaneBusy(targetPane, true, "Verschieben: ${item.name}", ((index + 1) * 100 / selected.size).coerceIn(0, 100))
+                    val progress = ((index + 1) * 100 / selected.size).coerceIn(0, 100)
+                    setPaneBusy(targetPane, true, UiText.t("Moving: ${item.name}", "Verschiebe: ${item.name}"), progress)
+                    updateArchiveTaskProgress(taskId, progress)
                 }
-            }.onSuccess {
-                setPaneBusy(targetPane, false)
                 scheduleArchiveCommit(fromPane)
                 scheduleArchiveCommit(targetPane)
                 refreshDirectory(fromPane)
@@ -536,15 +583,18 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 highlightTransferredItems(targetPane, movedNames)
                 clearSelection(fromPane)
                 _operationMessages.tryEmit("Moved ${movedNames.size} item(s)")
-            }.onFailure { e ->
+            } catch (cancelled: CancellationException) {
+                _operationMessages.tryEmit("Move cancelled")
+                throw cancelled
+            } catch (error: Throwable) {
+                _operationMessages.tryEmit("Move failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
                 setPaneBusy(targetPane, false)
-                if (e is TransferCancelledException) {
-                    _operationMessages.tryEmit("Move cancelled")
-                } else {
-                    _operationMessages.tryEmit("Move failed: ${e.message ?: e.javaClass.simpleName}")
-                }
+                finishArchiveTask(taskId)
             }
         }
+        archiveTaskJobs[taskId] = job
+        job.start()
     }
 
     fun linkToOppositePane(fromPane: ActivePane, sourcePath: String) {
@@ -582,29 +632,25 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
      * destination may intentionally be the opposite pane.
      */
     fun createArchive(pane: ActivePane, request: ArchiveRequest) {
-        val taskId = beginArchiveTask(
-            title = "Compress",
-            detail = request.fileName.ifBlank { request.sources.joinToString { it.name } },
-        )
+        readOnlyArchiveContaining(request.outputDirectory)?.let { label ->
+            _operationMessages.tryEmit("$label is read-only; archives cannot be created inside it")
+            return
+        }
+        val taskId = beginArchiveTask("Compress", request.fileName.ifBlank { request.sources.joinToString { it.name } }, ExplorerTaskKind.ARCHIVE_CREATE)
         val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             try {
-                val outputs = ArchiveEngine.create(request) { progress ->
-                    coroutineContext.ensureActive()
-                    updateArchiveTaskProgress(taskId, progress)
-                }
-                scheduleArchiveCommit(ActivePane.LEFT)
-                scheduleArchiveCommit(ActivePane.RIGHT)
+                val outputs = ArchiveEngine.create(request) { updateArchiveTaskProgress(taskId, it) }
+                scheduleArchivesAffectedBy(*request.sources.toTypedArray())
                 refreshDirectory(ActivePane.LEFT)
                 refreshDirectory(ActivePane.RIGHT)
                 clearSelection(pane)
                 outputs.firstOrNull()?.let { revealOutput(pane, it.absolutePath) }
-                val names = outputs.joinToString { it.name }
-                _operationMessages.tryEmit("Created $names")
+                _operationMessages.tryEmit("Created ${outputs.joinToString { it.name }}")
             } catch (cancelled: CancellationException) {
                 _operationMessages.tryEmit("Compression cancelled")
                 throw cancelled
-            } catch (e: Throwable) {
-                _operationMessages.tryEmit("Compression failed: ${e.message ?: e.javaClass.simpleName}")
+            } catch (error: Throwable) {
+                _operationMessages.tryEmit("Compression failed: ${error.message ?: error.javaClass.simpleName}")
             } finally {
                 finishArchiveTask(taskId)
             }
@@ -618,7 +664,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             it.copy(
                 isLoading = true,
                 loadingProgress = 0,
-                loadingLabel = "Öffne ${archive.name}",
+                loadingLabel = UiText.t("Opening ${archive.name}", "Öffne ${archive.name}"),
             )
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -630,7 +676,20 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
                 archiveSessions[pane]?.let { previous ->
-                    commitArchiveIfChangedInternal(pane, previous)
+                    val current = workspaceSnapshot(previous.workspaceRoot)
+                    if (current != previous.snapshot) {
+                        val format = ArchiveFormat.fromFile(previous.archive)
+                        val changed = (current.keys + previous.snapshot.keys).count { current[it] != previous.snapshot[it] }
+                        _archiveUpdateRequest.value = ArchiveUpdateRequest(
+                            pane = pane,
+                            archiveName = previous.archive.name,
+                            changedEntries = changed.coerceAtLeast(1),
+                            isApk = previous.archive.extension.equals("apk", true),
+                            readOnly = format?.canUpdate != true,
+                            closeAfterUpdate = false,
+                        )
+                        throw IOException("Current archive has pending changes; update or leave it before opening another archive")
+                    }
                     previous.workspaceRoot.deleteRecursively()
                     archiveSessions.remove(pane)
                 }
@@ -645,7 +704,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                             state.copy(
                                 isLoading = true,
                                 loadingProgress = progress.coerceIn(0, 100),
-                                loadingLabel = "Öffne ${archive.name}",
+                                loadingLabel = UiText.t("Opening ${archive.name}", "Öffne ${archive.name}"),
                             )
                         }
                     }
@@ -679,18 +738,19 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun extractArchive(pane: ActivePane, request: ArchiveExtractRequest) {
-        val taskId = beginArchiveTask(
-            title = "Extract",
-            detail = request.archive.name,
-        )
+        readOnlyArchiveContaining(request.outputDirectory)?.let { label ->
+            _operationMessages.tryEmit("$label is read-only; extraction cannot write into it")
+            return
+        }
+        val taskId = beginArchiveTask("Extract", request.archive.name, ExplorerTaskKind.ARCHIVE_EXTRACT)
         val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             try {
-                val destination = ArchiveEngine.extract(request) { progress ->
-                    coroutineContext.ensureActive()
-                    updateArchiveTaskProgress(taskId, progress)
+                val destination = request.outputDirectory
+                if (!destination.exists() && !destination.mkdirs()) throw IOException("Cannot create extraction directory")
+                ArchiveEngine.extractToDirectory(request.archive, destination, request.password) { updateArchiveTaskProgress(taskId, it) }
+                if (request.deleteSourceAfterExtraction && !request.archive.delete()) {
+                    throw IOException("Archive extracted, but source could not be deleted")
                 }
-                // Extraction can target either pane. If that pane currently displays
-                // an archive workspace, the newly extracted files are archive edits too.
                 scheduleArchivesAffectedBy(request.archive, destination)
                 refreshDirectory(ActivePane.LEFT)
                 refreshDirectory(ActivePane.RIGHT)
@@ -709,28 +769,21 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         job.start()
     }
 
-    fun cancelArchiveTask(id: String) {
-        archiveTaskJobs[id]?.cancel()
-    }
+    fun cancelArchiveTask(id: String) { archiveTaskJobs[id]?.cancel() }
+    fun cancelAllArchiveTasks() { archiveTaskJobs.values.toList().forEach { it.cancel() } }
 
-    fun cancelAllArchiveTasks() {
-        archiveTaskJobs.values.toList().forEach { it.cancel() }
-    }
-
-    private fun beginArchiveTask(title: String, detail: String): String {
-        val id = "archive-${System.currentTimeMillis()}-${archiveTaskId.incrementAndGet()}"
-        _archiveTasks.update { tasks ->
-            listOf(ArchiveTaskInfo(id = id, title = title, detail = detail, progress = 0)) + tasks
-        }
+    private fun beginArchiveTask(
+        title: String,
+        detail: String,
+        kind: ExplorerTaskKind = ExplorerTaskKind.ARCHIVE_CREATE,
+    ): String {
+        val id = "task-${System.currentTimeMillis()}-${archiveTaskId.incrementAndGet()}"
+        _archiveTasks.update { listOf(ArchiveTaskInfo(id, title, detail, 0, kind)) + it }
         return id
     }
 
     private fun updateArchiveTaskProgress(id: String, progress: Int) {
-        _archiveTasks.update { tasks ->
-            tasks.map { task ->
-                if (task.id == id) task.copy(progress = progress.coerceIn(0, 100)) else task
-            }
-        }
+        _archiveTasks.update { tasks -> tasks.map { if (it.id == id) it.copy(progress = progress.coerceIn(0, 100)) else it } }
     }
 
     private fun finishArchiveTask(id: String) {
@@ -772,6 +825,84 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             }
             loadDirectory(pane, session.returnDirectory, isHistoryAction = true)
         }
+    }
+
+    /** Detect edits made by the text editor or external viewers while an archive workspace is open. */
+    fun detectMountedArchiveChanges() {
+        if (_archiveUpdateRequest.value != null) return
+        ActivePane.entries.forEach { pane ->
+            val session = archiveSessions[pane] ?: return@forEach
+            val current = workspaceSnapshot(session.workspaceRoot)
+            if (current != session.snapshot) {
+                val changed = (current.keys + session.snapshot.keys).count { current[it] != session.snapshot[it] }
+                val format = ArchiveFormat.fromFile(session.archive)
+                _archiveUpdateRequest.value = ArchiveUpdateRequest(
+                    pane = pane,
+                    archiveName = session.archive.name,
+                    changedEntries = changed.coerceAtLeast(1),
+                    isApk = session.archive.extension.equals("apk", true),
+                    readOnly = format?.canUpdate != true,
+                    closeAfterUpdate = false,
+                )
+                return
+            }
+        }
+    }
+
+    fun requestArchiveClose(pane: ActivePane) {
+        val session = archiveSessions[pane] ?: return
+        val current = workspaceSnapshot(session.workspaceRoot)
+        if (current == session.snapshot) {
+            closeArchive(pane, saveChanges = false)
+            return
+        }
+        val format = ArchiveFormat.fromFile(session.archive)
+        val changed = (current.keys + session.snapshot.keys).count { current[it] != session.snapshot[it] }
+        _archiveUpdateRequest.value = ArchiveUpdateRequest(
+            pane = pane,
+            archiveName = session.archive.name,
+            changedEntries = changed.coerceAtLeast(1),
+            isApk = session.archive.extension.equals("apk", true),
+            readOnly = format?.canUpdate != true,
+            closeAfterUpdate = true,
+        )
+    }
+
+    fun dismissArchiveUpdateRequest() { _archiveUpdateRequest.value = null }
+
+    fun discardArchiveChangesAndClose(pane: ActivePane) {
+        _archiveUpdateRequest.value = null
+        closeArchive(pane, saveChanges = false)
+    }
+
+    fun confirmArchiveUpdate(pane: ActivePane) {
+        val request = _archiveUpdateRequest.value
+        val closeAfterUpdate = request?.pane == pane && request.closeAfterUpdate
+        val session = archiveSessions[pane] ?: run { _archiveUpdateRequest.value = null; return }
+        val format = ArchiveFormat.fromFile(session.archive)
+        if (format?.canUpdate != true) {
+            _operationMessages.tryEmit("${format?.label ?: "Archive"} is read-only; extract files to save changes")
+            _archiveUpdateRequest.value = null
+            return
+        }
+        val taskId = beginArchiveTask("Update archive", session.archive.name, ExplorerTaskKind.ARCHIVE_UPDATE)
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                ArchiveEngine.replaceFromDirectory(session.archive, session.workspaceRoot, session.password) { updateArchiveTaskProgress(taskId, it) }
+                session.snapshot = workspaceSnapshot(session.workspaceRoot)
+                _operationMessages.tryEmit("Updated ${session.archive.name}")
+                refreshDirectory(ActivePane.LEFT)
+                refreshDirectory(ActivePane.RIGHT)
+                if (closeAfterUpdate) closeArchive(pane, saveChanges = false)
+            } catch (error: Throwable) {
+                _operationMessages.tryEmit("Archive update failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                finishArchiveTask(taskId)
+                _archiveUpdateRequest.value = null
+            }
+        }
+        archiveTaskJobs[taskId] = job
+        job.start()
     }
 
     fun navigateToDisplayPath(pane: ActivePane, value: String) {
@@ -1038,36 +1169,60 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     // --- Batch Delete ---
     fun deleteSelected(pane: ActivePane, recycleOverride: Boolean? = null) {
+        if (!ensureMountedArchiveWritable(pane, "delete")) return
         val state = paneState(pane)
         val items = state.selectedPaths.mapNotNull { path -> state.items.firstOrNull { it.path == path } }
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { items.forEach { deleteItem(it, recycleOverride) } }
-                .onSuccess {
-                    scheduleArchiveCommit(pane)
-                    refreshDirectory(pane)
-                    clearSelection(pane)
+        if (items.isEmpty()) return
+        val taskId = beginArchiveTask("Delete", items.joinToString(limit = 2) { it.name }, ExplorerTaskKind.DELETE)
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                items.forEachIndexed { index, item ->
+                    coroutineContext.ensureActive()
+                    deleteItem(item, recycleOverride)
+                    updateArchiveTaskProgress(taskId, ((index + 1) * 100 / items.size).coerceIn(0, 100))
                 }
-                .onFailure { _operationMessages.tryEmit("Delete failed: ${it.message ?: it.javaClass.simpleName}") }
+                scheduleArchiveCommit(pane)
+                refreshDirectory(pane)
+                clearSelection(pane)
+            } catch (cancelled: CancellationException) {
+                _operationMessages.tryEmit("Delete cancelled")
+                throw cancelled
+            } catch (error: Throwable) {
+                _operationMessages.tryEmit("Delete failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                finishArchiveTask(taskId)
+            }
         }
+        archiveTaskJobs[taskId] = job
+        job.start()
     }
 
     // --- Create New File or Folder ---
     fun createNewItem(pane: ActivePane, name: String, isFolder: Boolean): String? {
+        if (!ensureMountedArchiveWritable(pane, "create")) return UiText.t("Archive is read-only", "Archiv ist schreibgeschützt")
         val currentPath = paneState(pane).currentPath
-        if (name.isBlank()) return "Name is empty"
+        if (name.isBlank()) return UiText.t("Name is empty", "Name ist leer")
         return runCatching {
             if (SafFileSystem.isSafPath(currentPath)) {
                 SafFileSystem.create(app, Uri.parse(currentPath), name, isFolder)
             } else {
                 val targetFile = File(currentPath, name)
-                if (targetFile.exists()) return "An item with this name already exists!"
+                if (targetFile.exists()) return UiText.t("An item with this name already exists!", "Ein Element mit diesem Namen existiert bereits!")
                 val success = if (isFolder) targetFile.mkdirs() else targetFile.createNewFile()
                 if (!success) throw IOException("Could not create $name")
                 scheduleArchiveCommit(pane)
             }
             refreshDirectory(pane)
-            "Created ${if (isFolder) "folder" else "file"} successfully."
-        }.getOrElse { "Failed to create ${if (isFolder) "folder" else "file"}: ${it.message}" }
+            UiText.t(
+                "Created ${if (isFolder) "folder" else "file"} successfully.",
+                "${if (isFolder) "Ordner" else "Datei"} erfolgreich erstellt.",
+            )
+        }.getOrElse {
+            UiText.t(
+                "Failed to create ${if (isFolder) "folder" else "file"}: ${it.message}",
+                "${if (isFolder) "Ordner" else "Datei"} konnte nicht erstellt werden: ${it.message}",
+            )
+        }
     }
 
     fun clearSelection(pane: ActivePane) {
@@ -1075,6 +1230,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun renameItem(pane: ActivePane, oldPath: String, newName: String) {
+        if (!ensureMountedArchiveWritable(pane, "rename")) return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 if (SafFileSystem.isSafPath(oldPath)) {

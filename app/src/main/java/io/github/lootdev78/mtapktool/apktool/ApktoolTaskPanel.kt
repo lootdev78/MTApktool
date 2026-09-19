@@ -32,6 +32,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Settings
@@ -58,7 +62,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 import io.github.lootdev78.mtapktool.archive.ArchiveTaskInfo
+import io.github.lootdev78.mtapktool.archive.ExplorerTaskKind
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -111,27 +117,24 @@ fun ApktoolTaskPanel(
                     ) {
                         IconButton(onClick = onDismiss) { Icon(Icons.Default.Check, contentDescription = "Schliessen") }
                         Column(Modifier.weight(1f)) {
-                            Text("Tasks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Normal)
+                            Text(UiText.t("Tasks", "Aufgaben"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Normal)
                             val active = jobs.count { !it.isTerminal } + archiveTasks.size
-                            if (active > 0) Text("$active aktiv", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (active > 0) Text(UiText.t("$active active", "$active aktiv"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (jobs.any { it.isTerminal }) {
                             IconButton(onClick = onClearFinished) {
-                                Icon(Icons.Default.DeleteSweep, contentDescription = "Fertige Tasks leeren")
+                                Icon(Icons.Default.DeleteSweep, contentDescription = UiText.t("Clear finished tasks", "Fertige Aufgaben leeren"))
                             }
                         }
                         if (jobs.any { !it.isTerminal } || archiveTasks.isNotEmpty()) {
-                            TextButton(onClick = {
-                                onCancelAll()
-                                onCancelAllArchive()
-                            }) { Text("ALLE STOPPEN") }
+                            TextButton(onClick = { onCancelAll(); onCancelAllArchive() }) { Text(UiText.t("STOP ALL", "ALLE STOPPEN")) }
                         }
                     }
 
                     if (jobs.isEmpty() && archiveTasks.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
-                                "Noch keine Task-Informationen",
+                                UiText.t("No task information yet", "Noch keine Aufgabeninformationen"),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             )
@@ -142,10 +145,7 @@ fun ApktoolTaskPanel(
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
                             items(archiveTasks, key = { it.id }) { task ->
-                                ArchiveTaskCard(
-                                    task = task,
-                                    onCancel = onCancelArchive,
-                                )
+                                ArchiveTaskCard(task = task, onCancel = onCancelArchive)
                             }
                             items(jobs, key = { it.id }) { job ->
                                 TaskCard(
@@ -164,60 +164,42 @@ fun ApktoolTaskPanel(
     }
 }
 
-
 @Composable
-private fun ArchiveTaskCard(
-    task: ArchiveTaskInfo,
-    onCancel: (String) -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.background,
-        tonalElevation = 0.dp,
-    ) {
+private fun ArchiveTaskCard(task: ArchiveTaskInfo, onCancel: (String) -> Unit) {
+    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (task.title.equals("Extract", ignoreCase = true)) Icons.Default.Unarchive else Icons.Default.Archive,
+                    imageVector = when (task.kind) {
+                        ExplorerTaskKind.ARCHIVE_CREATE -> Icons.Default.Archive
+                        ExplorerTaskKind.ARCHIVE_EXTRACT -> Icons.Default.Unarchive
+                        ExplorerTaskKind.ARCHIVE_UPDATE -> Icons.Default.EditNote
+                        ExplorerTaskKind.COPY -> Icons.Default.ContentCopy
+                        ExplorerTaskKind.MOVE -> Icons.Default.DriveFileMove
+                        ExplorerTaskKind.DELETE -> Icons.Default.Delete
+                    },
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(task.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        task.detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Text(UiText.auto(task.title), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(task.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                task.progress?.let { progress ->
-                    Text("${progress.coerceIn(0, 100)}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                }
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("${task.progress ?: 0}%"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             Spacer(Modifier.height(7.dp))
-            val progress = task.progress
-            if (progress == null) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(2.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.outlineVariant,
-                )
-            } else {
-                LinearProgressIndicator(
-                    progress = { progress.coerceIn(0, 100) / 100f },
-                    modifier = Modifier.fillMaxWidth().height(2.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.outlineVariant,
-                )
-            }
+            LinearProgressIndicator(
+                progress = { ((task.progress ?: 0).coerceIn(0, 100)) / 100f },
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.outlineVariant,
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { onCancel(task.id) }) { Text("STOP") }
+                TextButton(onClick = { onCancel(task.id) }) { Text(UiText.t("STOP", "STOPPEN")) }
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -300,9 +282,9 @@ private fun TaskCard(
                 )
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onOpen) { Text("DETAILS") }
+                TextButton(onClick = onOpen) { Text(UiText.t("DETAILS", "DETAILS")) }
                 if (!job.isTerminal) {
-                    TextButton(onClick = { onCancel(job.id) }) { Text("STOP") }
+                    TextButton(onClick = { onCancel(job.id) }) { Text(UiText.t("STOP", "STOPPEN")) }
                 }
             }
         }
@@ -322,7 +304,7 @@ fun ApktoolJobOutputDialog(
     onCancel: (String) -> Unit,
 ) {
     val scroll = rememberScrollState()
-    val text = job?.let { it.log.ifBlank { it.line } }.orEmpty().ifBlank { "Job wird gestartet …" }
+    val text = job?.let { it.log.ifBlank { it.line } }.orEmpty().ifBlank { UiText.t("Job is starting…", "Aufgabe wird gestartet…") }
     LaunchedEffect(text) {
         if (scroll.maxValue > 0) scroll.scrollTo(scroll.maxValue)
     }
@@ -371,11 +353,11 @@ fun ApktoolJobOutputDialog(
         },
         dismissButton = {
             if (job != null && !job.isTerminal) {
-                TextButton(onClick = { onCancel(jobId) }) { Text("ABBRECHEN") }
+                TextButton(onClick = { onCancel(jobId) }) { Text(UiText.t("CANCEL", "ABBRECHEN")) }
             }
         },
         confirmButton = {
-            TextButton(onClick = onHide) { Text(if (job?.isTerminal == true) "SCHLIESSEN" else "VERSTECKEN") }
+            TextButton(onClick = onHide) { Text(if (job?.isTerminal == true) UiText.t("CLOSE", "SCHLIESSEN") else UiText.t("HIDE", "VERSTECKEN")) }
         },
     )
 }

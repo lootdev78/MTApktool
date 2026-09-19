@@ -27,9 +27,6 @@ data class ExplorerPrefs(
     val optimizeExternalTransfer: Boolean = true,
     val startupLeft: String = "home",
     val startupRight: String = "home",
-    val requestRootAtStartup: Boolean = false,
-    val requestShellAtStartup: Boolean = false,
-    val showBookmarksInSidebar: Boolean = true,
     val fileMenuOrder: List<String> = defaultFileMenuOrder,
     val builtInOpenOrder: List<String> = defaultBuiltInOpenOrder,
 ) {
@@ -97,9 +94,6 @@ object ExplorerPreferences {
         optimizeExternalTransfer = p.getBoolean("optimize_external_transfer", true),
         startupLeft = p.getString("startup_left", "home") ?: "home",
         startupRight = p.getString("startup_right", "home") ?: "home",
-        requestRootAtStartup = p.getBoolean("request_root_startup", false),
-        requestShellAtStartup = p.getBoolean("request_shell_startup", false),
-        showBookmarksInSidebar = p.getBoolean("show_bookmarks_in_sidebar", true),
         fileMenuOrder = decodeFileMenuOrder(p.getString("file_menu_order", null)),
         builtInOpenOrder = decodeOrder(p.getString("built_in_open_order", null), ExplorerPrefs.defaultBuiltInOpenOrder),
     )
@@ -124,20 +118,15 @@ object ExplorerPreferences {
             .putBoolean("optimize_external_transfer", v.optimizeExternalTransfer)
             .putString("startup_left", v.startupLeft)
             .putString("startup_right", v.startupRight)
-            .putBoolean("request_root_startup", v.requestRootAtStartup)
-            .putBoolean("request_shell_startup", v.requestShellAtStartup)
-            .putBoolean("show_bookmarks_in_sidebar", v.showBookmarksInSidebar)
             .putString("file_menu_order", v.fileMenuOrder.joinToString(","))
             .putString("built_in_open_order", v.builtInOpenOrder.joinToString(","))
             .apply()
     }
 
-
     private fun decodeFileMenuOrder(raw: String?): List<String> {
-        // Migrate the order shipped before the MT-classic context-menu alignment.
+        // Migrate the order used by older MTApktool builds to the MT-style action order.
         val legacy = "copy,move,delete,rename,tools,compress,properties,share,open_with,bookmark"
-        val effective = if (raw == legacy) null else raw
-        return decodeOrder(effective, ExplorerPrefs.defaultFileMenuOrder)
+        return decodeOrder(if (raw == legacy) null else raw, ExplorerPrefs.defaultFileMenuOrder)
     }
 
     private fun decodeOrder(raw: String?, defaults: List<String>): List<String> {

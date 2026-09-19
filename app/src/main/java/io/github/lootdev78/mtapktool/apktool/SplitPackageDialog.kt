@@ -116,7 +116,7 @@ fun SplitPackageDialog(
                     ) {
                         Icon(Icons.Default.InstallMobile, null)
                         Spacer(Modifier.width(6.dp))
-                        Text("INSTALL", maxLines = 1)
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("INSTALL"), maxLines = 1)
                     }
                     Button(
                         modifier = Modifier.weight(1f),
@@ -125,7 +125,7 @@ fun SplitPackageDialog(
                     ) {
                         Icon(Icons.Default.MergeType, null)
                         Spacer(Modifier.width(6.dp))
-                        Text("ZU APK", maxLines = 1)
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ZU APK"), maxLines = 1)
                     }
                 }
 
@@ -134,9 +134,9 @@ fun SplitPackageDialog(
                         val preferred = entries.firstOrNull { it.preferred }
                         selected = entries.filter { it.preferred || it.path.contains("config", true) }.map { it.path }.toSet()
                             .ifEmpty { preferred?.let { setOf(it.path) } ?: emptySet() }
-                    }) { Text("AUTO", maxLines = 1) }
-                    TextButton(onClick = { selected = entries.map { it.path }.toSet() }) { Text("ALLE", maxLines = 1) }
-                    TextButton(onClick = { selected = entries.firstOrNull { it.preferred }?.let { setOf(it.path) } ?: emptySet() }) { Text("NUR BASE", maxLines = 1) }
+                    }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("AUTO"), maxLines = 1) }
+                    TextButton(onClick = { selected = entries.map { it.path }.toSet() }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ALLE"), maxLines = 1) }
+                    TextButton(onClick = { selected = entries.firstOrNull { it.preferred }?.let { setOf(it.path) } ?: emptySet() }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("NUR BASE"), maxLines = 1) }
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -155,7 +155,7 @@ fun SplitPackageDialog(
                                     .onFailure { Toast.makeText(context, it.message ?: "Extract failed", Toast.LENGTH_LONG).show() }
                             }
                         },
-                    ) { Text("BASE EXTRAHIEREN", maxLines = 1) }
+                    ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("BASE EXTRAHIEREN"), maxLines = 1) }
                     TextButton(
                         modifier = Modifier.weight(1f),
                         enabled = chosen.isNotEmpty() && !busy,
@@ -170,10 +170,10 @@ fun SplitPackageDialog(
                                     .onFailure { Toast.makeText(context, it.message ?: "Extract failed", Toast.LENGTH_LONG).show() }
                             }
                         },
-                    ) { Text("AUSWAHL EXTRAHIEREN", maxLines = 1) }
+                    ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("AUSWAHL EXTRAHIEREN"), maxLines = 1) }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { onDismiss(); onDecode() }, enabled = !busy) { Text("DEKOMPILIEREN", maxLines = 1) }
+                    TextButton(onClick = { onDismiss(); onDecode() }, enabled = !busy) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("DEKOMPILIEREN"), maxLines = 1) }
                 }
 
                 if (busy) {
@@ -188,7 +188,7 @@ fun SplitPackageDialog(
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))
-                        Text("APKs werden gelesen …")
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("APKs werden gelesen …"))
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
@@ -221,7 +221,7 @@ fun SplitPackageDialog(
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss, enabled = !busy) { Text("SCHLIESSEN") }
+                    TextButton(onClick = onDismiss, enabled = !busy) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) }
                 }
             }
         }
@@ -269,24 +269,24 @@ private fun SplitMergeDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("AntiSplit-M · Zu APK") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("AntiSplit-M · Zu APK")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text("${entries.size} APK(s) ausgewählt", style = MaterialTheme.typography.bodySmall)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("${entries.size} APK(s) ausgewählt"), style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    TextButton(onClick = { choose(defaultDir.absolutePath, sourcePane) }) { Text("GLEICHER") }
-                    TextButton(onClick = { choose(leftPath, ActivePane.LEFT) }, enabled = !leftPath.startsWith("content://")) { Text("LINKS") }
-                    TextButton(onClick = { choose(rightPath, ActivePane.RIGHT) }, enabled = !rightPath.startsWith("content://")) { Text("RECHTS") }
+                    TextButton(onClick = { choose(defaultDir.absolutePath, sourcePane) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("GLEICHER")) }
+                    TextButton(onClick = { choose(leftPath, ActivePane.LEFT) }, enabled = !leftPath.startsWith("content://")) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("LINKS")) }
+                    TextButton(onClick = { choose(rightPath, ActivePane.RIGHT) }, enabled = !rightPath.startsWith("content://")) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("RECHTS")) }
                 }
-                OutlinedTextField(value = output, onValueChange = { output = it }, label = { Text("Ausgabe-APK") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-                OutlinedTextField(value = compression, onValueChange = { compression = it.filter(Char::isDigit).take(1) }, label = { Text("Kompression 0–9") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                OutlinedTextField(value = output, onValueChange = { output = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Ausgabe-APK")) }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                OutlinedTextField(value = compression, onValueChange = { compression = it.filter(Char::isDigit).take(1) }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Kompression 0–9")) }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
                 Row(Modifier.fillMaxWidth().clickable { force = !force }, verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(force, { force = it }); Text("Force Merge")
+                    Checkbox(force, { force = it }); Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Force Merge"))
                 }
                 Row(Modifier.fillMaxWidth().clickable { autoSign = !autoSign }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(autoSign, { autoSign = it })
                     Column {
-                        Text("Automatisch signieren")
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Automatisch signieren"))
                         Text(
                             ApktoolSettings.signatureLabel(ApktoolSettings.signatureDefaults(context)),
                             style = MaterialTheme.typography.bodySmall,
@@ -299,7 +299,7 @@ private fun SplitMergeDialog(
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("ABBRECHEN") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
         confirmButton = {
             TextButton(
                 enabled = !busy && entries.isNotEmpty() && output.isNotBlank(),
@@ -319,7 +319,7 @@ private fun SplitMergeDialog(
                             .onFailure { Toast.makeText(context, it.message ?: "Merge failed", Toast.LENGTH_LONG).show() }
                     }
                 },
-            ) { Text("ERSTELLEN") }
+            ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ERSTELLEN")) }
         },
     )
 }

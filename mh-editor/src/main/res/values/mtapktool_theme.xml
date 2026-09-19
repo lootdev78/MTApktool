@@ -16,8 +16,8 @@
     </style>
     <style name="MTApktoolEditorTheme.Dark" parent="@android:style/Theme.Material">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#42A5F5</item>
-        <item name="android:colorControlHighlight">#3342A5F5</item>
+        <item name="android:colorAccent">#1976D2</item>
+        <item name="android:colorControlHighlight">#331976D2</item>
         <item name="android:colorControlNormal">#D8D8D8</item>
         <item name="android:windowBackground">#303030</item>
         <item name="android:navigationBarColor">#000000</item>

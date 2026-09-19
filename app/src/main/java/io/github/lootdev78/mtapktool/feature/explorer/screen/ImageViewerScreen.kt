@@ -1,6 +1,12 @@
 package io.github.lootdev78.mtapktool.feature.explorer.screen
 
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
@@ -10,115 +16,122 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ImageViewerScreen(
-    filePath: String,
-    onBackClick: () -> Unit
-) {
-    val currentFile = remember { File(filePath) }
-    val parentDir = remember { currentFile.parentFile }
-    val imageFiles = remember {
-        parentDir?.listFiles { file ->
-            val ext = file.extension.lowercase()
-            ext in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")
-        }?.sortedBy { it.name } ?: listOf(currentFile)
+fun ImageViewerScreen(filePath: String, onBackClick: () -> Unit) {
+    val isContent = filePath.startsWith("content://")
+    val currentFile = remember(filePath) { if (isContent) null else File(filePath) }
+    val imageSources = remember(filePath) {
+        if (isContent) listOf(filePath)
+        else {
+            val file = File(filePath)
+            file.parentFile?.listFiles { candidate ->
+                candidate.isFile && candidate.extension.lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif")
+            }?.sortedBy { it.name.lowercase() }?.map(File::getAbsolutePath).orEmpty().ifEmpty { listOf(filePath) }
+        }
     }
-    
-    val initialIndex = remember {
-        val index = imageFiles.indexOfFirst { it.absolutePath == currentFile.absolutePath }
-        if (index != -1) index else 0
-    }
+    val initialIndex = remember(imageSources, filePath) { imageSources.indexOf(filePath).coerceAtLeast(0) }
+    val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { imageSources.size })
+    var chromeVisible by remember { mutableStateOf(true) }
+    var zoomed by remember { mutableStateOf(false) }
+    BackHandler(onBack = onBackClick)
 
-    val pagerState = rememberPagerState(initialPage = initialIndex) {
-        imageFiles.size
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(imageFiles[pagerState.currentPage].name) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black.copy(alpha = 0.5f),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
-        },
-        containerColor = Color.Black
-    ) { innerPadding ->
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier = Modifier.fillMaxSize(),
             beyondViewportPageCount = 1,
-            userScrollEnabled = true // We will manage this per-page if needed, or keep it simple for now
+            userScrollEnabled = !zoomed,
         ) { page ->
-            var isZoomed by remember { mutableStateOf(false) }
-            
-            // Note: In a more advanced implementation, we'd pass isZoomed back to disable pager scrolling
             ZoomableImage(
-                file = imageFiles[page],
-                onZoomChanged = { zoomed -> isZoomed = zoomed }
+                source = imageSources[page],
+                onZoomChanged = { zoomed = it },
+                onTap = { chromeVisible = !chromeVisible },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            TopAppBar(
+                title = {
+                    val name = if (imageSources[pagerState.currentPage].startsWith("content://")) {
+                        Uri.parse(imageSources[pagerState.currentPage]).lastPathSegment ?: "Image"
+                    } else File(imageSources[pagerState.currentPage]).name
+                    Text(if (imageSources.size > 1) "$name  ${pagerState.currentPage + 1}/${imageSources.size}" else name, maxLines = 1)
+                },
+                navigationIcon = { IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Black.copy(alpha = 0.62f),
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                ),
             )
         }
     }
 }
 
 @Composable
-fun ZoomableImage(
-    file: File,
-    onZoomChanged: (Boolean) -> Unit = {}
-) {
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    val state = rememberTransformableState { zoomChange, offsetChange, _ ->
-        val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-        scale = newScale
-        onZoomChanged(newScale > 1f)
-        
-        if (newScale > 1f) {
-            offset += offsetChange
-        } else {
-            offset = Offset.Zero
-        }
+private fun ZoomableImage(source: String, onZoomChanged: (Boolean) -> Unit, onTap: () -> Unit) {
+    var scale by remember(source) { mutableFloatStateOf(1f) }
+    var offset by remember(source) { mutableStateOf(Offset.Zero) }
+    val transform = rememberTransformableState { zoomChange, offsetChange, _ ->
+        val next = (scale * zoomChange).coerceIn(1f, 6f)
+        scale = next
+        offset = if (next > 1f) offset + offsetChange else Offset.Zero
+        onZoomChanged(next > 1f)
     }
-
     Box(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
-            .transformable(state = state)
+            .pointerInput(source) {
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onDoubleTap = {
+                        scale = if (scale > 1f) 1f else 2.5f
+                        if (scale == 1f) offset = Offset.Zero
+                        onZoomChanged(scale > 1f)
+                    },
+                )
+            }
+            .transformable(transform)
             .graphicsLayer(
                 scaleX = scale,
                 scaleY = scale,
                 translationX = offset.x,
-                translationY = offset.y
+                translationY = offset.y,
             ),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
-            model = file,
+            model = if (source.startsWith("content://")) Uri.parse(source) else File(source),
             contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit
+            modifier = Modifier.fillMaxSize().padding(2.dp),
+            contentScale = ContentScale.Fit,
         )
     }
 }

@@ -1,19 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Geometric M: file-manager dual-pane identity without copying MT's launcher mark. -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M22,29 L36,29 L52,50 L68,29 L82,29 L82,75 L70,75 L70,47 L57,65 L47,65 L34,47 L34,75 L22,75 Z" />
-    <!-- APK/package cube. -->
-    <path
-        android:fillColor="#FFF4AC05"
-        android:pathData="M61,61 L75,53 L89,61 L75,69 Z M61,64 L73,71 L73,86 L61,79 Z M77,71 L89,64 L89,79 L77,86 Z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:fillAlpha="0.80"
-        android:pathData="M74,58 L79,61 L74,64 L69,61 Z" />
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M22,29L36,29L52,50L68,29L82,29L82,75L70,75L70,47L57,65L47,65L34,47L34,75L22,75Z" />
+    <path android:fillColor="#FFF4AC05" android:pathData="M61,61L75,53L89,61L75,69ZM61,64L73,71L73,86L61,79ZM77,71L89,64L89,79L77,86Z" />
+    <path android:fillColor="#CCFFFFFF" android:pathData="M74,58L79,61L74,64L69,61Z" />
 </vector>

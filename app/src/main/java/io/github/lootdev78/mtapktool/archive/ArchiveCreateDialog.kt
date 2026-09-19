@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 import java.io.File
 
 @Composable
@@ -66,7 +67,7 @@ fun ArchiveCreateDialog(
     var splitMenu by remember { mutableStateOf(false) }
 
     fun updateExtension(newFormat: ArchiveFormat) {
-        val oldExtension = ArchiveFormat.entries.firstOrNull { fileName.lowercase().endsWith(it.extension) }?.extension
+        val oldExtension = ArchiveFormat.creatable.firstOrNull { fileName.lowercase().endsWith(it.extension) }?.extension
         val base = if (oldExtension != null) fileName.dropLast(oldExtension.length) else fileName
         format = newFormat
         fileName = base + newFormat.extension
@@ -75,29 +76,29 @@ fun ArchiveCreateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create archive", fontWeight = FontWeight.SemiBold) },
+        title = { Text(UiText.t("Create archive", "Archiv erstellen"), fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = fileName,
                     onValueChange = { fileName = it },
-                    label = { Text("Filename") },
+                    label = { Text(UiText.t("Filename", "Dateiname")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ArchiveDropdown(
-                        label = "Format",
+                        label = UiText.t("Format", "Format"),
                         value = format.label,
                         expanded = formatMenu,
                         onExpandedChange = { formatMenu = it },
-                        items = ArchiveFormat.entries.map { it.label },
+                        items = ArchiveFormat.creatable.map { it.label },
                         onSelect = { label -> updateExtension(ArchiveFormat.fromLabel(label)); formatMenu = false },
                         modifier = Modifier.weight(1f),
                     )
                     ArchiveDropdown(
-                        label = "Level",
+                        label = UiText.t("Level", "Stufe"),
                         value = level.label,
                         expanded = levelMenu,
                         onExpandedChange = { levelMenu = it },
@@ -111,7 +112,7 @@ fun ArchiveCreateDialog(
                     value = password,
                     onValueChange = { password = it },
                     enabled = format == ArchiveFormat.ZIP || format == ArchiveFormat.SEVEN_Z,
-                    label = { Text(if (format == ArchiveFormat.ZIP || format == ArchiveFormat.SEVEN_Z) "Password (no encryption if empty)" else "Password (ZIP/7z only)") },
+                    label = { Text(if (format == ArchiveFormat.ZIP || format == ArchiveFormat.SEVEN_Z) UiText.t("Password (no encryption if empty)", "Passwort (leer = keine Verschlüsselung)") else UiText.t("Password (ZIP/7z only)", "Passwort (nur ZIP/7z)")) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
@@ -119,13 +120,13 @@ fun ArchiveCreateDialog(
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
                     ArchiveDropdown(
-                        label = "Split length",
-                        value = if (splitCustom) "Custom..." else "None",
+                        label = UiText.t("Split length", "Teilgröße"),
+                        value = if (splitCustom) UiText.t("Custom…", "Benutzerdefiniert…") else UiText.t("None", "Keine"),
                         expanded = splitMenu,
                         onExpandedChange = { splitMenu = it },
-                        items = listOf("None", "Custom..."),
+                        items = listOf(UiText.t("None", "Keine"), UiText.t("Custom…", "Benutzerdefiniert…")),
                         onSelect = {
-                            splitCustom = it == "Custom..."
+                            splitCustom = it == UiText.t("Custom…", "Benutzerdefiniert…")
                             if (!splitCustom) splitMb = ""
                             splitMenu = false
                         },
@@ -135,23 +136,23 @@ fun ArchiveCreateDialog(
                         value = splitMb,
                         onValueChange = { splitMb = it.filter(Char::isDigit) },
                         enabled = splitCustom,
-                        label = { Text("MB") },
+                        label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("MB")) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.width(112.dp),
                     )
                 }
 
-                ArchiveSwitchRow("Compress each file/folder independently", each) { each = it }
-                ArchiveSwitchRow("Delete original", deleteSources) { deleteSources = it }
+                ArchiveSwitchRow(UiText.t("Compress each file/folder independently", "Jede Datei/jeden Ordner einzeln komprimieren"), each) { each = it }
+                ArchiveSwitchRow(UiText.t("Delete source files after compression", "Quelldateien nach Komprimierung löschen"), deleteSources) { deleteSources = it }
                 ArchiveSwitchRow(
-                    "Compress to another window path\n${oppositeDirectory.absolutePath}",
+                    UiText.t("Compress to other pane\n${oppositeDirectory.absolutePath}", "In anderes Fenster komprimieren\n${oppositeDirectory.absolutePath}"),
                     toOtherPane,
                 ) { toOtherPane = it }
 
-                if (format == ArchiveFormat.GZIP || format == ArchiveFormat.XZ) {
+                if (format in setOf(ArchiveFormat.GZIP, ArchiveFormat.XZ, ArchiveFormat.BZIP2, ArchiveFormat.ZSTD, ArchiveFormat.LZ4)) {
                     Text(
-                        "gzip/xz accepts one regular file. For folders or multiple selections choose tar.${if (format == ArchiveFormat.GZIP) "gz" else "xz"}.",
+                        UiText.t("Single-stream formats accept one regular file. For folders or multiple selections choose a tar.* format.", "Einzelstromformate akzeptieren genau eine Datei. Für Ordner oder Mehrfachauswahl ein tar.*-Format verwenden."),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -179,9 +180,9 @@ fun ArchiveCreateDialog(
                     )
                 },
                 enabled = fileName.isNotBlank() && (!splitCustom || (splitMb.toLongOrNull() ?: 0L) > 0L),
-            ) { Text("OK") }
+            ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(UiText.t("CANCEL", "ABBRECHEN")) } },
     )
 }
 

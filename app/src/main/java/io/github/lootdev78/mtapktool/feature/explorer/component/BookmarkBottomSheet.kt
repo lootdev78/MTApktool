@@ -1,6 +1,5 @@
 package io.github.lootdev78.mtapktool.feature.explorer.component
 
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,11 +14,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -31,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -44,22 +48,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import io.github.lootdev78.mtapktool.R
-import io.github.lootdev78.mtapktool.feature.explorer.bookmark.BookmarkGroup
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 import io.github.lootdev78.mtapktool.feature.explorer.bookmark.BookmarkState
 import io.github.lootdev78.mtapktool.feature.explorer.bookmark.BookmarkStore
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import java.io.File
 
 /**
- * MT-style bookmark drawer opened from the file-manager bottom toolbar.
- * It deliberately stays inside the existing explorer feature set: grouped paths,
- * ordering and pane-aware navigation, without introducing a separate manager screen.
+ * Pull-up bookmark bar modeled after MT's file-manager workflow, implemented entirely
+ * in MTApktool. Groups and ordering are persisted by [BookmarkStore].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,282 +67,212 @@ fun BookmarkBottomSheet(
     activePane: ActivePane,
     gesturePane: ActivePane,
     currentPath: String,
-    onStateChange: (BookmarkState) -> Unit,
-    onOpenPath: (ActivePane, String) -> Unit,
+    onChange: (BookmarkState) -> Unit,
+    onOpen: (ActivePane, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    var selectedGroupId by remember {
-        mutableStateOf(state.groups.firstOrNull()?.id ?: BookmarkState.DEFAULT_GROUP_ID)
-    }
-    val selectedGroup = state.groups.firstOrNull { it.id == selectedGroupId } ?: state.defaultGroup
-    var headerMenu by remember { mutableStateOf(false) }
-    var addGroupDialog by remember { mutableStateOf(false) }
-    var renameGroupDialog by remember { mutableStateOf(false) }
-    var deleteGroupDialog by remember { mutableStateOf(false) }
-    var pendingDeletePath by remember { mutableStateOf<String?>(null) }
-    var pendingMovePath by remember { mutableStateOf<String?>(null) }
+    var groupId by remember { mutableStateOf(state.groups.firstOrNull()?.id ?: BookmarkState.DEFAULT) }
+    val group = state.groups.firstOrNull { it.id == groupId } ?: state.groups.firstOrNull() ?: return
+    var menu by remember { mutableStateOf(false) }
+    var addGroup by remember { mutableStateOf(false) }
+    var renameGroup by remember { mutableStateOf(false) }
+    var deleteGroup by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
+    var pendingMove by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        shape = MaterialTheme.shapes.small,
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp),
-        dragHandle = {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 7.dp, bottom = 3.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Surface(
-                    modifier = Modifier.width(42.dp).height(4.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                    shape = RoundedCornerShape(2.dp),
-                ) {}
-            }
-        },
     ) {
-        Column(Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp, top = 2.dp, bottom = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Lesezeichen",
-                    modifier = Modifier.weight(1f),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                IconButton(
-                    onClick = {
-                        onStateChange(BookmarkStore.addPath(state, currentPath, selectedGroup.id))
-                    },
-                ) {
-                    Icon(painterResource(R.drawable.mt_ic_bookmark_add), contentDescription = "Aktuellen Pfad hinzufügen")
-                }
-                Box {
-                    IconButton(onClick = { headerMenu = true }) {
-                        Icon(painterResource(R.drawable.mt_ic_more), contentDescription = "Lesezeichenoptionen")
-                    }
-                    DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Gruppe hinzufügen") },
-                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_add), null) },
-                            onClick = { headerMenu = false; addGroupDialog = true },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Gruppe umbenennen") },
-                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_rename), null) },
-                            enabled = selectedGroup.id != BookmarkState.DEFAULT_GROUP_ID,
-                            onClick = { headerMenu = false; renameGroupDialog = true },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Gruppe löschen") },
-                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_delete), null) },
-                            enabled = selectedGroup.id != BookmarkState.DEFAULT_GROUP_ID,
-                            onClick = { headerMenu = false; deleteGroupDialog = true },
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text("Neue Lesezeichen oben hinzufügen")
-                                    Text(
-                                        if (state.addNewToTop) "Neue Einträge stehen am Anfang der Gruppe." else "Neue Einträge stehen am Ende der Gruppe.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            trailingIcon = {
-                                Switch(
-                                    checked = state.addNewToTop,
-                                    onCheckedChange = { onStateChange(state.copy(addNewToTop = it)) },
-                                )
-                            },
-                            onClick = { onStateChange(state.copy(addNewToTop = !state.addNewToTop)) },
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text("Fensterposition beim Hochziehen beachten")
-                                    Text(
-                                        "Links oder rechts geöffnetes Lesezeichen folgt der Fingerposition.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            trailingIcon = {
-                                Switch(
-                                    checked = state.positionAwareSwipe,
-                                    onCheckedChange = { onStateChange(state.copy(positionAwareSwipe = it)) },
-                                )
-                            },
-                            onClick = { onStateChange(state.copy(positionAwareSwipe = !state.positionAwareSwipe)) },
-                        )
-                    }
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(UiText.t("Bookmarks", "Lesezeichen"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            IconButton(onClick = { onChange(BookmarkStore.add(state, listOf(currentPath), group.id)) }) {
+                Icon(Icons.Default.BookmarkAdd, contentDescription = UiText.t("Add current path", "Aktuellen Pfad hinzufügen"))
             }
-
-            if (state.groups.size > 1) {
-                val selectedIndex = state.groups.indexOfFirst { it.id == selectedGroup.id }.coerceAtLeast(0)
-                ScrollableTabRow(
-                    selectedTabIndex = selectedIndex,
-                    edgePadding = 8.dp,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    divider = { HorizontalDivider() },
-                ) {
-                    state.groups.forEach { group ->
-                        Tab(
-                            selected = group.id == selectedGroup.id,
-                            onClick = { selectedGroupId = group.id },
-                            text = { Text(group.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        )
-                    }
-                }
-            } else {
-                HorizontalDivider()
-            }
-
-            if (selectedGroup.paths.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp).padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        painterResource(R.drawable.mt_ic_bookmark_add),
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = UiText.t("Bookmark options", "Lesezeichenoptionen")) }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(UiText.t("Add group", "Gruppe hinzufügen")) },
+                        onClick = { menu = false; addGroup = true },
+                        leadingIcon = { Icon(Icons.Default.Add, null) },
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Text("Keine Lesezeichen in dieser Gruppe", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { onStateChange(BookmarkStore.addPath(state, currentPath, selectedGroup.id)) }) {
-                        Text("AKTUELLEN PFAD HINZUFÜGEN")
-                    }
+                    DropdownMenuItem(
+                        text = { Text(UiText.t("Rename group", "Gruppe umbenennen")) },
+                        onClick = { menu = false; renameGroup = true },
+                        leadingIcon = { Icon(Icons.Default.Edit, null) },
+                        enabled = group.id != BookmarkState.DEFAULT,
+                    )
+                    DropdownMenuItem(
+                        text = { Text(UiText.t("Delete group", "Gruppe löschen")) },
+                        onClick = { menu = false; deleteGroup = true },
+                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        enabled = group.id != BookmarkState.DEFAULT,
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text(UiText.t("Add new bookmarks at top", "Neue Lesezeichen oben hinzufügen")) },
+                        onClick = { onChange(state.copy(addNewToTop = !state.addNewToTop)) },
+                        trailingIcon = {
+                            Switch(
+                                checked = state.addNewToTop,
+                                onCheckedChange = { onChange(state.copy(addNewToTop = it)) },
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(UiText.t("Use swipe position for target pane", "Wischposition für Zielfenster verwenden")) },
+                        onClick = { onChange(state.copy(positionAwareSwipe = !state.positionAwareSwipe)) },
+                        trailingIcon = {
+                            Switch(
+                                checked = state.positionAwareSwipe,
+                                onCheckedChange = { onChange(state.copy(positionAwareSwipe = it)) },
+                            )
+                        },
+                    )
                 }
-            } else {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
-                    itemsIndexed(selectedGroup.paths, key = { _, path -> "${selectedGroup.id}:$path" }) { index, path ->
-                        BookmarkRow(
-                            path = path,
-                            index = index,
-                            count = selectedGroup.paths.size,
-                            onOpen = {
-                                val pane = if (state.positionAwareSwipe) gesturePane else activePane
-                                onOpenPath(pane, path)
-                                onDismiss()
-                            },
-                            onOpenOther = {
-                                val base = if (state.positionAwareSwipe) gesturePane else activePane
-                                val pane = if (base == ActivePane.LEFT) ActivePane.RIGHT else ActivePane.LEFT
-                                onOpenPath(pane, path)
-                                onDismiss()
-                            },
-                            onMoveUp = { onStateChange(BookmarkStore.movePath(state, selectedGroup.id, path, -1)) },
-                            onMoveDown = { onStateChange(BookmarkStore.movePath(state, selectedGroup.id, path, 1)) },
-                            onMoveGroup = { pendingMovePath = path },
-                            onDelete = { pendingDeletePath = path },
-                        )
-                        HorizontalDivider(Modifier.padding(start = 52.dp))
+            }
+        }
+
+        if (state.groups.size > 1) {
+            ScrollableTabRow(
+                selectedTabIndex = state.groups.indexOfFirst { it.id == group.id }.coerceAtLeast(0),
+                edgePadding = 8.dp,
+                containerColor = MaterialTheme.colorScheme.surface,
+                divider = { HorizontalDivider() },
+            ) {
+                state.groups.forEach { item ->
+                    Tab(
+                        selected = item.id == group.id,
+                        onClick = { groupId = item.id },
+                        text = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    )
+                }
+            }
+        } else {
+            HorizontalDivider()
+        }
+
+        if (group.paths.isEmpty()) {
+            Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.BookmarkAdd, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Text(UiText.t("No bookmarks", "Keine Lesezeichen"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { onChange(BookmarkStore.add(state, listOf(currentPath), group.id)) }) {
+                        Text(UiText.t("ADD CURRENT PATH", "AKTUELLEN PFAD HINZUFÜGEN"))
                     }
                 }
             }
-
-            Text(
-                text = "Von der unteren Dateileiste nach oben ziehen, um Lesezeichen zu öffnen.",
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        } else {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
+                itemsIndexed(group.paths, key = { _, path -> "${group.id}:$path" }) { index, path ->
+                    BookmarkRow(
+                        path = path,
+                        index = index,
+                        total = group.paths.size,
+                        onOpen = {
+                            val pane = if (state.positionAwareSwipe) gesturePane else activePane
+                            onOpen(pane, path)
+                            onDismiss()
+                        },
+                        onOpenOther = {
+                            val base = if (state.positionAwareSwipe) gesturePane else activePane
+                            onOpen(if (base == ActivePane.LEFT) ActivePane.RIGHT else ActivePane.LEFT, path)
+                            onDismiss()
+                        },
+                        onMoveUp = { onChange(BookmarkStore.move(state, group.id, path, -1)) },
+                        onMoveDown = { onChange(BookmarkStore.move(state, group.id, path, 1)) },
+                        onMoveGroup = { pendingMove = path },
+                        onDelete = { pendingDelete = path },
+                    )
+                    HorizontalDivider(Modifier.padding(start = 52.dp))
+                }
+            }
         }
-    }
 
-    if (addGroupDialog) {
-        NameDialog(
-            title = "Gruppe hinzufügen",
-            initialValue = "",
-            confirmLabel = "HINZUFÜGEN",
-            onConfirm = { name ->
-                val next = BookmarkStore.addGroup(state, name)
-                onStateChange(next)
-                next.groups.lastOrNull()?.takeIf { it.name.equals(name.trim(), ignoreCase = true) }?.let { selectedGroupId = it.id }
-                addGroupDialog = false
-            },
-            onDismiss = { addGroupDialog = false },
+        Text(
+            UiText.t("Swipe upward from the bottom file bar to open bookmarks.", "Von der unteren Dateileiste nach oben ziehen, um Lesezeichen zu öffnen."),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 
-    if (renameGroupDialog) {
-        NameDialog(
-            title = "Gruppe umbenennen",
-            initialValue = selectedGroup.name,
-            confirmLabel = "UMBENENNEN",
-            onConfirm = { name ->
-                onStateChange(BookmarkStore.renameGroup(state, selectedGroup.id, name))
-                renameGroupDialog = false
-            },
-            onDismiss = { renameGroupDialog = false },
-        )
+    if (addGroup) {
+        NamePrompt(UiText.t("Add group", "Gruppe hinzufügen"), "", { name ->
+            val next = BookmarkStore.addGroup(state, name)
+            onChange(next)
+            next.groups.lastOrNull()?.let { groupId = it.id }
+            addGroup = false
+        }, { addGroup = false })
     }
-
-    if (deleteGroupDialog) {
+    if (renameGroup) {
+        NamePrompt(UiText.t("Rename group", "Gruppe umbenennen"), group.name, { name ->
+            onChange(BookmarkStore.renameGroup(state, group.id, name))
+            renameGroup = false
+        }, { renameGroup = false })
+    }
+    if (deleteGroup) {
         AlertDialog(
-            onDismissRequest = { deleteGroupDialog = false },
-            title = { Text("Gruppe löschen") },
-            text = { Text("Gruppe „${selectedGroup.name}“ löschen? Die enthaltenen Lesezeichen werden in die Standardgruppe verschoben.") },
-            dismissButton = { TextButton(onClick = { deleteGroupDialog = false }) { Text("ABBRECHEN") } },
+            onDismissRequest = { deleteGroup = false },
+            title = { Text(UiText.t("Delete group", "Gruppe löschen")) },
+            text = { Text(UiText.t("Bookmarks in this group are moved to Default.", "Lesezeichen dieser Gruppe werden in Standard verschoben.")) },
             confirmButton = {
                 TextButton(onClick = {
-                    onStateChange(BookmarkStore.deleteGroup(state, selectedGroup.id))
-                    selectedGroupId = BookmarkState.DEFAULT_GROUP_ID
-                    deleteGroupDialog = false
-                }) { Text("LÖSCHEN") }
+                    onChange(BookmarkStore.deleteGroup(state, group.id))
+                    groupId = BookmarkState.DEFAULT
+                    deleteGroup = false
+                }) { Text(UiText.t("DELETE", "LÖSCHEN")) }
             },
+            dismissButton = { TextButton(onClick = { deleteGroup = false }) { Text(UiText.t("CANCEL", "ABBRECHEN")) } },
         )
     }
-
-    pendingDeletePath?.let { path ->
+    pendingDelete?.let { path ->
         AlertDialog(
-            onDismissRequest = { pendingDeletePath = null },
-            title = { Text("Lesezeichen löschen") },
-            text = { Text("Lesezeichen „${bookmarkName(path)}“ entfernen?") },
-            dismissButton = { TextButton(onClick = { pendingDeletePath = null }) { Text("ABBRECHEN") } },
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(UiText.t("Remove bookmark", "Lesezeichen entfernen")) },
+            text = { Text(File(path).name.ifBlank { path }) },
             confirmButton = {
                 TextButton(onClick = {
-                    onStateChange(BookmarkStore.removePath(state, path))
-                    pendingDeletePath = null
-                }) { Text("LÖSCHEN") }
+                    onChange(BookmarkStore.remove(state, path))
+                    pendingDelete = null
+                }) { Text(UiText.t("REMOVE", "ENTFERNEN")) }
             },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(UiText.t("CANCEL", "ABBRECHEN")) } },
         )
     }
-
-    pendingMovePath?.let { path ->
+    pendingMove?.let { path ->
         AlertDialog(
-            onDismissRequest = { pendingMovePath = null },
-            title = { Text("Zu Gruppe verschieben") },
+            onDismissRequest = { pendingMove = null },
+            title = { Text(UiText.t("Move to group", "In Gruppe verschieben")) },
             text = {
                 Column {
-                    state.groups.filterNot { it.id == selectedGroup.id }.forEach { group ->
+                    state.groups.filterNot { it.id == group.id }.forEach { target ->
                         Row(
-                            Modifier.fillMaxWidth().clickable {
-                                onStateChange(BookmarkStore.movePathToGroup(state, path, group.id))
-                                pendingMovePath = null
-                                selectedGroupId = group.id
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                onChange(BookmarkStore.add(state, listOf(path), target.id))
+                                groupId = target.id
+                                pendingMove = null
                             }.padding(vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(painterResource(R.drawable.mt_ic_folder), null, modifier = Modifier.size(22.dp))
+                            Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.tertiary)
                             Spacer(Modifier.width(12.dp))
-                            Text(group.name)
+                            Text(target.name)
                         }
                     }
+                    if (state.groups.size <= 1) Text(UiText.t("Create another group first.", "Zuerst eine weitere Gruppe erstellen."))
                 }
             },
-            confirmButton = { TextButton(onClick = { pendingMovePath = null }) { Text("SCHLIESSEN") } },
+            confirmButton = { TextButton(onClick = { pendingMove = null }) { Text(UiText.t("CLOSE", "SCHLIESSEN")) } },
         )
     }
 }
@@ -352,7 +281,7 @@ fun BookmarkBottomSheet(
 private fun BookmarkRow(
     path: String,
     index: Int,
-    count: Int,
+    total: Int,
     onOpen: () -> Unit,
     onOpenOther: () -> Unit,
     onMoveUp: () -> Unit,
@@ -365,49 +294,42 @@ private fun BookmarkRow(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painterResource(R.drawable.mt_ic_folder),
-            contentDescription = null,
-            modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.tertiary,
-        )
+        Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(bookmarkName(path), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
-            Text(path, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(File(path).name.ifBlank { path }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(path, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Box {
-            IconButton(onClick = { menu = true }) {
-                Icon(painterResource(R.drawable.mt_ic_more), contentDescription = "Lesezeichenoptionen")
-            }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = UiText.t("Bookmark options", "Lesezeichenoptionen")) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
-                    text = { Text("Im anderen Fenster öffnen") },
-                    leadingIcon = { Icon(painterResource(R.drawable.mt_ic_swap), null) },
+                    text = { Text(UiText.t("Open in other pane", "Im anderen Fenster öffnen")) },
                     onClick = { menu = false; onOpenOther() },
+                    leadingIcon = { Icon(Icons.Default.SwapHoriz, null) },
                 )
                 DropdownMenuItem(
-                    text = { Text("Nach oben") },
-                    leadingIcon = { Icon(Icons.Default.ArrowUpward, null) },
-                    enabled = index > 0,
+                    text = { Text(UiText.t("Move up", "Nach oben")) },
                     onClick = { menu = false; onMoveUp() },
+                    enabled = index > 0,
+                    leadingIcon = { Icon(Icons.Default.KeyboardArrowUp, null) },
                 )
                 DropdownMenuItem(
-                    text = { Text("Nach unten") },
-                    leadingIcon = { Icon(Icons.Default.ArrowDownward, null) },
-                    enabled = index < count - 1,
+                    text = { Text(UiText.t("Move down", "Nach unten")) },
                     onClick = { menu = false; onMoveDown() },
+                    enabled = index < total - 1,
+                    leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, null) },
                 )
                 DropdownMenuItem(
-                    text = { Text("In Gruppe verschieben") },
-                    leadingIcon = { Icon(Icons.Default.DriveFileMove, null) },
+                    text = { Text(UiText.t("Move to group", "In Gruppe verschieben")) },
                     onClick = { menu = false; onMoveGroup() },
+                    leadingIcon = { Icon(Icons.Default.DriveFileMove, null) },
                 )
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { Text("Löschen") },
-                    leadingIcon = { Icon(painterResource(R.drawable.mt_ic_delete), null) },
+                    text = { Text(UiText.t("Remove", "Entfernen")) },
                     onClick = { menu = false; onDelete() },
+                    leadingIcon = { Icon(Icons.Default.Delete, null) },
                 )
             }
         }
@@ -415,72 +337,18 @@ private fun BookmarkRow(
 }
 
 @Composable
-fun BookmarkAddDialog(
-    state: BookmarkState,
-    itemCount: Int,
-    onAddToGroup: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var selectedGroupId by remember(state.groups) { mutableStateOf(state.defaultGroup.id) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (itemCount == 1) "Lesezeichen hinzufügen" else "$itemCount Dateien zu Lesezeichen hinzufügen") },
-        text = {
-            Column {
-                Text("Hinzufügen zu", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
-                state.groups.forEach { group ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable { selectedGroupId = group.id }.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            painterResource(if (group.id == selectedGroupId) R.drawable.mt_ic_bookmark_add else R.drawable.mt_ic_folder),
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = if (group.id == selectedGroupId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(group.name, modifier = Modifier.weight(1f))
-                        Text("${group.paths.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    }
-                }
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
-        confirmButton = { TextButton(onClick = { onAddToGroup(selectedGroupId) }) { Text("HINZUFÜGEN") } },
-    )
-}
-
-@Composable
-private fun NameDialog(
+private fun NamePrompt(
     title: String,
-    initialValue: String,
-    confirmLabel: String,
-    onConfirm: (String) -> Unit,
+    initial: String,
+    onSave: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var value by remember(initialValue) { mutableStateOf(initialValue) }
+    var value by remember(initial) { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                singleLine = true,
-                label = { Text("Name") },
-            )
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
-        confirmButton = { TextButton(enabled = value.isNotBlank(), onClick = { onConfirm(value) }) { Text(confirmLabel) } },
+        text = { OutlinedTextField(value = value, onValueChange = { value = it }, singleLine = true) },
+        confirmButton = { TextButton(onClick = { onSave(value) }, enabled = value.isNotBlank()) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(UiText.t("CANCEL", "ABBRECHEN")) } },
     )
-}
-
-private fun bookmarkName(path: String): String {
-    if (path.startsWith("content://")) {
-        val segment = runCatching { Uri.parse(path).lastPathSegment }.getOrNull().orEmpty()
-        return segment.substringAfterLast(':').substringAfterLast('/').ifBlank { "Dokument" }
-    }
-    return File(path).name.ifBlank { path }
 }

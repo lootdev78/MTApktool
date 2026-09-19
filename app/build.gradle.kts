@@ -126,6 +126,9 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.zip4j)
     implementation(libs.xz)
+    implementation(libs.junrar)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
     // Use the Android AAR so libzstd JNI payloads are packaged as native libraries.
     implementation("com.github.luben:zstd-jni:1.5.7-4@aar")
 

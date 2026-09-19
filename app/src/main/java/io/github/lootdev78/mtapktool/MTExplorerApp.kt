@@ -9,6 +9,7 @@ import io.github.lootdev78.mtapktool.feature.editor.CodeEditorScreen
 import io.github.lootdev78.mtapktool.feature.explorer.screen.ExplorerScreen
 import io.github.lootdev78.mtapktool.feature.explorer.screen.ApkExtractorScreen
 import io.github.lootdev78.mtapktool.feature.explorer.screen.ImageViewerScreen
+import io.github.lootdev78.mtapktool.feature.explorer.screen.MediaPlayerScreen
 import io.github.lootdev78.mtapktool.feature.explorer.screen.Screen
 
 @Composable
@@ -38,6 +39,22 @@ fun MTExplorerApp(navController: NavHostController) {
                 filePath = filePath,
                 fileName = fileName,
                 onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.MediaPlayer.route,
+            arguments = listOf(
+                navArgument("source") { defaultValue = "" },
+                navArgument("fileName") { defaultValue = "" },
+                navArgument("video") { defaultValue = "false" },
+            )
+        ) { backStackEntry ->
+            MediaPlayerScreen(
+                source = backStackEntry.arguments?.getString("source") ?: "",
+                displayName = backStackEntry.arguments?.getString("fileName") ?: "",
+                video = backStackEntry.arguments?.getString("video").toBoolean(),
+                onBack = { navController.popBackStack() },
             )
         }
 

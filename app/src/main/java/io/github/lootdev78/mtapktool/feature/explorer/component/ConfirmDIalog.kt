@@ -86,7 +86,7 @@ fun ConfirmDialog(
                     TextButton(onClick = {
                         onDismiss()
                     }) {
-                        Text("Cancel")
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Cancel"))
                     }
 
                     Spacer(Modifier.width(8.dp))
@@ -94,7 +94,7 @@ fun ConfirmDialog(
                     Button(onClick = {
                         onConfirm()
                     }) {
-                        Text("OK")
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK"))
                     }
                 }
             }

@@ -1,6 +1,6 @@
 package io.github.lootdev78.mtapktool.feature.explorer.screen
 
-import android.app.Activity
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -13,16 +13,8 @@ import android.webkit.MimeTypeMap
 import android.widget.Toast
 import com.android.apksig.ApkVerifier
 import androidx.activity.compose.BackHandler
-import androidx.annotation.DrawableRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -63,7 +55,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -89,7 +80,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,7 +89,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.navigation.NavHostController
-import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.ExternalOpenBridge
 import io.github.lootdev78.mtapktool.ExplorerOutputBridge
 import io.github.lootdev78.mtapktool.apktool.ApkFunctionsDialog
@@ -132,7 +121,6 @@ import io.github.lootdev78.mtapktool.feature.explorer.component.CustomCreateItem
 import io.github.lootdev78.mtapktool.feature.explorer.component.FileContextMenuDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.FileConflictDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.BuiltInOpenDialog
-import io.github.lootdev78.mtapktool.feature.explorer.component.BookmarkAddDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.BookmarkBottomSheet
 import io.github.lootdev78.mtapktool.feature.explorer.component.FileToolsDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.RenameDialog
@@ -149,6 +137,8 @@ import io.github.lootdev78.mtapktool.feature.explorer.state.FileFilter
 import io.github.lootdev78.mtapktool.feature.explorer.state.isArchiveFile
 import io.github.lootdev78.mtapktool.feature.explorer.state.isEditableTextFile
 import io.github.lootdev78.mtapktool.feature.explorer.state.isImageFile
+import io.github.lootdev78.mtapktool.feature.explorer.state.isAudioFile
+import io.github.lootdev78.mtapktool.feature.explorer.state.isVideoFile
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.FileConflictAction
@@ -176,6 +166,7 @@ fun ExplorerScreen(
     val apktoolJobsViewModel: ApktoolJobsViewModel = composeViewModel()
     val apktoolJobs by apktoolJobsViewModel.jobs.collectAsState()
     val archiveTasks by viewModel.archiveTasks.collectAsState()
+    val archiveUpdateRequest by viewModel.archiveUpdateRequest.collectAsState()
     var observedSuccessfulJobs by remember { mutableStateOf<Set<String>>(emptySet()) }
     var jobPaneById by remember { mutableStateOf<Map<String, ActivePane>>(emptyMap()) }
 
@@ -192,8 +183,9 @@ fun ExplorerScreen(
 
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME || event == Lifecycle.Event.ON_STOP) {
-                viewModel.commitMountedArchives()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.detectMountedArchiveChanges()
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -204,7 +196,9 @@ fun ExplorerScreen(
         bookmarkState = next
         BookmarkStore.save(context, next)
     }
-    val bookmarks = bookmarkState.defaultGroup.paths
+    val bookmarks = bookmarkState.groups.firstOrNull { it.id == io.github.lootdev78.mtapktool.feature.explorer.bookmark.BookmarkState.DEFAULT }?.paths.orEmpty()
+    var showBookmarks by remember { mutableStateOf(false) }
+    var bookmarkGesturePane by remember { mutableStateOf(activePane) }
     var customLocations by remember(context) { mutableStateOf(CustomLocationStore.load(context)) }
     var locationToEdit by remember { mutableStateOf<CustomLocation?>(null) }
     var locationEditName by remember { mutableStateOf("") }
@@ -217,13 +211,13 @@ fun ExplorerScreen(
                     locationToEdit = location
                     locationEditName = location.name
                 }
-                .onFailure { Toast.makeText(context, "Storage permission failed: ${it.message}", Toast.LENGTH_LONG).show() }
+                .onFailure { Toast.makeText(context, UiText.t("Storage permission failed: ${it.message}", "Speicherberechtigung fehlgeschlagen: ${it.message}"), Toast.LENGTH_LONG).show() }
         }
     }
 
     LaunchedEffect(viewModel, context) {
         viewModel.operationMessages.collect { message ->
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, UiText.auto(message), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -286,10 +280,6 @@ fun ExplorerScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var deletePane by remember { mutableStateOf(ActivePane.LEFT) }
     var recycleOnDelete by remember { mutableStateOf(false) }
-    var showBookmarks by remember { mutableStateOf(false) }
-    var bookmarkGesturePane by remember { mutableStateOf(activePane) }
-    var showBookmarkAdd by remember { mutableStateOf(false) }
-    var pendingBookmarkPaths by remember { mutableStateOf<List<String>>(emptyList()) }
 
     fun requestDelete(pane: ActivePane) {
         deletePane = pane
@@ -312,7 +302,7 @@ fun ExplorerScreen(
             }
         }
         runCatching { context.startActivity(intent) }
-            .onFailure { Toast.makeText(context, it.message ?: "Editor konnte nicht geöffnet werden", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(context, it.message ?: UiText.t("Editor could not be opened", "Editor konnte nicht geöffnet werden"), Toast.LENGTH_SHORT).show() }
     }
 
     fun materializeForTool(item: FileItem, pane: ActivePane, onReady: (File) -> Unit) {
@@ -327,7 +317,7 @@ fun ExplorerScreen(
             }
             viewModel.setPaneBusy(pane, false)
             result.onSuccess(onReady)
-                .onFailure { Toast.makeText(context, it.message ?: "Datei konnte nicht geöffnet werden", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(context, it.message ?: UiText.t("File could not be opened", "Datei konnte nicht geöffnet werden"), Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -349,7 +339,7 @@ fun ExplorerScreen(
         if (local != null && local.exists()) {
             viewModel.revealOutput(activePane, local.absolutePath)
         } else {
-            Toast.makeText(context, "Der Original-Speicherort dieser URI ist für Android nicht direkt auflösbar.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, UiText.t("Android cannot directly resolve the original filesystem location of this URI.", "Der Original-Speicherort dieser URI ist für Android nicht direkt auflösbar."), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -392,7 +382,7 @@ fun ExplorerScreen(
             targetItem = item
             showBuiltInOpen = true
         } else {
-            Toast.makeText(context, "Datei konnte nicht geöffnet werden", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, UiText.t("File could not be opened", "Datei konnte nicht geöffnet werden"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -404,6 +394,14 @@ fun ExplorerScreen(
         val ext = item.extensionName
         if (item.isEditableTextFile()) {
             openInTextEditor(item)
+            return
+        }
+        if (item.isImageFile()) {
+            navController.navigate(Screen.ImageViewer.createRoute(item.path, item.name))
+            return
+        }
+        if (item.isAudioFile() || item.isVideoFile()) {
+            navController.navigate(Screen.MediaPlayer.createRoute(item.path, item.name, item.isVideoFile()))
             return
         }
         if (ext in setOf("apk", "apks", "apkm", "xapk", "apkx") || item.isArchiveFile()) {
@@ -436,11 +434,38 @@ fun ExplorerScreen(
                     }
                 }.onFailure {
                     viewModel.setPaneBusy(pane, false)
-                    Toast.makeText(context, it.message ?: "Open failed", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, it.message ?: UiText.t("Open failed", "Öffnen fehlgeschlagen"), Toast.LENGTH_SHORT).show()
                 }
             }
         } else {
             FileOpener.openUri(context, Uri.parse(item.path), item.name, item.mimeType)
+        }
+    }
+
+    fun openLocalItem(pane: ActivePane, item: FileItem) {
+        if (item.isSaf) {
+            openSafItem(pane, item)
+            return
+        }
+        val file = File(item.path)
+        when {
+            item.isDirectory -> viewModel.loadDirectory(pane, item.path)
+            isApkLike(file) -> {
+                apktoolTarget = file
+                targetItem = item
+                if (file.extension.equals("apk", ignoreCase = true)) {
+                    apkInfoPane = pane
+                    showApkInfo = true
+                } else {
+                    splitPackagePane = pane
+                    showSplitPackage = true
+                }
+            }
+            item.isArchiveFile() && ArchiveEngine.supports(file) -> viewModel.openArchive(pane, file)
+            item.isEditableTextFile() -> openInTextEditor(item)
+            item.isImageFile() -> navController.navigate(Screen.ImageViewer.createRoute(item.path, item.name))
+            item.isAudioFile() || item.isVideoFile() -> navController.navigate(Screen.MediaPlayer.createRoute(item.path, item.name, item.isVideoFile()))
+            else -> FileOpener.openFile(context, file)
         }
     }
 
@@ -505,7 +530,7 @@ fun ExplorerScreen(
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         context.startActivity(Intent.createChooser(intent, "Datei teilen"))
-                    }.onFailure { error -> Toast.makeText(context, "Teilen fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show() }
+                    }.onFailure { error -> Toast.makeText(context, UiText.t("Share failed: ${error.message}", "Teilen fehlgeschlagen: ${error.message}"), Toast.LENGTH_SHORT).show() }
                 }
                 showContextMenu = false
             },
@@ -515,9 +540,13 @@ fun ExplorerScreen(
             },
             onAddBookmark = {
                 targetItem?.let { item ->
-                    pendingBookmarkPaths = listOf(item.path)
-                    showBookmarkAdd = true
+                    persistBookmarks(BookmarkStore.add(bookmarkState, listOf(item.path), bookmarkState.groups.first().id))
+                    Toast.makeText(context, UiText.t("Bookmark added", "Lesezeichen hinzugefügt"), Toast.LENGTH_SHORT).show()
                 }
+                showContextMenu = false
+            },
+            onTypeAction = {
+                targetItem?.let { openLocalItem(activePane, it) }
                 showContextMenu = false
             },
         )
@@ -536,7 +565,7 @@ fun ExplorerScreen(
                 showBuiltInOpen = false
                 materializeForTool(item, activePane) { file ->
                     if (ArchiveEngine.supports(file)) viewModel.openArchive(activePane, file)
-                    else Toast.makeText(context, "Kein unterstütztes Archiv", Toast.LENGTH_SHORT).show()
+                    else Toast.makeText(context, UiText.t("Unsupported archive", "Kein unterstütztes Archiv"), Toast.LENGTH_SHORT).show()
                 }
             },
             onApkInfo = {
@@ -635,11 +664,11 @@ fun ExplorerScreen(
                 text = {
                     Column {
                         Text(if (item.isDirectory) "Folder" else "File")
-                        if (!item.isDirectory) Text("Size: ${item.sizeText}")
-                        Text("Storage: Android document tree (read/write)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (!item.isDirectory) Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Size: ${item.sizeText}"))
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Storage: Android document tree (read/write)"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                confirmButton = { TextButton(onClick = { showPropertyDialog = false }) { Text("OK") } },
+                confirmButton = { TextButton(onClick = { showPropertyDialog = false }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) } },
             )
         } else {
             FileInfoDialog(
@@ -729,14 +758,17 @@ fun ExplorerScreen(
     if (showSortManage) {
         AlertDialog(
             onDismissRequest = { showSortManage = false },
-            title = { Text("Sortierung verwalten") },
-            text = { Text("Ordnerspezifische Sortierungen für ${if (activePane == ActivePane.LEFT) "das linke" else "das rechte"} Fenster zurücksetzen?") },
-            dismissButton = { TextButton(onClick = { showSortManage = false }) { Text("ABBRECHEN") } },
+            title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Sortierung verwalten")) },
+            text = {
+                val paneLabel = if (activePane == ActivePane.LEFT) UiText.t("left", "linke") else UiText.t("right", "rechte")
+                Text(UiText.t("Reset folder-specific sorting for the $paneLabel pane?", "Ordnerspezifische Sortierung für das $paneLabel Fenster zurücksetzen?"))
+            },
+            dismissButton = { TextButton(onClick = { showSortManage = false }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.clearFolderSortOverrides(activePane)
                     showSortManage = false
-                }) { Text("ZURÜCKSETZEN") }
+                }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ZURÜCKSETZEN")) }
             },
         )
     }
@@ -942,10 +974,10 @@ fun ExplorerScreen(
     locationToEdit?.let { location ->
         AlertDialog(
             onDismissRequest = { locationToEdit = null },
-            title = { Text("Speicherort") },
+            title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Speicherort")) },
             text = {
                 Column {
-                    Text("Name", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Name"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
                         value = locationEditName,
                         onValueChange = { locationEditName = it },
@@ -968,16 +1000,16 @@ fun ExplorerScreen(
                     if (leftState.currentPath.startsWith(prefix)) viewModel.navigateToDirectPath(ActivePane.LEFT, rootPath)
                     if (rightState.currentPath.startsWith(prefix)) viewModel.navigateToDirectPath(ActivePane.RIGHT, rootPath)
                     locationToEdit = null
-                }) { Text("ENTFERNEN") }
+                }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ENTFERNEN")) }
             },
             confirmButton = {
                 Row {
-                    TextButton(onClick = { locationToEdit = null }) { Text("ABBRECHEN") }
+                    TextButton(onClick = { locationToEdit = null }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) }
                     TextButton(onClick = {
                         CustomLocationStore.rename(context, location.id, locationEditName)
                         customLocations = CustomLocationStore.load(context)
                         locationToEdit = null
-                    }) { Text("SPEICHERN") }
+                    }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) }
                 }
             },
         )
@@ -995,7 +1027,7 @@ fun ExplorerScreen(
         val count = state.selectedPaths.size
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Löschen") },
+            title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Löschen")) },
             text = {
                 Column {
                     Text(if (count == 1) "Ausgewähltes Element löschen?" else "$count ausgewählte Elemente löschen?")
@@ -1005,7 +1037,7 @@ fun ExplorerScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(recycleOnDelete, { recycleOnDelete = it })
-                            Text("In Papierkorb verschieben")
+                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("In Papierkorb verschieben"))
                         }
                     }
                     if (!recycleOnDelete && explorerPrefs.showDeletionWarning) {
@@ -1018,17 +1050,17 @@ fun ExplorerScreen(
                     }
                 }
             },
-            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("ABBRECHEN") } },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     viewModel.deleteSelected(deletePane, recycleOverride = recycleOnDelete)
-                }) { Text("OK") }
+                }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
             },
         )
     }
 
-    BackHandler(enabled = showTaskPanel || selectedJobId != null || canNavigateBack || isSearching) {
+    BackHandler(enabled = showTaskPanel || selectedJobId != null || hasSelectedItems || canNavigateBack || isSearching) {
         if (selectedJobId != null) {
             selectedJobId = null
         } else if (showTaskPanel) {
@@ -1036,6 +1068,10 @@ fun ExplorerScreen(
         } else if (isSearching) {
             isSearching = false
             viewModel.clearSearch(activePane)
+        } else if (hasSelectedItems) {
+            viewModel.clearSelection(activePane)
+        } else if (viewModel.canNavigateHistoryBack(activePane)) {
+            viewModel.navigateHistoryBack(activePane)
         } else {
             viewModel.navigateUp(activePane)
         }
@@ -1049,7 +1085,7 @@ fun ExplorerScreen(
                     SideBar(
                         drawerWidth = drawerWidth,
                         viewModel = viewModel,
-                        bookmarks = if (explorerPrefs.showBookmarksInSidebar) bookmarks else emptyList(),
+                        bookmarks = bookmarks,
                         customLocations = customLocations,
                         onBookmarkClick = { path -> viewModel.navigateToDirectPath(activePane, path) },
                         onCustomLocationClick = { location ->
@@ -1079,7 +1115,7 @@ fun ExplorerScreen(
                         onOpenTextEditor = { runCatching { context.startActivity(Intent(context, MhTextEditorActivity::class.java)) } },
                         onOpenRecycleBin = { viewModel.openRecycleBin(activePane) },
                         onRemoveBookmark = { path ->
-                            persistBookmarks(BookmarkStore.removePath(bookmarkState, path))
+                            persistBookmarks(BookmarkStore.remove(bookmarkState, path))
                         },
                         onOpenSettings = { showAppSettings = true },
                         onClose = {
@@ -1120,7 +1156,7 @@ fun ExplorerScreen(
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.mt_ic_menu),
+                                    Icons.Default.Menu,
                                     contentDescription = "Menu",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1166,7 +1202,7 @@ fun ExplorerScreen(
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.mt_ic_search),
+                                    Icons.Default.Search,
                                     contentDescription = "Search",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1178,7 +1214,7 @@ fun ExplorerScreen(
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
-                                        painter = painterResource(R.drawable.mt_ic_more),
+                                        Icons.Default.MoreVert,
                                         contentDescription = "More Options",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1188,64 +1224,37 @@ fun ExplorerScreen(
                                     onDismissRequest = { showApktoolOptions = false }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Aktualisieren") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_refresh), contentDescription = null) },
-                                        onClick = { showApktoolOptions = false; viewModel.refreshDirectory(activePane) },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(if (activeState.filter == FileFilter.ALL) "Filter" else "Filter: ${fileFilterLabel(activeState.filter)}") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_filter), contentDescription = null) },
-                                        onClick = { showApktoolOptions = false; showFilterFiles = true },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Sortieren") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_sort), contentDescription = null) },
-                                        onClick = { showApktoolOptions = false; showSortFiles = true },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Versteckte Dateien") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_visibility), contentDescription = null) },
+                                        text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Versteckte Dateien")) },
+                                        leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null) },
                                         onClick = { showApktoolOptions = false; showHiddenFiles = true },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Lokaler Speicher") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_storage), contentDescription = null) },
-                                        onClick = {
-                                            showApktoolOptions = false
-                                            scope.launch { drawerState.open() }
-                                        },
+                                        text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Sortieren")) },
+                                        leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) },
+                                        onClick = { showApktoolOptions = false; showSortFiles = true },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(if (activeState.filter == FileFilter.ALL) "Filter" else "Filter: ${fileFilterLabel(activeState.filter)}") },
+                                        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
+                                        onClick = { showApktoolOptions = false; showFilterFiles = true },
                                     )
                                     if (activeState.currentPath == viewModel.recycleBinPath()) {
                                         DropdownMenuItem(
-                                            text = { Text("Papierkorb leeren") },
-                                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_delete), contentDescription = null) },
+                                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Papierkorb leeren")) },
                                             onClick = { showApktoolOptions = false; viewModel.emptyRecycleBin(activePane) },
                                         )
                                     }
-                                    HorizontalDivider()
                                     DropdownMenuItem(
-                                        text = { Text("Erstellen & Dekodieren") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_settings), contentDescription = null) },
+                                        text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Erstellen & Dekodieren")) },
                                         onClick = { showApktoolOptions = false; showApktoolSettings = true }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Tasks (${apktoolJobs.count { !it.isTerminal } + archiveTasks.size})") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_tools), contentDescription = null) },
+                                        text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Tasks (${apktoolJobs.count { !it.isTerminal } + archiveTasks.size})")) },
                                         onClick = { showApktoolOptions = false; showTaskPanel = true }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Apktool CLI") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_tools), contentDescription = null) },
+                                        text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Apktool CLI")) },
                                         onClick = { showApktoolOptions = false; showApktoolCli = true }
-                                    )
-                                    HorizontalDivider()
-                                    DropdownMenuItem(
-                                        text = { Text("Beenden") },
-                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_exit), contentDescription = null) },
-                                        onClick = {
-                                            showApktoolOptions = false
-                                            (context as? Activity)?.finish()
-                                        },
                                     )
                                 }
                             }
@@ -1272,41 +1281,7 @@ fun ExplorerScreen(
                             if (leftState.selectedPaths.isNotEmpty()) {
                                 viewModel.toggleSelection(ActivePane.LEFT, item.path, false)
                             } else {
-                                when {
-                                    item.isSaf -> openSafItem(ActivePane.LEFT, item)
-
-                                    isApkLike(File(item.path)) -> {
-                                        val apk = File(item.path)
-                                        apktoolTarget = apk
-                                        targetItem = item
-                                        if (apk.extension.equals("apk", ignoreCase = true)) { apkInfoPane = ActivePane.LEFT; showApkInfo = true }
-                                        else { splitPackagePane = ActivePane.LEFT; showSplitPackage = true }
-                                    }
-
-                                    item.isArchiveFile() && ArchiveEngine.supports(File(item.path)) -> {
-                                        viewModel.openArchive(ActivePane.LEFT, File(item.path))
-                                    }
-
-                                    item.isDirectory -> viewModel.loadDirectory(
-                                        ActivePane.LEFT,
-                                        item.path
-                                    )
-
-                                    item.isEditableTextFile() -> openInTextEditor(item)
-
-                                    item.isImageFile() -> {
-                                        navController.navigate(
-                                            Screen.ImageViewer.createRoute(
-                                                item.path,
-                                                item.name
-                                            )
-                                        )
-                                    }
-
-                                    else -> {
-                                        FileOpener.openFile(navController.context, File(item.path))
-                                    }
-                                }
+                                openLocalItem(ActivePane.LEFT, item)
                             }
                         },
                         onItemLongClick = { item ->
@@ -1345,41 +1320,7 @@ fun ExplorerScreen(
                             if (rightState.selectedPaths.isNotEmpty()) {
                                 viewModel.toggleSelection(ActivePane.RIGHT, item.path, false)
                             } else {
-                                when {
-                                    item.isSaf -> openSafItem(ActivePane.RIGHT, item)
-
-                                    isApkLike(File(item.path)) -> {
-                                        val apk = File(item.path)
-                                        apktoolTarget = apk
-                                        targetItem = item
-                                        if (apk.extension.equals("apk", ignoreCase = true)) { apkInfoPane = ActivePane.RIGHT; showApkInfo = true }
-                                        else { splitPackagePane = ActivePane.RIGHT; showSplitPackage = true }
-                                    }
-
-                                    item.isArchiveFile() && ArchiveEngine.supports(File(item.path)) -> {
-                                        viewModel.openArchive(ActivePane.RIGHT, File(item.path))
-                                    }
-
-                                    item.isDirectory -> viewModel.loadDirectory(
-                                        ActivePane.RIGHT,
-                                        item.path
-                                    )
-
-                                    item.isEditableTextFile() -> openInTextEditor(item)
-
-                                    item.isImageFile() -> {
-                                        navController.navigate(
-                                            Screen.ImageViewer.createRoute(
-                                                item.path,
-                                                item.name
-                                            )
-                                        )
-                                    }
-
-                                    else -> {
-                                        FileOpener.openFile(navController.context, File(item.path))
-                                    }
-                                }
+                                openLocalItem(ActivePane.RIGHT, item)
                             }
                         },
                         onItemLongClick = { item ->
@@ -1401,76 +1342,78 @@ fun ExplorerScreen(
                     )
                 }
 
-                // Bottom Navigation Bar. MT switches the bar as a single animated surface
-                // rather than replacing unrelated controls abruptly.
-                AnimatedContent(
-                    targetState = hasSelectedItems,
-                    transitionSpec = {
-                        (slideInVertically(animationSpec = tween(140)) { it / 3 } + fadeIn(tween(120)))
-                            .togetherWith(slideOutVertically(animationSpec = tween(120)) { it / 3 } + fadeOut(tween(100)))
-                    },
-                    label = "fileManagerBottomBar",
-                ) { selectionMode ->
-                    if (selectionMode) {
-                        SelectionBottomBar(
-                            onCopySelected = { viewModel.copySelectedToOppositePane(activePane) },
-                            onMoveSelected = { viewModel.moveSelectedToOppositePane(activePane) },
-                            onDeleteSelected = { requestDelete(activePane) },
-                            onMoreOptions = { showSelectionMore = true },
-                            onDone = { viewModel.cancelSelection(activePane) },
-                            modifier = Modifier
-                                .bookmarkSwipeUp { pane -> bookmarkGesturePane = pane; showBookmarks = true }
-                                .drawerSwipe(
-                                    onOpenLeft = { scope.launch { drawerState.open() } },
-                                    onOpenRight = { showTaskPanel = true },
-                                ),
-                        )
-                    } else {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            shadowElevation = 8.dp,
+                // Bottom Navigation Bar
+                if (hasSelectedItems) {
+                    SelectionBottomBar(
+                        onCopySelected = { viewModel.copySelectedToOppositePane(activePane) },
+                        onMoveSelected = { viewModel.moveSelectedToOppositePane(activePane) },
+                        onDeleteSelected = { requestDelete(activePane) },
+                        onMoreOptions = { showSelectionMore = true },
+                        onDone = { viewModel.cancelSelection(activePane) },
+                        modifier = Modifier
+                            .bookmarkSwipeUp { pane -> bookmarkGesturePane = pane; showBookmarks = true }
+                            .drawerSwipe(
+                                onOpenLeft = { scope.launch { drawerState.open() } },
+                                onOpenRight = { showTaskPanel = true },
+                            ),
+                    )
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bookmarkSwipeUp { pane -> bookmarkGesturePane = pane; showBookmarks = true }
+                            .drawerSwipe(
+                                onOpenLeft = { scope.launch { drawerState.open() } },
+                                onOpenRight = { showTaskPanel = true },
+                            )
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .bookmarkSwipeUp { pane -> bookmarkGesturePane = pane; showBookmarks = true }
-                                .drawerSwipe(
-                                    onOpenLeft = { scope.launch { drawerState.open() } },
-                                    onOpenRight = { showTaskPanel = true },
-                                )
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                BottomNavIconButton(
-                                    iconRes = R.drawable.mt_ic_back,
-                                    onClick = { viewModel.navigateHistoryBack(activePane) }
-                                )
-                                BottomNavIconButton(
-                                    iconRes = R.drawable.mt_ic_forward,
-                                    onClick = { viewModel.navigateHistoryForward(activePane) }
-                                )
-                                BottomNavIconButton(
-                                    iconRes = R.drawable.mt_ic_add,
-                                    onClick = { showCreateDialog = true }
-                                )
-                                BottomNavIconButton(
-                                    iconRes = R.drawable.mt_ic_swap,
-                                    onClick = { viewModel.swapPanes() }
-                                )
-                                BottomNavIconButton(
-                                    iconRes = R.drawable.mt_ic_navigation,
-                                    onClick = { goToPane = activePane; showGoToPathDialog = true }
-                                )
-                            }
+                            BottomNavIconButton(
+                                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                onClick = { viewModel.navigateHistoryBack(activePane) }
+                            )
+                            BottomNavIconButton(
+                                icon = Icons.AutoMirrored.Filled.ArrowForward,
+                                onClick = { viewModel.navigateHistoryForward(activePane) }
+                            )
+                            BottomNavIconButton(
+                                icon = Icons.Default.Add,
+                                onClick = { showCreateDialog = true }
+                            )
+                            BottomNavIconButton(
+                                icon = Icons.Default.SwapHoriz,
+                                onClick = { viewModel.swapPanes() }
+                            )
+                            BottomNavIconButton(
+                                icon = Icons.Default.ArrowUpward,
+                                onClick = { goToPane = activePane; showGoToPathDialog = true }
+                            )
                         }
                     }
                 }
             }
         }
+    }
+
+    if (showBookmarks) {
+        BookmarkBottomSheet(
+            state = bookmarkState,
+            activePane = activePane,
+            gesturePane = bookmarkGesturePane,
+            currentPath = activeState.currentPath,
+            onChange = ::persistBookmarks,
+            onOpen = { pane, path -> viewModel.setActive(pane); viewModel.navigateToDirectPath(pane, path) },
+            onDismiss = { showBookmarks = false },
+        )
     }
 
     if (showSelectionMore) {
@@ -1481,49 +1424,67 @@ fun ExplorerScreen(
                 archiveSources = activeState.selectedPaths.map(::File).filter { it.exists() }
                 showArchiveDialog = archiveSources.isNotEmpty()
             },
-            onAddBookmarks = {
-                pendingBookmarkPaths = activeState.selectedPaths.toList()
-                showBookmarkAdd = pendingBookmarkPaths.isNotEmpty()
+            onAddBookmark = {
+                persistBookmarks(BookmarkStore.add(bookmarkState, activeState.selectedPaths, bookmarkState.groups.first().id))
             },
             onSelectAll = { viewModel.selectAll(activePane) },
             onInvertSelection = { viewModel.invertSelection(activePane) },
-            onCancelSelection = { viewModel.cancelSelection(activePane) },
             onDismiss = { showSelectionMore = false },
         )
     }
 
-    if (showBookmarks) {
-        BookmarkBottomSheet(
-            state = bookmarkState,
-            activePane = activePane,
-            gesturePane = bookmarkGesturePane,
-            currentPath = activeState.currentPath,
-            onStateChange = ::persistBookmarks,
-            onOpenPath = { pane, path ->
-                viewModel.setActive(pane)
-                viewModel.navigateToDirectPath(pane, path)
+    archiveUpdateRequest?.let { request ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissArchiveUpdateRequest,
+            title = {
+                Text(
+                    if (request.readOnly) UiText.t("Archive changed", "Archiv geändert")
+                    else UiText.t("Update archive?", "Archiv aktualisieren?")
+                )
             },
-            onDismiss = { showBookmarks = false },
-        )
-    }
-
-    if (showBookmarkAdd) {
-        BookmarkAddDialog(
-            state = bookmarkState,
-            itemCount = pendingBookmarkPaths.size,
-            onAddToGroup = { groupId ->
-                persistBookmarks(BookmarkStore.addPaths(bookmarkState, pendingBookmarkPaths, groupId))
-                Toast.makeText(
-                    context,
-                    if (pendingBookmarkPaths.size == 1) "Lesezeichen hinzugefügt" else "${pendingBookmarkPaths.size} Lesezeichen hinzugefügt",
-                    Toast.LENGTH_SHORT,
-                ).show()
-                pendingBookmarkPaths = emptyList()
-                showBookmarkAdd = false
+            text = {
+                Column {
+                    Text(
+                        UiText.t(
+                            "${request.archiveName}: ${request.changedEntries} changed ${if (request.changedEntries == 1) "entry" else "entries"} detected.",
+                            "${request.archiveName}: ${request.changedEntries} geänderte ${if (request.changedEntries == 1) "Datei" else "Dateien"} erkannt.",
+                        )
+                    )
+                    if (request.isApk) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            UiText.t(
+                                "Updating an APK changes its contents and invalidates the previous APK signature. Sign it again with the MTApktool signing workflow.",
+                                "Das Aktualisieren einer APK ändert ihren Inhalt und macht die bisherige APK-Signatur ungültig. Anschließend mit dem MTApktool-Signaturworkflow neu signieren.",
+                            )
+                        )
+                    }
+                    if (request.readOnly) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            UiText.t(
+                                "This format is read-only with the open-source archive backend. Extract the edited file to keep it. Leaving the archive can discard workspace changes.",
+                                "Dieses Format ist mit dem Open-Source-Archivbackend schreibgeschützt. Die bearbeitete Datei zum Behalten extrahieren. Beim Verlassen können Workspace-Änderungen verworfen werden.",
+                            )
+                        )
+                    }
+                }
             },
-            onDismiss = {
-                pendingBookmarkPaths = emptyList()
-                showBookmarkAdd = false
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissArchiveUpdateRequest) {
+                    Text(UiText.t("LATER", "SPÄTER"))
+                }
+            },
+            confirmButton = {
+                when {
+                    !request.readOnly -> TextButton(onClick = { viewModel.confirmArchiveUpdate(request.pane) }) {
+                        Text(UiText.t("UPDATE", "AKTUALISIEREN"))
+                    }
+                    request.closeAfterUpdate -> TextButton(onClick = { viewModel.discardArchiveChangesAndClose(request.pane) }) {
+                        Text(UiText.t("DISCARD & CLOSE", "VERWERFEN & SCHLIESSEN"))
+                    }
+                    else -> TextButton(onClick = viewModel::dismissArchiveUpdateRequest) { Text("OK") }
+                }
             },
         )
     }
@@ -1548,18 +1509,12 @@ fun ExplorerScreen(
 
 private fun formatDiskG(bytes: Long): String = String.format(Locale.US, "%.2fG", bytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
 
-private fun Modifier.bookmarkSwipeUp(
-    onOpen: (ActivePane) -> Unit,
-): Modifier = pointerInput(onOpen) {
+private fun Modifier.bookmarkSwipeUp(onOpen: (ActivePane) -> Unit): Modifier = pointerInput(onOpen) {
     var startX = 0f
     var totalY = 0f
     var opened = false
     detectVerticalDragGestures(
-        onDragStart = { offset ->
-            startX = offset.x
-            totalY = 0f
-            opened = false
-        },
+        onDragStart = { startX = it.x; totalY = 0f; opened = false },
         onVerticalDrag = { change, amount ->
             totalY += amount
             if (!opened && totalY <= -44f) {
@@ -1618,11 +1573,7 @@ fun SearchBar(
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            painter = painterResource(R.drawable.mt_ic_search),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Icon(Icons.Default.Search, contentDescription = null)
         Spacer(Modifier.width(12.dp))
         BasicTextField(
             value = query,
@@ -1632,24 +1583,20 @@ fun SearchBar(
             cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurfaceVariant),
             decorationBox = { innerTextField ->
                 if (query.isEmpty()) {
-                    Text("Search files...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Search files..."), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                 }
                 innerTextField()
             }
         )
         IconButton(onClick = onClose) {
-            Icon(
-                painter = painterResource(R.drawable.mt_ic_close),
-                contentDescription = "Close Search",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Icon(Icons.Default.Close, contentDescription = "Close Search")
         }
     }
 }
 
 @Composable
 private fun BottomNavIconButton(
-    @DrawableRes iconRes: Int,
+    icon: ImageVector,
     onClick: () -> Unit
 ) {
     Box(
@@ -1668,7 +1615,7 @@ private fun BottomNavIconButton(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            painter = painterResource(iconRes),
+            imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(22.dp)
@@ -1685,7 +1632,7 @@ private fun installApk(context: Context, file: File) {
             }
             context.startActivity(intent)
         }.onFailure { error ->
-            Toast.makeText(context, "Installieren fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, UiText.t("Installation failed: ${error.message}", "Installieren fehlgeschlagen: ${error.message}"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1733,6 +1680,6 @@ private fun shareFile(context: Context, file: File) {
         }
         context.startActivity(Intent.createChooser(intent, "Datei teilen"))
     }.onFailure { error ->
-        Toast.makeText(context, "Teilen fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, UiText.t("Share failed: ${error.message}", "Teilen fehlgeschlagen: ${error.message}"), Toast.LENGTH_SHORT).show()
     }
 }

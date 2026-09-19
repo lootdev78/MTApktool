@@ -123,10 +123,10 @@ fun ApkInfoDialog(
                 }
 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onFunctions) { Text("FUNKTIONEN") }
+                    TextButton(onClick = onFunctions) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("FUNKTIONEN")) }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onView) { Text("ANZEIGEN") }
-                    TextButton(onClick = onInstall) { Text("INSTALLIEREN") }
+                    TextButton(onClick = onView) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ANZEIGEN")) }
+                    TextButton(onClick = onInstall) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("INSTALLIEREN")) }
                 }
             }
         }
@@ -185,7 +185,7 @@ private fun SignatureInformationDialog(file: File, onDismiss: () -> Unit) {
             shadowElevation = 10.dp,
         ) {
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                Text("Signature information", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Signature information"), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.size(10.dp))
                 val sig = signature
                 if (sig == null) {
@@ -206,20 +206,20 @@ private fun SignatureInformationDialog(file: File, onDismiss: () -> Unit) {
                         InfoRow("SHA1", sig.sha1)
                         InfoRow("SHA256", sig.sha256)
                         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Format", modifier = Modifier.width(130.dp), fontSize = 15.sp)
+                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Format"), modifier = Modifier.width(130.dp), fontSize = 15.sp)
                             Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) { Text("Add colon", Modifier.weight(1f)); Switch(addColons, { addColons = it }) }
-                                Row(verticalAlignment = Alignment.CenterVertically) { Text("Upper case", Modifier.weight(1f)); Switch(upperCase, { upperCase = it }) }
+                                Row(verticalAlignment = Alignment.CenterVertically) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Add colon"), Modifier.weight(1f)); Switch(addColons, { addColons = it }) }
+                                Row(verticalAlignment = Alignment.CenterVertically) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Upper case"), Modifier.weight(1f)); Switch(upperCase, { upperCase = it }) }
                             }
                         }
                         compareText?.let { Text(it, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)) }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = signature != null, onClick = { showRaw = true }) { Text("VIEW DATA") }
+                    TextButton(enabled = signature != null, onClick = { showRaw = true }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("VIEW DATA")) }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { compareLauncher.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }) { Text("COMPARE") }
-                    TextButton(onClick = onDismiss) { Text("CLOSE") }
+                    TextButton(onClick = { compareLauncher.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("COMPARE")) }
+                    TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CLOSE")) }
                 }
             }
         }
@@ -228,7 +228,7 @@ private fun SignatureInformationDialog(file: File, onDismiss: () -> Unit) {
     if (showRaw) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showRaw = false },
-            title = { Text("Certificate data") },
+            title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Certificate data")) },
             text = {
                 Text(
                     signature?.rawCertificateHex.orEmpty(),
@@ -236,7 +236,7 @@ private fun SignatureInformationDialog(file: File, onDismiss: () -> Unit) {
                     fontSize = 11.sp,
                 )
             },
-            confirmButton = { TextButton(onClick = { showRaw = false }) { Text("CLOSE") } },
+            confirmButton = { TextButton(onClick = { showRaw = false }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CLOSE")) } },
         )
     }
 }
@@ -268,13 +268,13 @@ fun ApkFunctionsDialog(
             shadowElevation = 10.dp,
         ) {
             Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 8.dp)) {
-                Text("Funktionen", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Funktionen"), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Text(file.name, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.size(8.dp))
                 actions.forEach { (icon, title, action) ->
                     FunctionRow(icon, title, action)
                 }
-                Row(Modifier.fillMaxWidth()) { Spacer(Modifier.weight(1f)); TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } }
+                Row(Modifier.fillMaxWidth()) { Spacer(Modifier.weight(1f)); TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) } }
             }
         }
     }

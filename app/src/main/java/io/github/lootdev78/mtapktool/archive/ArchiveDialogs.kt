@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 import java.io.File
 
 @Composable
@@ -48,7 +49,7 @@ fun ArchiveActionDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "Öffnen zeigt den Inhalt im aktuell verwendeten Panel. Änderungen werden beim Verlassen des Archivs zurückgeschrieben.",
+                    UiText.t("Open shows the archive in the active pane. Internal file operations are written back automatically; editor changes ask before updating.", "Öffnen zeigt das Archiv im aktiven Fenster. Interne Dateioperationen werden automatisch zurückgeschrieben; Editor-Änderungen fragen vor dem Update nach."),
                     modifier = Modifier.padding(top = 10.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -57,7 +58,7 @@ fun ArchiveActionDialog(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("Passwort (falls erforderlich)") },
+                        label = { Text(UiText.t("Password (if required)", "Passwort (falls erforderlich)")) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -66,10 +67,10 @@ fun ArchiveActionDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = { onExtract(password) }) { Text("ENTPACKEN") }
+            TextButton(onClick = { onExtract(password) }) { Text(UiText.t("EXTRACT", "ENTPACKEN")) }
         },
         confirmButton = {
-            TextButton(onClick = { onOpen(password) }) { Text("ANZEIGEN") }
+            TextButton(onClick = { onOpen(password) }) { Text(UiText.t("OPEN", "ANZEIGEN")) }
         },
     )
 }
@@ -101,16 +102,16 @@ fun ArchiveExtractDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Extract") },
+        title = { Text(UiText.t("Extract", "Entpacken")) },
         text = {
             Column {
                 ExtractRadioRow(
-                    label = "Extract to current directory",
+                    label = UiText.t("Extract to current directory", "In aktuelles Verzeichnis entpacken"),
                     selected = !useSubdirectory,
                     onClick = { useSubdirectory = false },
                 )
                 ExtractRadioRow(
-                    label = "Extract to separate folder",
+                    label = UiText.t("Path to extract to…", "Pfad zum Entpacken…"),
                     selected = useSubdirectory,
                     onClick = { useSubdirectory = true },
                 )
@@ -119,7 +120,7 @@ fun ArchiveExtractDialog(
                     onValueChange = { relativePath = it },
                     enabled = useSubdirectory,
                     singleLine = true,
-                    label = { Text("Path to extract to…") },
+                    label = { Text(UiText.t("Relative path", "Relativer Pfad")) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
@@ -131,12 +132,12 @@ fun ArchiveExtractDialog(
                     overflow = TextOverflow.Ellipsis,
                 )
                 ExtractCheckRow(
-                    label = "Extract to another window path\n${oppositeDirectory.absolutePath}",
+                    label = UiText.t("Extract to other pane\n${oppositeDirectory.absolutePath}", "In anderes Fenster entpacken\n${oppositeDirectory.absolutePath}"),
                     checked = toOtherPane,
                     onChecked = { toOtherPane = it },
                 )
                 ExtractCheckRow(
-                    label = "Delete original",
+                    label = UiText.t("Delete source file after extraction", "Quelldatei nach Entpacken löschen"),
                     checked = deleteSource,
                     onChecked = { deleteSource = it },
                 )
@@ -144,7 +145,7 @@ fun ArchiveExtractDialog(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("Password (if required)") },
+                        label = { Text(UiText.t("Password (if required)", "Passwort (falls erforderlich)")) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -152,7 +153,7 @@ fun ArchiveExtractDialog(
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(UiText.t("CLOSE", "SCHLIESSEN")) } },
         confirmButton = {
             TextButton(
                 enabled = !useSubdirectory || relativePath.trim().isNotEmpty(),
@@ -166,7 +167,7 @@ fun ArchiveExtractDialog(
                         )
                     )
                 },
-            ) { Text("OK") }
+            ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
         },
     )
 }

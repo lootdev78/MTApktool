@@ -112,7 +112,7 @@ private fun MtOpenWithDialog(
             modifier = Modifier.fillMaxWidth(0.86f),
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp)) {
-                Text("Open with...", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Open with..."), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.size(10.dp))
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     actions.forEach { action ->
@@ -209,7 +209,7 @@ private fun MtActionDialog(
                 }
                 Row(Modifier.fillMaxWidth()) {
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text("SCHLIESSEN") }
+                    TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) }
                 }
             }
         }

@@ -59,7 +59,7 @@ fun ApkCloneDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("APK klonen") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("APK klonen")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -70,24 +70,24 @@ fun ApkCloneDialog(
                 OutlinedTextField(
                     value = newPackage,
                     onValueChange = { newPackage = it.trim() },
-                    label = { Text("Neuer Paketname") },
+                    label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Neuer Paketname")) },
                     singleLine = true,
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    TextButton(onClick = { setFolder(file.parentFile?.absolutePath) }, enabled = !busy) { Text("GLEICHER") }
+                    TextButton(onClick = { setFolder(file.parentFile?.absolutePath) }, enabled = !busy) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("GLEICHER")) }
                     if (!leftPath.isNullOrBlank() && !leftPath.startsWith("content://")) {
-                        TextButton(onClick = { setFolder(leftPath) }, enabled = !busy) { Text("LINKS") }
+                        TextButton(onClick = { setFolder(leftPath) }, enabled = !busy) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("LINKS")) }
                     }
                     if (!rightPath.isNullOrBlank() && !rightPath.startsWith("content://")) {
-                        TextButton(onClick = { setFolder(rightPath) }, enabled = !busy) { Text("RECHTS") }
+                        TextButton(onClick = { setFolder(rightPath) }, enabled = !busy) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("RECHTS")) }
                     }
                 }
                 OutlinedTextField(
                     value = output,
                     onValueChange = { output = it },
-                    label = { Text("Ausgabe-APK") },
+                    label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Ausgabe-APK")) },
                     singleLine = true,
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
@@ -101,7 +101,7 @@ fun ApkCloneDialog(
                 errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("ABBRECHEN") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
         confirmButton = {
             TextButton(
                 enabled = !busy && packageName.isNotBlank() && isPackageName(newPackage) && output.isNotBlank(),
@@ -133,7 +133,7 @@ fun ApkCloneDialog(
                             .onFailure { errorMessage = it.message ?: it.javaClass.simpleName }
                     }
                 },
-            ) { Text("KLONEN") }
+            ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("KLONEN")) }
         },
     )
 }

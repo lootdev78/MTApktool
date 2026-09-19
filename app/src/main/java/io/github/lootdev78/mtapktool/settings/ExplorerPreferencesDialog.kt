@@ -1,5 +1,6 @@
 package io.github.lootdev78.mtapktool.settings
 
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 import android.content.Context
 import android.os.Environment
 import android.provider.DocumentsContract
@@ -149,7 +150,7 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text("Preferences") },
+                        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Preferences")) },
                         navigationIcon = {
                             IconButton(onClick = onBack) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
@@ -160,8 +161,6 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
             ) { insets ->
                 LazyColumn(Modifier.fillMaxSize().padding(insets)) {
                     item { SectionTitle("Startup") }
-                    item { PreferenceSwitch("Root-Berechtigung beim Start anfragen", "Beim Start optional Root anfragen.", prefs.requestRootAtStartup) { update(context) { copy(requestRootAtStartup = it) } } }
-                    item { PreferenceSwitch("Shell-Berechtigung beim Start anfragen", "Beim Start optional Shell-Berechtigung anfragen.", prefs.requestShellAtStartup) { update(context) { copy(requestShellAtStartup = it) } } }
                     item { PreferenceValue("Startpfad – linkes Fenster", startupLabel(prefs.startupLeft)) { startupLeftDialog = true } }
                     item { PreferenceValue("Startpfad – rechtes Fenster", startupLabel(prefs.startupRight)) { startupRightDialog = true } }
 
@@ -185,10 +184,6 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
                     item { PreferenceValue("Sort file menu", "Nach langem Drücken sortieren.") { fileMenuDialog = true } }
                     item { PreferenceValue("Sort built-in opening method", "Nur MTApktool-eigene Öffnungsmethoden.") { builtInDialog = true } }
                     item { PreferenceValue("Custom MTApktool directory", prefs.customWorkspace) { workspaceDialog = true } }
-
-                    item { Divider() }
-                    item { SectionTitle("Lesezeichen & untere Leiste") }
-                    item { PreferenceSwitch("Lesezeichen in Seitenleiste anzeigen", "Wie bei MT wird dort nur die Standardgruppe angezeigt; alle Gruppen sind über Hochziehen der unteren Leiste erreichbar.", prefs.showBookmarksInSidebar) { update(context) { copy(showBookmarksInSidebar = it) } } }
 
                     item { Divider() }
                     item { SectionTitle("Recycle Bin") }
@@ -276,7 +271,7 @@ private fun startupLabel(key: String) = if (key == "last") "Last path" else "Hom
 @Composable
 private fun SectionTitle(title: String) {
     Text(
-        title,
+        UiText.auto(title),
         color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
@@ -289,9 +284,9 @@ private fun PreferenceValue(title: String, subtitle: String, enabled: Boolean = 
     Column(
         Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 18.dp, vertical = 13.dp),
     ) {
-        Text(title, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f))
+        Text(UiText.auto(title), fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f))
         Spacer(Modifier.height(2.dp))
-        Text(subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.82f else 0.34f))
+        Text(UiText.auto(subtitle), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.82f else 0.34f))
     }
 }
 
@@ -302,9 +297,9 @@ private fun PreferenceSwitch(title: String, subtitle: String, checked: Boolean, 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f))
+            Text(UiText.auto(title), fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f))
             Spacer(Modifier.height(2.dp))
-            Text(subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.82f else 0.34f))
+            Text(UiText.auto(subtitle), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.82f else 0.34f))
         }
         Spacer(Modifier.width(12.dp))
         Switch(checked = checked, enabled = enabled, onCheckedChange = onChecked)
@@ -317,7 +312,7 @@ private fun RadioChoiceDialog(title: String, choices: List<Choice>, selected: St
         shape = RoundedCornerShape(2.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = { Text(UiText.auto(title)) },
         text = {
             Column {
                 choices.forEach { choice ->
@@ -327,13 +322,13 @@ private fun RadioChoiceDialog(title: String, choices: List<Choice>, selected: St
                     ) {
                         RadioButton(selected = selected == choice.key, onClick = { onSelect(choice.key) })
                         Spacer(Modifier.width(10.dp))
-                        Text(choice.label, fontSize = 18.sp)
+                        Text(UiText.auto(choice.label), fontSize = 18.sp)
                     }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CANCEL")) } },
     )
 }
 
@@ -347,14 +342,14 @@ private fun ThemeColorDialog(selected: String, onDismiss: () -> Unit, onSelect: 
         shape = RoundedCornerShape(2.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         onDismissRequest = onDismiss,
-        title = { Text("Theme color") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Theme color")) },
         text = {
             Column {
                 accentChoices.chunked(3).forEachIndexed { rowIndex, row ->
                     if (rowIndex == 4) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Divider(Modifier.weight(1f))
-                            Text("Monet Colors", modifier = Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Monet Colors"), modifier = Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Divider(Modifier.weight(1f))
                         }
                         Spacer(Modifier.height(8.dp))
@@ -367,7 +362,7 @@ private fun ThemeColorDialog(selected: String, onDismiss: () -> Unit, onSelect: 
                                     .clickable { onSelect(key) },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (key == selected) Text("✓", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+                                if (key == selected) Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("✓"), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -377,7 +372,7 @@ private fun ThemeColorDialog(selected: String, onDismiss: () -> Unit, onSelect: 
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CLOSE")) } },
     )
 }
 
@@ -399,7 +394,7 @@ private fun SortGridDialog(
         title = { Text(title) },
         text = {
             Column {
-                Text("Lange drücken und ziehen, um die Reihenfolge zu ändern.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Lange drücken und ziehen, um die Reihenfolge zu ändern."), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 Spacer(Modifier.height(10.dp))
                 order.chunked(columns).forEachIndexed { rowIndex, row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -431,8 +426,8 @@ private fun SortGridDialog(
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE") } },
-        confirmButton = { TextButton(onClick = { onSave(order) }) { Text("OK") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CLOSE")) } },
+        confirmButton = { TextButton(onClick = { onSave(order) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) } },
     )
 }
 
@@ -486,7 +481,7 @@ private fun WorkspaceDialog(initial: String, onDismiss: () -> Unit, onSave: (Str
         shape = RoundedCornerShape(2.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         onDismissRequest = onDismiss,
-        title = { Text("Custom MTApktool directory") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Custom MTApktool directory")) },
         text = {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(path, { path = it }, modifier = Modifier.weight(1f), singleLine = true)
@@ -495,12 +490,12 @@ private fun WorkspaceDialog(initial: String, onDismiss: () -> Unit, onSave: (Str
             }
         },
         dismissButton = {
-            TextButton(onClick = { path = Environment.getExternalStorageDirectory().resolve("apktool").absolutePath }) { Text("RESET") }
+            TextButton(onClick = { path = Environment.getExternalStorageDirectory().resolve("apktool").absolutePath }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("RESET")) }
         },
         confirmButton = {
             Row {
-                TextButton(onClick = onDismiss) { Text("CANCEL") }
-                TextButton(onClick = { if (path.isNotBlank()) onSave(path) }) { Text("OK") }
+                TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CANCEL")) }
+                TextButton(onClick = { if (path.isNotBlank()) onSave(path) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
             }
         },
     )

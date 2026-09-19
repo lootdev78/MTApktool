@@ -40,6 +40,7 @@ object ArchiveEngine {
 
     fun create(request: ArchiveRequest, onProgress: (Int) -> Unit = {}): List<File> {
         onProgress(0)
+        require(request.format.canCreate) { "${request.format.label} is read-only" }
         require(request.sources.isNotEmpty()) { "No source files selected" }
         request.sources.forEach { require(it.exists()) { "Source does not exist: ${it.absolutePath}" } }
         if (!request.outputDirectory.isDirectory && !request.outputDirectory.mkdirs()) {
@@ -72,7 +73,7 @@ object ArchiveEngine {
     }
 
     /** Extracts a supported archive into [ArchiveExtractRequest.outputDirectory]. */
-    fun extract(request: ArchiveExtractRequest, onProgress: (Int) -> Unit = {}): File {
+    fun extract(request: ArchiveExtractRequest): File {
         val archive = request.archive
         require(archive.isFile) { "Archive does not exist: ${archive.absolutePath}" }
         val destination = request.outputDirectory
@@ -81,7 +82,7 @@ object ArchiveEngine {
         }
         if (!destination.isDirectory) throw IOException("Extraction target is not a directory: ${destination.absolutePath}")
 
-        extractToDirectory(archive, destination, request.password, onProgress)
+        extractToDirectory(archive, destination, request.password)
         if (request.deleteSourceAfterExtraction && !archive.delete()) {
             throw IOException("Archive extracted, but source could not be deleted: ${archive.absolutePath}")
         }
@@ -112,14 +113,18 @@ object ArchiveEngine {
         when (format) {
             ArchiveFormat.ZIP -> extractZip(archive, destination, password, onProgress)
             ArchiveFormat.SEVEN_Z -> extract7z(archive, destination, password, onProgress)
+            ArchiveFormat.RAR -> extractRar(archive, destination, password, onProgress)
             ArchiveFormat.TAR,
             ArchiveFormat.TAR_GZ,
             ArchiveFormat.TAR_XZ,
             ArchiveFormat.TAR_ZST,
             ArchiveFormat.TAR_BZ2,
             ArchiveFormat.TAR_LZ4 -> extractTar(archive, destination, format, onProgress)
-            ArchiveFormat.GZIP -> extractSingleCompressed(archive, destination, ArchiveFormat.GZIP, onProgress)
-            ArchiveFormat.XZ -> extractSingleCompressed(archive, destination, ArchiveFormat.XZ, onProgress)
+            ArchiveFormat.GZIP,
+            ArchiveFormat.XZ,
+            ArchiveFormat.BZIP2,
+            ArchiveFormat.ZSTD,
+            ArchiveFormat.LZ4 -> extractSingleCompressed(archive, destination, format, onProgress)
         }
         onProgress(100)
     }
@@ -133,9 +138,12 @@ object ArchiveEngine {
         workspace: File,
         password: String = "",
         level: ArchiveLevel = ArchiveLevel.NORMAL,
+        onProgress: (Int) -> Unit = {},
     ) {
         val format = ArchiveFormat.fromFile(archive)
             ?: throw IOException("Unsupported archive format: ${archive.name}")
+        if (!format.canUpdate) throw IOException("${format.label} archives are read-only in MTApktool")
+        onProgress(0)
         val sources = workspace.listFiles()?.sortedBy { it.name.lowercase() }?.toList().orEmpty()
         if ((format == ArchiveFormat.GZIP || format == ArchiveFormat.XZ) &&
             (sources.size != 1 || !sources.single().isFile)
@@ -146,7 +154,9 @@ object ArchiveEngine {
         val parent = archive.parentFile ?: throw IOException("Archive has no parent directory")
         val temp = File(parent, ".${archive.name}.${System.nanoTime()}.mtapk.tmp")
         try {
+            onProgress(10)
             createAt(temp, sources, format, level, password)
+            onProgress(85)
             if (!temp.isFile || temp.length() == 0L) throw IOException("Temporary archive was not created")
             runCatching {
                 Files.move(
@@ -158,16 +168,16 @@ object ArchiveEngine {
             }.recoverCatching {
                 Files.move(temp.toPath(), archive.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }.getOrThrow()
+            onProgress(100)
         } finally {
             if (temp.exists()) temp.delete()
         }
     }
 
     private fun createSingle(sources: List<File>, request: ArchiveRequest): List<File> {
-        if ((request.format == ArchiveFormat.GZIP || request.format == ArchiveFormat.XZ) &&
-            (sources.size != 1 || !sources.single().isFile)
-        ) {
-            throw IOException("${request.format.label} can compress exactly one regular file. Use tar.${if (request.format == ArchiveFormat.GZIP) "gz" else "xz"} for folders or multiple files.")
+        val singleStream = request.format in setOf(ArchiveFormat.GZIP, ArchiveFormat.XZ, ArchiveFormat.BZIP2, ArchiveFormat.ZSTD, ArchiveFormat.LZ4)
+        if (singleStream && (sources.size != 1 || !sources.single().isFile)) {
+            throw IOException("${request.format.label} can compress exactly one regular file. Use a tar.* format for folders or multiple files.")
         }
 
         val output = uniqueFile(request.outputDirectory, normalizedFileName(request.fileName, request.format))
@@ -191,6 +201,10 @@ object ArchiveEngine {
             ArchiveFormat.TAR_LZ4 -> createTar(output, sources) { FramedLZ4CompressorOutputStream(it) }
             ArchiveFormat.GZIP -> compressSingle(output, sources.single()) { gzipStream(it, level) }
             ArchiveFormat.XZ -> compressSingle(output, sources.single()) { XZCompressorOutputStream(it, level.preset()) }
+            ArchiveFormat.BZIP2 -> compressSingle(output, sources.single()) { BZip2CompressorOutputStream(it, level.bzipBlockSize()) }
+            ArchiveFormat.ZSTD -> compressSingle(output, sources.single()) { ZstdCompressorOutputStream(it, level.preset()) }
+            ArchiveFormat.LZ4 -> compressSingle(output, sources.single()) { FramedLZ4CompressorOutputStream(it) }
+            ArchiveFormat.RAR -> throw IOException("RAR creation is not supported by the open-source archive stack")
         }
     }
 
@@ -338,6 +352,40 @@ object ArchiveEngine {
         }
     }
 
+    private fun extractRar(archive: File, destination: File, password: String, onProgress: (Int) -> Unit) {
+        onProgress(5)
+        val clazz = runCatching { Class.forName("com.github.junrar.Junrar") }
+            .getOrElse { throw IOException("RAR support dependency is unavailable", it) }
+        val candidates = clazz.methods.filter { it.name == "extract" }
+        val invoked = candidates.any { method ->
+            runCatching {
+                when (method.parameterTypes.toList()) {
+                    listOf(File::class.java, File::class.java) -> {
+                        if (password.isNotBlank()) return@runCatching false
+                        method.invoke(null, archive, destination)
+                        true
+                    }
+                    listOf(File::class.java, File::class.java, String::class.java) -> {
+                        method.invoke(null, archive, destination, password)
+                        true
+                    }
+                    listOf(String::class.java, String::class.java) -> {
+                        if (password.isNotBlank()) return@runCatching false
+                        method.invoke(null, archive.absolutePath, destination.absolutePath)
+                        true
+                    }
+                    listOf(String::class.java, String::class.java, String::class.java) -> {
+                        method.invoke(null, archive.absolutePath, destination.absolutePath, password)
+                        true
+                    }
+                    else -> false
+                }
+            }.getOrDefault(false)
+        }
+        if (!invoked) throw IOException("RAR extraction method is unavailable in the installed junrar version")
+        onProgress(100)
+    }
+
     private fun extractTar(archive: File, destination: File, format: ArchiveFormat, onProgress: (Int) -> Unit) {
         ProgressInputStream(FileInputStream(archive), archive.length(), onProgress).use { progressRaw ->
             BufferedInputStream(progressRaw).use { raw ->
@@ -376,6 +424,9 @@ object ArchiveEngine {
         val outputName = when (format) {
             ArchiveFormat.GZIP -> archive.name.removeSuffix(".gz").ifBlank { "content" }
             ArchiveFormat.XZ -> archive.name.removeSuffix(".xz").ifBlank { "content" }
+            ArchiveFormat.BZIP2 -> archive.name.removeSuffix(".bz2").ifBlank { "content" }
+            ArchiveFormat.ZSTD -> archive.name.removeSuffix(".zst").removeSuffix(".zstd").ifBlank { "content" }
+            ArchiveFormat.LZ4 -> archive.name.removeSuffix(".lz4").ifBlank { "content" }
             else -> throw IOException("Unsupported single-stream archive")
         }
         val output = safeDestination(destination, outputName)
@@ -384,6 +435,9 @@ object ArchiveEngine {
                 val input: InputStream = when (format) {
                     ArchiveFormat.GZIP -> GzipCompressorInputStream(raw)
                     ArchiveFormat.XZ -> XZCompressorInputStream(raw)
+                    ArchiveFormat.BZIP2 -> BZip2CompressorInputStream(raw)
+                    ArchiveFormat.ZSTD -> ZstdCompressorInputStream(raw)
+                    ArchiveFormat.LZ4 -> FramedLZ4CompressorInputStream(raw)
                     else -> raw
                 }
                 input.use { compressed ->

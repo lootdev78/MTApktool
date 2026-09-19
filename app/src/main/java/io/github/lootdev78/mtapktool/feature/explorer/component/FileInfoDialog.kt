@@ -239,7 +239,7 @@ fun FileInfoDialog(
                             .background(Color.Transparent)
                             .padding(4.dp)
                         ) {
-                        Text("Close")
+                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Close"))
                     }
                 }
             }

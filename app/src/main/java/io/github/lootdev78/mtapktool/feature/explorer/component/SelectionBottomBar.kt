@@ -1,6 +1,5 @@
 package io.github.lootdev78.mtapktool.feature.explorer.component
 
-import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,34 +12,32 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FlipToBack
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.BookmarkAdd
+import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import io.github.lootdev78.mtapktool.R
+import io.github.lootdev78.mtapktool.core.i18n.UiText
 
-/**
- * Selection toolbar following MT Manager's file-window action layout: the three
- * direct file operations are Copy, Move and Delete. Less frequent operations
- * live behind More, and Done only leaves selection mode.
- */
+/** MT selection toolbar: Copy, Move, Delete are direct; More holds secondary actions; Close exits selection. */
 @Composable
 fun SelectionBottomBar(
     onCopySelected: () -> Unit,
@@ -51,45 +48,17 @@ fun SelectionBottomBar(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(54.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = modifier.fillMaxWidth().height(54.dp).background(MaterialTheme.colorScheme.surfaceVariant),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SelectionBarOperation(
-            iconRes = R.drawable.mt_ic_copy,
-            label = "Kopieren",
-            onClick = onCopySelected,
-            modifier = Modifier.weight(1f),
-        )
-        SelectionBarOperation(
-            iconRes = R.drawable.mt_ic_move,
-            label = "Verschieben",
-            onClick = onMoveSelected,
-            modifier = Modifier.weight(1f),
-        )
-        SelectionBarOperation(
-            iconRes = R.drawable.mt_ic_delete,
-            label = "Löschen",
-            onClick = onDeleteSelected,
-            modifier = Modifier.weight(1f),
-        )
+        Operation(Icons.Default.ContentCopy, UiText.t("Copy", "Kopieren"), onCopySelected, Modifier.weight(1f))
+        Operation(Icons.AutoMirrored.Filled.DriveFileMove, UiText.t("Move", "Verschieben"), onMoveSelected, Modifier.weight(1f))
+        Operation(Icons.Default.Delete, UiText.t("Delete", "Löschen"), onDeleteSelected, Modifier.weight(1f))
         IconButton(onClick = onMoreOptions, modifier = Modifier.size(44.dp)) {
-            Icon(
-                painter = painterResource(R.drawable.mt_ic_more),
-                contentDescription = "Mehr",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
+            Icon(Icons.Default.MoreVert, contentDescription = UiText.t("More", "Mehr"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onDone, modifier = Modifier.size(44.dp)) {
-            Icon(
-                painter = painterResource(R.drawable.mt_ic_close),
-                contentDescription = "Auswahl beenden",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
+            Icon(Icons.Default.Close, contentDescription = UiText.t("Done", "Fertig"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -98,128 +67,48 @@ fun SelectionBottomBar(
 fun SelectionMoreDialog(
     selectedCount: Int,
     onArchiveSelected: () -> Unit,
-    onAddBookmarks: () -> Unit,
+    onAddBookmark: () -> Unit,
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
-    onCancelSelection: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Dialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(0.86f),
-            color = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(2.dp),
-            shadowElevation = 10.dp,
-        ) {
-            Column(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp)) {
-                Text(
-                    text = "Ausgewählt: $selectedCount",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(Modifier.height(6.dp))
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    SelectionActionRow(R.drawable.mt_ic_compress, "Komprimieren") {
-                        onArchiveSelected()
-                        onDismiss()
-                    }
-                    SelectionActionRow(R.drawable.mt_ic_bookmark_add, "Zu Lesezeichen hinzufügen") {
-                        onAddBookmarks()
-                        onDismiss()
-                    }
-                    SelectionActionRow(R.drawable.mt_ic_select_all, "Alles auswählen") {
-                        onSelectAll()
-                        onDismiss()
-                    }
-                    SelectionVectorActionRow("Auswahl umkehren") {
-                        onInvertSelection()
-                        onDismiss()
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    SelectionActionRow(R.drawable.mt_ic_close, "Auswahl beenden") {
-                        onCancelSelection()
-                        onDismiss()
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text("SCHLIESSEN") }
-                }
+        title = { Text(UiText.t("$selectedCount selected", "$selectedCount ausgewählt")) },
+        text = {
+            Column {
+                ActionRow(Icons.Default.Archive, UiText.t("Compress", "Komprimieren")) { onArchiveSelected(); onDismiss() }
+                ActionRow(Icons.Outlined.BookmarkAdd, UiText.t("Add to bookmarks", "Zu Lesezeichen hinzufügen")) { onAddBookmark(); onDismiss() }
+                HorizontalDivider()
+                ActionRow(Icons.Outlined.SelectAll, UiText.t("Select all", "Alles auswählen")) { onSelectAll(); onDismiss() }
+                ActionRow(Icons.Default.FlipToBack, UiText.t("Invert selection", "Auswahl umkehren")) { onInvertSelection(); onDismiss() }
             }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(UiText.t("CLOSE", "SCHLIESSEN")) } },
+    )
 }
 
 @Composable
-private fun SelectionActionRow(
-    @DrawableRes iconRes: Int,
-    label: String,
-    onClick: () -> Unit,
-) {
+private fun ActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            modifier = Modifier.size(24.dp),
-        )
-        Spacer(Modifier.width(18.dp))
-        Text(label, fontSize = 17.sp)
+        Icon(icon, null, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(label, fontSize = 16.sp)
     }
 }
 
 @Composable
-private fun SelectionVectorActionRow(
-    label: String,
-    onClick: () -> Unit,
-) {
+private fun Operation(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
+        modifier = modifier.fillMaxHeight().clickable(onClick = onClick).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Default.FlipToBack,
-            contentDescription = null,
-            modifier = Modifier.size(24.dp),
-        )
-        Spacer(Modifier.width(18.dp))
-        Text(label, fontSize = 17.sp)
-    }
-}
-
-@Composable
-private fun SelectionBarOperation(
-    @DrawableRes iconRes: Int,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxHeight()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 7.dp),
         horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp),
-        )
-        Spacer(modifier = Modifier.width(5.dp))
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            maxLines = 1,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Icon(icon, contentDescription = label, modifier = Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(5.dp))
+        Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

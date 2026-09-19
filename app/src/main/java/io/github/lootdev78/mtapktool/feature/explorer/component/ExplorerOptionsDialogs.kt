@@ -51,7 +51,7 @@ fun HiddenFilesDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Versteckte Dateien") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Versteckte Dateien")) },
         text = {
             Column {
                 HiddenToggleRow(Icons.Default.Visibility, "Systemdateien anzeigen", showSystemHidden, onShowSystemHidden)
@@ -74,7 +74,7 @@ fun HiddenFilesDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) } },
     )
 }
 
@@ -130,7 +130,7 @@ fun EditHiddenFilesDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Manuell versteckte Dateien") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Manuell versteckte Dateien")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 paths.forEach { path ->
@@ -149,9 +149,9 @@ fun EditHiddenFilesDialog(
             }
         },
         dismissButton = {
-            if (paths.isNotEmpty()) TextButton(onClick = onClear) { Text("ALLE EINBLENDEN") }
+            if (paths.isNotEmpty()) TextButton(onClick = onClear) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ALLE EINBLENDEN")) }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("FERTIG") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("FERTIG")) } },
     )
 }
 
@@ -169,7 +169,7 @@ fun SortFilesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sortieren – $windowLabel") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Sortieren – $windowLabel")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(Modifier.fillMaxWidth()) {
@@ -186,15 +186,15 @@ fun SortFilesDialog(
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onManage) { Text("VERWALTEN") }
-                TextButton(onClick = onDismiss) { Text("ABBRECHEN") }
+                TextButton(onClick = onManage) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("VERWALTEN")) }
+                TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) }
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 onApply(SortSpec(field, descending), onlyFolder)
                 onDismiss()
-            }) { Text("OK") }
+            }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
         },
     )
 }
@@ -229,7 +229,7 @@ fun FileFilterDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Filter") },
+        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Filter")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 FileFilter.entries.forEach { filter ->
@@ -243,7 +243,7 @@ fun FileFilterDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) } },
     )
 }
 

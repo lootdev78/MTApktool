@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
@@ -58,13 +59,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.feature.explorer.model.StorageInfo
 import io.github.lootdev78.mtapktool.feature.explorer.model.formatSize
 import io.github.lootdev78.mtapktool.feature.explorer.model.getStorageRoots
@@ -133,40 +132,36 @@ fun SideBar(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("MTApktool", style = MaterialTheme.typography.titleLarge)
-                Text("APKTOOL", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("MTApktool"), style = MaterialTheme.typography.titleLarge)
+                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("APKTOOL"), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (sortMode) {
                 IconButton(onClick = { sortMode = false }) { Icon(Icons.Default.Check, contentDescription = "Sortierung beenden") }
             } else {
-                IconButton(onClick = onOpenSettings) {
-                    Icon(painterResource(R.drawable.mt_ic_settings), contentDescription = "Theme")
-                }
+                IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Brightness6, contentDescription = "Theme") }
                 Box {
-                    IconButton(onClick = { headerMenu = true }) {
-                        Icon(painterResource(R.drawable.mt_ic_more), contentDescription = "Menü")
-                    }
+                    IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Menü") }
                     DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
                         DropdownMenuItem(
-                            text = { Text("Lokalen Speicher hinzufügen") },
-                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_add), null) },
+                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Lokalen Speicher hinzufügen")) },
+                            leadingIcon = { Icon(Icons.Default.Add, null) },
                             onClick = { headerMenu = false; onAddLocation() },
                         )
                         DropdownMenuItem(
-                            text = { Text("Speicher/Tools sortieren") },
-                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_sort), null) },
+                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Speicher/Tools sortieren")) },
+                            leadingIcon = { Icon(Icons.Default.Sort, null) },
                             onClick = { headerMenu = false; sortMode = true },
                         )
                         if (customLocations.any { it.hidden }) {
                             DropdownMenuItem(
                                 text = { Text(if (showHiddenLocations) "Verborgene Speicher ausblenden" else "Verborgene Speicher anzeigen") },
-                                leadingIcon = { Icon(painterResource(R.drawable.mt_ic_visibility), null) },
+                                leadingIcon = { Icon(if (showHiddenLocations) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) },
                                 onClick = { headerMenu = false; showHiddenLocations = !showHiddenLocations },
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("Preferences") },
-                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_settings), null) },
+                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Preferences")) },
+                            leadingIcon = { Icon(Icons.Default.Settings, null) },
                             onClick = { headerMenu = false; onOpenSettings() },
                         )
                     }
@@ -209,34 +204,40 @@ fun SideBar(
             modifier = Modifier.fillMaxWidth().clickable { onAddLocation() }.padding(horizontal = 18.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(painterResource(R.drawable.mt_ic_add), contentDescription = null, modifier = Modifier.size(22.dp))
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
-            Text("Speicher hinzufügen")
+            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Speicher hinzufügen"))
         }
 
         if (bookmarks.isNotEmpty()) {
             HorizontalDivider()
-            Text("Lesezeichen", modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Lesezeichen"), modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             bookmarks.forEach { path ->
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable { onClose(); onBookmarkClick(path) }.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(painterResource(R.drawable.mt_ic_folder), contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
                     Text(File(path).name.ifBlank { path }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    IconButton(onClick = { onRemoveBookmark(path) }) {
-                        Icon(painterResource(R.drawable.mt_ic_delete), contentDescription = "Lesezeichen entfernen")
-                    }
+                    IconButton(onClick = { onRemoveBookmark(path) }) { Icon(Icons.Default.DeleteOutline, contentDescription = "Lesezeichen entfernen") }
                 }
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Network"), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Default.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Tools", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Tools"), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Icon(Icons.Default.ExpandLess, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
@@ -273,12 +274,7 @@ fun StorageItem(storage: StorageInfo, onStorageClick: () -> Unit) {
             modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(R.drawable.mt_ic_storage),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(22.dp),
-            )
+            Icon(storage.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -316,12 +312,7 @@ private fun CustomLocationItem(
             modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(R.drawable.mt_ic_folder),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(22.dp),
-            )
+            Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -339,14 +330,14 @@ private fun CustomLocationItem(
         }
         Box {
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_rename), null) }, onClick = { menu = false; onRename() })
-                DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_delete), null) }, onClick = { menu = false; onDelete() })
+                DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Rename")) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onRename() })
+                DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Delete")) }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { menu = false; onDelete() })
                 DropdownMenuItem(
                     text = { Text(if (location.hidden) "Show" else "Hide") },
-                    leadingIcon = { Icon(painterResource(R.drawable.mt_ic_visibility), null) },
+                    leadingIcon = { Icon(if (location.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) },
                     onClick = { menu = false; onHide() },
                 )
-                DropdownMenuItem(text = { Text("Sort") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_sort), null) }, onClick = { menu = false; onSort() })
+                DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Sort")) }, leadingIcon = { Icon(Icons.Default.Sort, null) }, onClick = { menu = false; onSort() })
             }
         }
     }
