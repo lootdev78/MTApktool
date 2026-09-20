@@ -1,4 +1,3 @@
-
 package io.github.lootdev78.mtapktool.feature.explorer.screen
 
 import android.net.Uri
@@ -17,7 +16,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -40,84 +38,36 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ImageViewerScreen(
-    filePath: String,
-    onBackClick: () -> Unit
-) {
+fun ImageViewerScreen(filePath: String, onBackClick: () -> Unit) {
     val isContent = filePath.startsWith("content://")
-
+    val currentFile = remember(filePath) { if (isContent) null else File(filePath) }
     val imageSources = remember(filePath) {
-        if (isContent) {
-            listOf(filePath)
-        } else {
+        if (isContent) listOf(filePath)
+        else {
             val file = File(filePath)
-
-            file.parentFile
-                ?.listFiles { candidate ->
-                    candidate.isFile &&
-                        candidate.extension.lowercase() in setOf(
-                            "jpg",
-                            "jpeg",
-                            "png",
-                            "gif",
-                            "webp",
-                            "bmp",
-                            "heic",
-                            "heif",
-                            "avif"
-                        )
-                }
-                ?.sortedBy { it.name.lowercase() }
-                ?.map(File::getAbsolutePath)
-                .orEmpty()
-                .ifEmpty {
-                    listOf(filePath)
-                }
+            file.parentFile?.listFiles { candidate ->
+                candidate.isFile && candidate.extension.lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif")
+            }?.sortedBy { it.name.lowercase() }?.map(File::getAbsolutePath).orEmpty().ifEmpty { listOf(filePath) }
         }
     }
-
-    val initialIndex = remember(imageSources, filePath) {
-        imageSources.indexOf(filePath).coerceAtLeast(0)
-    }
-
-    val pagerState = rememberPagerState(
-        initialPage = initialIndex,
-        pageCount = { imageSources.size }
-    )
-
-    var chromeVisible by remember {
-        mutableStateOf(true)
-    }
-
-    var zoomed by remember {
-        mutableStateOf(false)
-    }
-
+    val initialIndex = remember(imageSources, filePath) { imageSources.indexOf(filePath).coerceAtLeast(0) }
+    val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { imageSources.size })
+    var chromeVisible by remember { mutableStateOf(true) }
+    var zoomed by remember { mutableStateOf(false) }
     BackHandler(onBack = onBackClick)
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             beyondViewportPageCount = 1,
-            userScrollEnabled = !zoomed
+            userScrollEnabled = !zoomed,
         ) { page ->
-
             ZoomableImage(
                 source = imageSources[page],
-                onZoomChanged = { isZoomed ->
-                    zoomed = isZoomed
-                },
-                onTap = {
-                    chromeVisible = !chromeVisible
-                }
+                onZoomChanged = { zoomed = it },
+                onTap = { chromeVisible = !chromeVisible },
             )
         }
 
@@ -125,111 +75,47 @@ fun ImageViewerScreen(
             visible = chromeVisible,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.TopCenter)
+            modifier = Modifier.align(Alignment.TopCenter),
         ) {
-
             TopAppBar(
                 title = {
-
-                    val currentSource =
-                        imageSources[pagerState.currentPage]
-
-                    val name =
-                        if (currentSource.startsWith("content://")) {
-                            Uri.parse(currentSource)
-                                .lastPathSegment
-                                ?: "Image"
-                        } else {
-                            File(currentSource).name
-                        }
-
-                    Text(
-                        text = if (imageSources.size > 1) {
-                            "$name  ${pagerState.currentPage + 1}/${imageSources.size}"
-                        } else {
-                            name
-                        },
-                        maxLines = 1
-                    )
+                    val name = if (imageSources[pagerState.currentPage].startsWith("content://")) {
+                        Uri.parse(imageSources[pagerState.currentPage]).lastPathSegment ?: "Image"
+                    } else File(imageSources[pagerState.currentPage]).name
+                    Text(if (imageSources.size > 1) "$name  ${pagerState.currentPage + 1}/${imageSources.size}" else name, maxLines = 1)
                 },
-
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-
+                navigationIcon = { IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Black.copy(alpha = 0.62f),
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
+                    navigationIconContentColor = Color.White,
+                ),
             )
         }
     }
 }
 
 @Composable
-private fun ZoomableImage(
-    source: String,
-    onZoomChanged: (Boolean) -> Unit,
-    onTap: () -> Unit
-) {
-    var scale by remember(source) {
-        mutableFloatStateOf(1f)
+private fun ZoomableImage(source: String, onZoomChanged: (Boolean) -> Unit, onTap: () -> Unit) {
+    var scale by remember(source) { mutableFloatStateOf(1f) }
+    var offset by remember(source) { mutableStateOf(Offset.Zero) }
+    val transform = rememberTransformableState { zoomChange, offsetChange, _ ->
+        val next = (scale * zoomChange).coerceIn(1f, 6f)
+        scale = next
+        offset = if (next > 1f) offset + offsetChange else Offset.Zero
+        onZoomChanged(next > 1f)
     }
-
-    var offset by remember(source) {
-        mutableStateOf(Offset.Zero)
-    }
-
-    val transform = rememberTransformableState {
-            zoomChange,
-            offsetChange,
-            _ ->
-
-        val nextScale = (scale * zoomChange)
-            .coerceIn(1f, 6f)
-
-        scale = nextScale
-
-        offset =
-            if (nextScale > 1f) {
-                offset + offsetChange
-            } else {
-                Offset.Zero
-            }
-
-        onZoomChanged(nextScale > 1f)
-    }
-
     Box(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .pointerInput(source) {
-
                 detectTapGestures(
-                    onTap = {
-                        onTap()
-                    },
-
+                    onTap = { onTap() },
                     onDoubleTap = {
-
-                        scale = if (scale > 1f) {
-                            1f
-                        } else {
-                            2.5f
-                        }
-
-                        if (scale == 1f) {
-                            offset = Offset.Zero
-                        }
-
+                        scale = if (scale > 1f) 1f else 2.5f
+                        if (scale == 1f) offset = Offset.Zero
                         onZoomChanged(scale > 1f)
-                    }
+                    },
                 )
             }
             .transformable(transform)
@@ -237,26 +123,15 @@ private fun ZoomableImage(
                 scaleX = scale,
                 scaleY = scale,
                 translationX = offset.x,
-                translationY = offset.y
+                translationY = offset.y,
             ),
-
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
-
         AsyncImage(
-            model = if (source.startsWith("content://")) {
-                Uri.parse(source)
-            } else {
-                File(source)
-            },
-
+            model = if (source.startsWith("content://")) Uri.parse(source) else File(source),
             contentDescription = null,
-
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(2.dp),
-
-            contentScale = ContentScale.Fit
+            modifier = Modifier.fillMaxSize().padding(2.dp),
+            contentScale = ContentScale.Fit,
         )
     }
 }
