@@ -91,7 +91,7 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Erstellen & Dekodieren")) },
+                        title = { Text("Erstellen & Dekodieren") },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                         },
@@ -100,7 +100,7 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
                                 IconButton(onClick = { overflow = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Mehr") }
                                 DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
                                     DropdownMenuItem(
-                                        text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Zurücksetzen")) },
+                                        text = { Text("Zurücksetzen") },
                                         onClick = {
                                             overflow = false
                                             ApktoolSettings.resetDefaults(context)
@@ -136,8 +136,8 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
                     item { SettingSwitchRow("Rohwerte ignorieren", "Apktool --ignore-raw-values", decode.ignoreRawValues, !decode.noResources) { saveDecode(decode.copy(ignoreRawValues = it)) } }
                     item {
                         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Ressourcen-Auflösung"), style = MaterialTheme.typography.titleMedium)
-                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Apktool --res-resolve-mode"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Ressourcen-Auflösung", style = MaterialTheme.typography.titleMedium)
+                            Text("Apktool --res-resolve-mode", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             CompactPicker(decode.resourceResolveMode, ApktoolSettings.resourceResolveModes, { mode ->
                                 when (mode) { "greedy" -> "Greedy"; "lazy" -> "Lazy"; else -> "Standard" }
                             }) { saveDecode(decode.copy(resourceResolveMode = it)) }
@@ -234,7 +234,7 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onBack,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Verwaltung der installierten Frameworks")) },
+        title = { Text("Verwaltung der installierten Frameworks") },
         text = {
             Column(modifier = Modifier.heightIn(max = 600.dp)) {
                 CompactPicker(active, ApktoolSettings.availableFrameworkTags(context), { ApktoolSettings.frameworkLabel(it) }) {
@@ -247,14 +247,14 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
                             Checkbox(checked, onCheckedChange = { selected = if (it) selected + file.absolutePath else selected - file.absolutePath })
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("%.2f MiB").format(file.length() / 1024.0 / 1024.0), style = MaterialTheme.typography.labelSmall)
+                                Text("%.2f MiB".format(file.length() / 1024.0 / 1024.0), style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
                 }
-                TextButton(onClick = { picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "application/zip")) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("FRAMEWORK IMPORTIEREN")) }
+                TextButton(onClick = { picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "application/zip")) }) { Text("FRAMEWORK IMPORTIEREN") }
                 if (installPath.isNotBlank()) {
-                    OutlinedTextField(installTag, { installTag = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Tag (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(installTag, { installTag = it }, label = { Text("Tag (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     TextButton(onClick = {
                         val cmd = buildString {
                             append("apktool install-framework -p ").append(ShellTokenizer.quote(ApktoolSettings.frameworkDir()))
@@ -262,20 +262,20 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
                             append(' ').append(ShellTokenizer.quote(installPath))
                         }
                         runCommand(cmd); installPath = ""
-                    }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("INSTALLIEREN")) }
+                    }) { Text("INSTALLIEREN") }
                 }
                 if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onBack) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) }
+                TextButton(onClick = onBack) { Text("SCHLIESSEN") }
                 TextButton(enabled = selected.isNotEmpty(), onClick = {
                     runCommand("apktool delete-frameworks " + selected.map { File(it).name }.joinToString(" ") { ShellTokenizer.quote(it) })
-                }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("LÖSCHEN")) }
+                }) { Text("LÖSCHEN") }
             }
         },
-        confirmButton = { TextButton(onClick = { runCommand("apktool reset-frameworks") }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ZURÜCKSETZEN")) } },
+        confirmButton = { TextButton(onClick = { runCommand("apktool reset-frameworks") }) { Text("ZURÜCKSETZEN") } },
     )
 }
 
@@ -308,22 +308,22 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onBack,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("AAPT2 Manager")) },
+        title = { Text("AAPT2 Manager") },
         text = {
             Column(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("AAPT2 ist fest aktiviert. Automatisch wählt die passende mitgelieferte Android-Binärdatei für die Seitengröße des Geräts."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("AAPT2 ist fest aktiviert. Automatisch wählt die passende mitgelieferte Android-Binärdatei für die Seitengröße des Geräts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 CompactPicker(selected, ApktoolSettings.aaptOptions, { ApktoolSettings.aaptLabel(it) }) { selected = it }
                 if (selected == "custom") {
-                    OutlinedTextField(custom, { custom = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("AAPT2 Pfad")) }, supportingText = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Muss auf Android ausführbar sein")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(custom, { custom = it }, label = { Text("AAPT2 Pfad") }, supportingText = { Text("Muss auf Android ausführbar sein") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
                 Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     Text(info, modifier = Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onBack) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
+        dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
         confirmButton = {
-            Button(enabled = valid, onClick = { ApktoolSettings.setAapt2(context, selected, custom); onBack() }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) }
+            Button(enabled = valid, onClick = { ApktoolSettings.setAapt2(context, selected, custom); onBack() }) { Text("SPEICHERN") }
         },
     )
 }
@@ -355,14 +355,14 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onBack,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Signatur")) },
+        title = { Text("Signatur") },
         text = {
             Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
                 CompactPicker(profile, ApktoolSettings.signatureProfiles, { if (it == "testkey") "Vorgabesignatur (testkey)" else "Benutzerdefinierte Signatur" }) { profile = it }
                 if (profile == "custom") {
-                    OutlinedTextField(path, { path = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Keystore")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    TextButton(onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-pkcs12", "*/*")) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("DATEI AUSWÄHLEN")) }
-                    OutlinedTextField(password, { password = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Keystore-Passwort")) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(path, { path = it }, label = { Text("Keystore") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    TextButton(onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-pkcs12", "*/*")) }) { Text("DATEI AUSWÄHLEN") }
+                    OutlinedTextField(password, { password = it }, label = { Text("Keystore-Passwort") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 }
                 SettingCheck("Signatur v1", v1) { v1 = it }
                 SettingCheck("Signatur v2", v2) { v2 = it }
@@ -370,11 +370,11 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
                 SettingCheck("Signatur v4", v4) { v4 = it }
             }
         },
-        dismissButton = { TextButton(onClick = onBack) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
+        dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
         confirmButton = {
             Button(enabled = (v1 || v2 || v3 || v4) && (profile != "custom" || path.isNotBlank()), onClick = {
                 ApktoolSettings.saveSignatureDefaults(context, ApktoolSignatureDefaults(profile, path, password, v1, v2, v3, v4)); onBack()
-            }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) }
+            }) { Text("SPEICHERN") }
         },
     )
 }
@@ -388,19 +388,19 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
     var output by remember { mutableStateOf(ApktoolSettings.outputRoot(context)) }
     AlertDialog(
         onDismissRequest = onBack,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Pfade & Jobs")) },
+        title = { Text("Pfade & Jobs") },
         text = {
             Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Parallele Runner: $workers"), fontWeight = FontWeight.SemiBold)
+                Text("Parallele Runner: $workers", fontWeight = FontWeight.SemiBold)
                 NumberPickerRow(workers) { workers = it }
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Apktool Threads pro Job: $threads"), fontWeight = FontWeight.SemiBold)
+                Text("Apktool Threads pro Job: $threads", fontWeight = FontWeight.SemiBold)
                 NumberPickerRow(threads) { threads = it }
-                OutlinedTextField(projects, { projects = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Projects root")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(output, { output = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Build output root")) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                OutlinedTextField(projects, { projects = it }, label = { Text("Projects root") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(output, { output = it }, label = { Text("Build output root") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
             }
         },
-        dismissButton = { TextButton(onClick = onBack) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
-        confirmButton = { Button(onClick = { ApktoolSettings.savePathsAndWorkers(context, workers, projects, output, threads); onBack() }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) } },
+        dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
+        confirmButton = { Button(onClick = { ApktoolSettings.savePathsAndWorkers(context, workers, projects, output, threads); onBack() }) { Text("SPEICHERN") } },
     )
 }
 
@@ -427,7 +427,7 @@ Root: ${tc.root.absolutePath}"""
             }.getOrElse { it.stackTraceToString() }
         }
     }
-    AlertDialog(onDismissRequest = onBack, title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Runtime")) }, text = { Text(info, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }, confirmButton = { TextButton(onClick = onBack) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ZURÜCK")) } })
+    AlertDialog(onDismissRequest = onBack, title = { Text("Runtime") }, text = { Text(info, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }, confirmButton = { TextButton(onClick = onBack) { Text("ZURÜCK") } })
 }
 
 @Composable
@@ -437,8 +437,8 @@ private fun TextValueDialog(title: String, value: String, hint: String, onDismis
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { OutlinedTextField(text, { text = it }, placeholder = { Text(hint) }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
-        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("SPEICHERN") } },
     )
 }
 
@@ -483,7 +483,7 @@ private fun SettingCheck(label: String, checked: Boolean, enabled: Boolean = tru
 
 @Composable
 private fun NumberPickerRow(value: Int, onSelected: (Int) -> Unit) {
-    Row { (1..4).forEach { n -> if (n == value) Button(onClick = { onSelected(n) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("$n")) } else TextButton(onClick = { onSelected(n) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("$n")) } } }
+    Row { (1..4).forEach { n -> if (n == value) Button(onClick = { onSelected(n) }) { Text("$n") } else TextButton(onClick = { onSelected(n) }) { Text("$n") } } }
 }
 
 @Composable
@@ -493,7 +493,7 @@ private fun CompactPicker(value: String, options: List<String>, label: (String) 
         TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(label(value), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.width(8.dp)); Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("▾"))
+                Spacer(Modifier.width(8.dp)); Text("▾")
             }
         }
         DropdownMenu(expanded, onDismissRequest = { expanded = false }) {

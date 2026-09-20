@@ -132,8 +132,8 @@ fun SideBar(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("MTApktool"), style = MaterialTheme.typography.titleLarge)
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("APKTOOL"), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("MTApktool", style = MaterialTheme.typography.titleLarge)
+                Text("APKTOOL", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (sortMode) {
                 IconButton(onClick = { sortMode = false }) { Icon(Icons.Default.Check, contentDescription = "Sortierung beenden") }
@@ -143,12 +143,12 @@ fun SideBar(
                     IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Menü") }
                     DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
                         DropdownMenuItem(
-                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Lokalen Speicher hinzufügen")) },
+                            text = { Text("Lokalen Speicher hinzufügen") },
                             leadingIcon = { Icon(Icons.Default.Add, null) },
                             onClick = { headerMenu = false; onAddLocation() },
                         )
                         DropdownMenuItem(
-                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Speicher/Tools sortieren")) },
+                            text = { Text("Speicher/Tools sortieren") },
                             leadingIcon = { Icon(Icons.Default.Sort, null) },
                             onClick = { headerMenu = false; sortMode = true },
                         )
@@ -160,7 +160,7 @@ fun SideBar(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Preferences")) },
+                            text = { Text("Preferences") },
                             leadingIcon = { Icon(Icons.Default.Settings, null) },
                             onClick = { headerMenu = false; onOpenSettings() },
                         )
@@ -206,12 +206,12 @@ fun SideBar(
         ) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
-            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Speicher hinzufügen"))
+            Text("Speicher hinzufügen")
         }
 
         if (bookmarks.isNotEmpty()) {
             HorizontalDivider()
-            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Lesezeichen"), modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Lesezeichen", modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             bookmarks.forEach { path ->
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable { onClose(); onBookmarkClick(path) }.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
@@ -229,7 +229,7 @@ fun SideBar(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Network"), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Network", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Icon(Icons.Default.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
@@ -237,7 +237,7 @@ fun SideBar(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Tools"), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Tools", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Icon(Icons.Default.ExpandLess, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
@@ -330,14 +330,14 @@ private fun CustomLocationItem(
         }
         Box {
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Rename")) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onRename() })
-                DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Delete")) }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { menu = false; onDelete() })
+                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onRename() })
+                DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { menu = false; onDelete() })
                 DropdownMenuItem(
                     text = { Text(if (location.hidden) "Show" else "Hide") },
                     leadingIcon = { Icon(if (location.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) },
                     onClick = { menu = false; onHide() },
                 )
-                DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Sort")) }, leadingIcon = { Icon(Icons.Default.Sort, null) }, onClick = { menu = false; onSort() })
+                DropdownMenuItem(text = { Text("Sort") }, leadingIcon = { Icon(Icons.Default.Sort, null) }, onClick = { menu = false; onSort() })
             }
         }
     }

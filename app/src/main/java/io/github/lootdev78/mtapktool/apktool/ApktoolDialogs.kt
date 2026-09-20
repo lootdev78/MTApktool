@@ -1,6 +1,5 @@
 package io.github.lootdev78.mtapktool.apktool
 
-import io.github.lootdev78.mtapktool.core.i18n.UiText
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,21 +68,21 @@ fun ApkFileActionDialog(
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onDecode),
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Dekompilieren"), fontWeight = FontWeight.SemiBold)
-                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("APK mit Apktool in ein Projekt dekompilieren"), style = MaterialTheme.typography.bodySmall)
+                        Text("Dekompilieren", fontWeight = FontWeight.SemiBold)
+                        Text("APK mit Apktool in ein Projekt dekompilieren", style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onImportFramework),
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Als Framework importieren"), fontWeight = FontWeight.SemiBold)
-                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Diese APK über den vorhandenen Apktool-Frameworkpfad installieren"), style = MaterialTheme.typography.bodySmall)
+                        Text("Als Framework importieren", fontWeight = FontWeight.SemiBold)
+                        Text("Diese APK über den vorhandenen Apktool-Frameworkpfad installieren", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
     )
 }
 
@@ -99,7 +98,7 @@ fun ApktoolFrameworkImportDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Framework importieren")) },
+        title = { Text("Framework importieren") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(file.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -110,7 +109,7 @@ fun ApktoolFrameworkImportDialog(
                 OutlinedTextField(
                     value = tag,
                     onValueChange = { tag = it.trim() },
-                    label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Tag (optional)")) },
+                    label = { Text("Tag (optional)") },
                     supportingText = {
                         Text(if (validTag) "Leer = Standard-Framework" else "Erlaubt: A-Z, a-z, 0-9, Punkt, _ und -")
                     },
@@ -120,7 +119,7 @@ fun ApktoolFrameworkImportDialog(
                 )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
         confirmButton = {
             Button(
                 enabled = file.isFile && file.extension.equals("apk", ignoreCase = true) && validTag,
@@ -141,7 +140,7 @@ fun ApktoolFrameworkImportDialog(
                     onJobQueued(jobId)
                     onDismiss()
                 },
-            ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("IMPORTIEREN")) }
+            ) { Text("IMPORTIEREN") }
         },
     )
 }
@@ -216,7 +215,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                     SectionTitle("Dekompilierung zusätzlicher APKs")
                     CheckRow("Alle APK-Splits in eigene Projekte dekompilieren", allSplits) { allSplits = it }
                     when {
-                        splitScanning -> Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Container wird analysiert …"), style = MaterialTheme.typography.bodySmall)
+                        splitScanning -> Text("Container wird analysiert …", style = MaterialTheme.typography.bodySmall)
                         splitEntries.isEmpty() -> Text(splitScanError ?: "Keine APK gefunden", color = MaterialTheme.colorScheme.error)
                         !allSplits -> SplitEntryPicker(selectedSplitPath, splitEntries) { selectedSplitPath = it }
                     }
@@ -225,7 +224,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                 OutlinedTextField(
                     value = output,
                     onValueChange = { output = it },
-                    label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Ausgabeordner")) },
+                    label = { Text("Ausgabeordner") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
@@ -233,8 +232,8 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
         },
         dismissButton = {
             Row {
-                TextButton(onClick = { showSettings = true }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("EINSTELLUNGEN")) }
-                TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) }
+                TextButton(onClick = { showSettings = true }) { Text("EINSTELLUNGEN") }
+                TextButton(onClick = onDismiss) { Text("ABBRECHEN") }
             }
         },
         confirmButton = {
@@ -274,6 +273,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                         title = "Decode ${file.name}",
                         command = command,
                         postDecodeRoot = output,
+                        sourceApk = file.absolutePath,
                         createNomedia = createNomedia,
                         removeSplitTraces = removeSplit,
                         removePropertyTags = removeProperty,
@@ -281,14 +281,14 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                     onJobQueued(jobId)
                     onDismiss()
                 },
-            ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
+            ) { Text("OK") }
         },
     )
 
     if (showSettings) {
         AlertDialog(
             onDismissRequest = { showSettings = false },
-            title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Einstellungen")) },
+            title = { Text("Einstellungen") },
             text = {
                 Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
                     CheckRow("Debug-Informationen schreiben", !noDebug) { noDebug = !it }
@@ -296,7 +296,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                     CheckRow("Verwenden Sie \"Register\" statt \"Lokale\".", useRegisters) { useRegisters = it }
                     CheckRow("Beibehaltung der Ordnerstruktur", preserveStructure) { preserveStructure = it }
                     if (resources && !onlyManifest) {
-                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Ressourcen-Auflösung"), style = MaterialTheme.typography.labelLarge)
+                        Text("Ressourcen-Auflösung", style = MaterialTheme.typography.labelLarge)
                         ChoicePicker(resolveMode, ApktoolSettings.resourceResolveModes, { mode ->
                             when (mode) {
                                 "greedy" -> "Greedy"
@@ -317,8 +317,8 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { showThreads = true }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("THREADS")) }
-                    TextButton(onClick = { showSettings = false }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) }
+                    TextButton(onClick = { showThreads = true }) { Text("THREADS") }
+                    TextButton(onClick = { showSettings = false }) { Text("ABBRECHEN") }
                 }
             },
             confirmButton = {
@@ -336,7 +336,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
                     )
                     ApktoolSettings.setApktoolThreads(context, threads)
                     showSettings = false
-                }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) }
+                }) { Text("SPEICHERN") }
             },
         )
     }
@@ -351,8 +351,14 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
 @Composable
 fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
     val context = LocalContext.current
+    remember(context) { ApktoolProjectSessionManager.configure(context.filesDir); true }
     val defaults = remember(project) { ApktoolSettings.buildDefaults(context) }
     val general = remember(project) { ApktoolSettings.generalDefaults(context) }
+    var projectSession by remember(project.absolutePath) { mutableStateOf<ApktoolProjectSession?>(null) }
+
+    LaunchedEffect(project.absolutePath) {
+        projectSession = withContext(Dispatchers.IO) { runCatching { ApktoolProjectSessionManager.refresh(project) }.getOrNull() }
+    }
 
     var aapt by remember { mutableStateOf(ApktoolSettings.aaptVariant(context)) }
     var customAapt by remember { mutableStateOf(ApktoolSettings.customAapt2Path(context)) }
@@ -379,9 +385,31 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Projekt kompilieren \"${project.name}\"?")) },
+        title = { Text("Projekt kompilieren \"${project.name}\"?") },
         text = {
             Column(modifier = Modifier.heightIn(max = 590.dp).verticalScroll(rememberScrollState())) {
+                projectSession?.let { session ->
+                    val stateLabel = when (session.state) {
+                        ApktoolWorkflowStage.DIRTY -> "Geändert"
+                        ApktoolWorkflowStage.BUILDING -> "Wird erstellt"
+                        ApktoolWorkflowStage.POST_PROCESSING -> "Nachbearbeitung"
+                        ApktoolWorkflowStage.VERIFYING -> "Prüfung"
+                        ApktoolWorkflowStage.FAILED -> "Fehler"
+                        ApktoolWorkflowStage.SUCCEEDED -> "Zuletzt erfolgreich erstellt"
+                        else -> "Bereit"
+                    }
+                    Text(stateLabel, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                    if (session.changedFiles.isNotEmpty()) {
+                        Text("${session.changedFiles.size} geänderte Datei(en)", style = MaterialTheme.typography.bodySmall)
+                        session.changedFiles.take(4).forEach { changed ->
+                            Text("• $changed", style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Spacer(Modifier.padding(top = 3.dp))
+                    }
+                    session.sourceApkPath?.let { source ->
+                        Text("Quelle: $source", style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
                 SectionTitle("AAPT2")
                 Text(
                     "AAPT2 ist immer aktiv. Wähle Automatisch für die empfohlene Gerätevariante.",
@@ -390,7 +418,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                 )
                 ChoicePicker(aapt, ApktoolSettings.aaptOptions, { ApktoolSettings.aaptLabel(it) }) { aapt = it }
                 if (aapt == "custom") {
-                    OutlinedTextField(customAapt, { customAapt = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Custom AAPT2")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(customAapt, { customAapt = it }, label = { Text("Custom AAPT2") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
 
                 SectionTitle("Rahmenwerk")
@@ -402,13 +430,13 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                     IconButton(onClick = { showSignature = true }) { Icon(Icons.Default.Settings, contentDescription = "Signatur") }
                 }
 
-                OutlinedTextField(output, { output = it }, label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Ausgabe-APK")) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                OutlinedTextField(output, { output = it }, label = { Text("Ausgabe-APK") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
             }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = { showSettings = true }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("EINSTELLUNGEN")) }
-                TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) }
+                TextButton(onClick = { showSettings = true }) { Text("EINSTELLUNGEN") }
+                TextButton(onClick = onDismiss) { Text("ABBRECHEN") }
             }
         },
         confirmButton = {
@@ -431,6 +459,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                         }
                         append(" -o ").append(ShellTokenizer.quote(output)).append(' ').append(ShellTokenizer.quote(project.absolutePath))
                     }
+                    ApktoolProjectSessionManager.begin(project, ApktoolWorkflowStage.QUEUED)
                     val jobId = ApktoolJobService.enqueue(
                         context = context,
                         title = "Build ${project.name}",
@@ -439,18 +468,19 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                         postSign = sign,
                         signature = signature,
                         cleanBuildProject = if (deleteBuild) project.absolutePath else null,
+                        projectRoot = project.absolutePath,
                     )
                     onJobQueued(jobId)
                     onDismiss()
                 },
-            ) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
+            ) { Text("OK") }
         },
     )
 
     if (showSettings) {
         AlertDialog(
             onDismissRequest = { showSettings = false },
-            title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Einstellungen")) },
+            title = { Text("Einstellungen") },
             text = {
                 Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
                     CheckRow("Vollständigen Build erzwingen", force) { force = it }
@@ -467,8 +497,8 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { showThreads = true }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("THREADS")) }
-                    TextButton(onClick = { showSettings = false }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) }
+                    TextButton(onClick = { showThreads = true }) { Text("THREADS") }
+                    TextButton(onClick = { showSettings = false }) { Text("ABBRECHEN") }
                 }
             },
             confirmButton = {
@@ -479,7 +509,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                     )
                     ApktoolSettings.setApktoolThreads(context, threads)
                     showSettings = false
-                }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) }
+                }) { Text("SPEICHERN") }
             },
         )
     }
@@ -508,13 +538,13 @@ private fun ThreadPickerDialog(title: String, value: Int, onSave: (Int) -> Unit,
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 (1..4).forEach { n ->
                     TextButton(onClick = { selected = n }, modifier = Modifier.fillMaxWidth()) {
-                        Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("$n"), color = if (selected == n) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("$n", color = if (selected == n) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
-        confirmButton = { TextButton(onClick = { onSave(selected) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPEICHERN")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
+        confirmButton = { TextButton(onClick = { onSave(selected) }) { Text("SPEICHERN") } },
     )
 }
 
@@ -523,14 +553,9 @@ fun ApktoolJobsDialog(jobs: List<ApktoolJobInfo>, onCancel: (String) -> Unit, on
     val active = jobs.count { !it.isTerminal }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                if (active > 0) UiText.t("Apktool Jobs ($active active)", "Apktool Jobs ($active aktiv)")
-                else "Apktool Jobs"
-            )
-        },
+        title = { Text("Apktool Jobs${if (active > 0) " ($active aktiv)" else ""}") },
         text = {
-            if (jobs.isEmpty()) Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Keine Jobs in dieser App-Sitzung."))
+            if (jobs.isEmpty()) Text("Keine Jobs in dieser App-Sitzung.")
             else LazyColumn(modifier = Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(jobs, key = { it.id }) { job ->
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -540,15 +565,15 @@ fun ApktoolJobsDialog(jobs: List<ApktoolJobInfo>, onCancel: (String) -> Unit, on
                                 Text(job.status, style = MaterialTheme.typography.labelSmall)
                             }
                             Text(job.line.lineSequence().lastOrNull().orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                            if (!job.isTerminal) TextButton(onClick = { onCancel(job.id) }, modifier = Modifier.align(Alignment.End)) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("STOP")) }
+                            if (!job.isTerminal) TextButton(onClick = { onCancel(job.id) }, modifier = Modifier.align(Alignment.End)) { Text("STOP") }
                             else if (!job.output.isNullOrBlank()) Text(job.output, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
                         }
                     }
                 }
             }
         },
-        dismissButton = { if (active > 0) TextButton(onClick = onCancelAll) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ALLE STOPPEN")) } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) } },
+        dismissButton = { if (active > 0) TextButton(onClick = onCancelAll) { Text("ALLE STOPPEN") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } },
     )
 }
 
@@ -558,21 +583,21 @@ fun ApktoolCliDialog(onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) 
     var command by remember { mutableStateOf("apktool --help") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Apktool CLI")) },
+        title = { Text("Apktool CLI") },
         text = {
             OutlinedTextField(
                 value = command,
                 onValueChange = { command = it },
                 minLines = 4,
                 maxLines = 10,
-                label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Command")) },
+                label = { Text("Command") },
                 textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                 modifier = Modifier.fillMaxWidth(),
             )
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("ABBRECHEN")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ABBRECHEN") } },
         confirmButton = {
-            Button(enabled = command.isNotBlank(), onClick = { val jobId = ApktoolJobService.enqueue(context, "CLI", command); onJobQueued(jobId); onDismiss() }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("START")) }
+            Button(enabled = command.isNotBlank(), onClick = { val jobId = ApktoolJobService.enqueue(context, "CLI", command); onJobQueued(jobId); onDismiss() }) { Text("START") }
         },
     )
 }
@@ -600,7 +625,7 @@ private fun ChoicePicker(value: String, options: List<String>, label: (String) -
         TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(label(value), modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.width(8.dp)); Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("▾"))
+                Spacer(Modifier.width(8.dp)); Text("▾")
             }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -617,7 +642,7 @@ private fun SplitEntryPicker(value: String?, entries: List<SplitArchiveSupport.A
     val selected = entries.firstOrNull { it.path == value } ?: entries.firstOrNull()
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("APK im Container"), style = MaterialTheme.typography.labelLarge)
+            Text("APK im Container", style = MaterialTheme.typography.labelLarge)
             Text(selected?.path ?: "Automatisch", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -112,7 +112,7 @@ private fun MtOpenWithDialog(
             modifier = Modifier.fillMaxWidth(0.86f),
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp)) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Open with..."), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("Open with...", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.size(10.dp))
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     actions.forEach { action ->
@@ -209,7 +209,7 @@ private fun MtActionDialog(
                 }
                 Row(Modifier.fillMaxWidth()) {
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SCHLIESSEN")) }
+                    TextButton(onClick = onDismiss) { Text("SCHLIESSEN") }
                 }
             }
         }

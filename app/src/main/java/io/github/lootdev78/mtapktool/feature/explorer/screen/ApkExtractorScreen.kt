@@ -200,7 +200,7 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
                         TextField(
                             value = query,
                             onValueChange = { query = it },
-                            placeholder = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Search apps")) },
+                            placeholder = { Text("Search apps") },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
@@ -217,12 +217,12 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
                             IconButton(onClick = { overflow = true }) { Icon(Icons.Default.MoreVert, "More") }
                             DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
                                 DropdownMenuItem(
-                                    text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Sort")) },
+                                    text = { Text("Sort") },
                                     leadingIcon = { Icon(Icons.Default.Sort, null) },
                                     onClick = { overflow = false; showSort = true },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Select all")) },
+                                    text = { Text("Select all") },
                                     leadingIcon = { Icon(Icons.Default.SelectAll, null) },
                                     onClick = {
                                         overflow = false
@@ -230,7 +230,7 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Preferences")) },
+                                    text = { Text("Preferences") },
                                     leadingIcon = { Icon(Icons.Default.Settings, null) },
                                     onClick = { overflow = false; showPreferences = true },
                                 )
@@ -278,7 +278,7 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
                                         Text(formatBytes(context, app.baseSize), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
                                         if (app.split && app.splitSize > 0L) {
                                             Spacer(Modifier.width(10.dp))
-                                            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SPLIT+${formatBytes(context, app.splitSize)}"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
+                                            Text("SPLIT+${formatBytes(context, app.splitSize)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
                                         }
                                     }
                                     Text(app.packageName, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -414,7 +414,7 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
                     CircularProgressIndicator()
                     Spacer(Modifier.size(14.dp))
                     Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("${(busyProgress * 100).toInt().coerceIn(0, 100)}%"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${(busyProgress * 100).toInt().coerceIn(0, 100)}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -489,15 +489,15 @@ private fun InstalledAppInfoDialog(
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box {
-                        TextButton(onClick = { more = true }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("MORE")) }
+                        TextButton(onClick = { more = true }) { Text("MORE") }
                         DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                            DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Launch")) }, onClick = { more = false; onLaunch() })
-                            DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Details")) }, onClick = { more = false; onDetails() })
-                            DropdownMenuItem(text = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Uninstall")) }, onClick = { more = false; onUninstall() })
+                            DropdownMenuItem(text = { Text("Launch") }, onClick = { more = false; onLaunch() })
+                            DropdownMenuItem(text = { Text("Details") }, onClick = { more = false; onDetails() })
+                            DropdownMenuItem(text = { Text("Uninstall") }, onClick = { more = false; onUninstall() })
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onExtract) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("EXTRACT APK")) }
+                    TextButton(onClick = onExtract) { Text("EXTRACT APK") }
                 }
             }
         }
@@ -531,11 +531,11 @@ private fun InstalledAppsPreferencesDialog(
             shadowElevation = 10.dp,
         ) {
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Preferences"), fontSize = 28.sp, fontWeight = FontWeight.Medium)
+                Text("Preferences", fontSize = 28.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.size(14.dp))
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Installed Apps"), color = Color(0xFF2196F3), fontSize = 17.sp)
+                Text("Installed Apps", color = Color(0xFF2196F3), fontSize = 17.sp)
                 Spacer(Modifier.size(10.dp))
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("APK storage path"), fontSize = 19.sp)
+                Text("APK storage path", fontSize = 19.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextField(
                         value = value.outputPath,
@@ -544,10 +544,10 @@ private fun InstalledAppsPreferencesDialog(
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = { treePicker.launch(null) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("…"), fontSize = 22.sp) }
+                    TextButton(onClick = { treePicker.launch(null) }) { Text("…", fontSize = 22.sp) }
                 }
                 Spacer(Modifier.size(10.dp))
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Name pattern"), fontSize = 19.sp)
+                Text("Name pattern", fontSize = 19.sp)
                 TextField(
                     value = value.namePattern,
                     onValueChange = { value = value.copy(namePattern = it) },
@@ -561,9 +561,9 @@ private fun InstalledAppsPreferencesDialog(
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 HorizontalDivider(Modifier.padding(vertical = 14.dp))
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Other"), color = Color(0xFF2196F3), fontSize = 17.sp)
+                Text("Other", color = Color(0xFF2196F3), fontSize = 17.sp)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Enable signature verification"), modifier = Modifier.weight(1f), fontSize = 18.sp)
+                    Text("Enable signature verification", modifier = Modifier.weight(1f), fontSize = 18.sp)
                     Switch(checked = value.verifySignature, onCheckedChange = { value = value.copy(verifySignature = it) })
                 }
                 Text(
@@ -573,10 +573,10 @@ private fun InstalledAppsPreferencesDialog(
                     lineHeight = 18.sp,
                 )
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { value = value.copy(namePattern = "{A}_{V}.apk") }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("{ }"), fontSize = 20.sp) }
+                    TextButton(onClick = { value = value.copy(namePattern = "{A}_{V}.apk") }) { Text("{ }", fontSize = 20.sp) }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CANCEL")) }
-                    TextButton(onClick = { onSave(value) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
+                    TextButton(onClick = onDismiss) { Text("CANCEL") }
+                    TextButton(onClick = { onSave(value) }) { Text("OK") }
                 }
             }
         }
@@ -594,7 +594,7 @@ private fun ExtractorSortDialog(selected: Int, onDismiss: () -> Unit, onSelect: 
             shadowElevation = 10.dp,
         ) {
             Column(Modifier.padding(20.dp)) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Sort"), fontSize = 27.sp, fontWeight = FontWeight.Medium)
+                Text("Sort", fontSize = 27.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.size(8.dp))
                 options.forEachIndexed { index, label ->
                     Row(
@@ -608,7 +608,7 @@ private fun ExtractorSortDialog(selected: Int, onDismiss: () -> Unit, onSelect: 
                 }
                 Row(Modifier.fillMaxWidth()) {
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CANCEL")) }
+                    TextButton(onClick = onDismiss) { Text("CANCEL") }
                 }
             }
         }
@@ -631,8 +631,8 @@ private fun ConfirmExtractorDialog(title: String, text: String, onCancel: () -> 
                 Spacer(Modifier.size(18.dp))
                 Row(Modifier.fillMaxWidth()) {
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onCancel) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CANCEL")) }
-                    TextButton(onClick = onConfirm) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OK")) }
+                    TextButton(onClick = onCancel) { Text("CANCEL") }
+                    TextButton(onClick = onConfirm) { Text("OK") }
                 }
             }
         }

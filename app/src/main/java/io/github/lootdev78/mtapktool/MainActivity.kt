@@ -69,15 +69,14 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.DARK -> true
                 ThemeMode.LIGHT -> false
             }
-            LaunchedEffect(themeMode, darkBars, explorerPrefs.accentKey) {
+            LaunchedEffect(themeMode, darkBars) {
                 applicationContext.getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE)
                     .edit()
                     .putString("mode", themeMode.name)
-                    .putString("accent_key", explorerPrefs.accentKey)
                     .apply()
                 val controller = WindowInsetsControllerCompat(window, window.decorView)
-                window.statusBarColor = if (darkBars) AndroidColor.rgb(48, 48, 48) else AndroidColor.rgb(250, 250, 250)
-                window.navigationBarColor = if (darkBars) AndroidColor.rgb(48, 48, 48) else AndroidColor.rgb(250, 250, 250)
+                window.statusBarColor = if (darkBars) AndroidColor.rgb(18, 19, 24) else AndroidColor.rgb(246, 243, 247)
+                window.navigationBarColor = if (darkBars) AndroidColor.rgb(10, 11, 15) else AndroidColor.rgb(246, 243, 247)
                 controller.isAppearanceLightStatusBars = !darkBars
                 controller.isAppearanceLightNavigationBars = !darkBars
             }

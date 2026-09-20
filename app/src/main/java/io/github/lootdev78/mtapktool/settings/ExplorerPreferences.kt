@@ -27,12 +27,14 @@ data class ExplorerPrefs(
     val optimizeExternalTransfer: Boolean = true,
     val startupLeft: String = "home",
     val startupRight: String = "home",
+    val requestRootAtStartup: Boolean = false,
+    val requestShellAtStartup: Boolean = false,
     val fileMenuOrder: List<String> = defaultFileMenuOrder,
     val builtInOpenOrder: List<String> = defaultBuiltInOpenOrder,
 ) {
     companion object {
         val defaultFileMenuOrder = listOf(
-            "copy", "move", "tools", "rename", "delete", "compress", "properties", "share", "open_with", "bookmark",
+            "copy", "move", "delete", "rename", "tools", "compress", "properties", "share", "open_with", "bookmark",
         )
         val defaultBuiltInOpenOrder = listOf(
             "text", "archive", "apk", "split", "apktool", "reveal", "external",
@@ -94,7 +96,9 @@ object ExplorerPreferences {
         optimizeExternalTransfer = p.getBoolean("optimize_external_transfer", true),
         startupLeft = p.getString("startup_left", "home") ?: "home",
         startupRight = p.getString("startup_right", "home") ?: "home",
-        fileMenuOrder = decodeFileMenuOrder(p.getString("file_menu_order", null)),
+        requestRootAtStartup = p.getBoolean("request_root_startup", false),
+        requestShellAtStartup = p.getBoolean("request_shell_startup", false),
+        fileMenuOrder = decodeOrder(p.getString("file_menu_order", null), ExplorerPrefs.defaultFileMenuOrder),
         builtInOpenOrder = decodeOrder(p.getString("built_in_open_order", null), ExplorerPrefs.defaultBuiltInOpenOrder),
     )
 
@@ -118,15 +122,11 @@ object ExplorerPreferences {
             .putBoolean("optimize_external_transfer", v.optimizeExternalTransfer)
             .putString("startup_left", v.startupLeft)
             .putString("startup_right", v.startupRight)
+            .putBoolean("request_root_startup", v.requestRootAtStartup)
+            .putBoolean("request_shell_startup", v.requestShellAtStartup)
             .putString("file_menu_order", v.fileMenuOrder.joinToString(","))
             .putString("built_in_open_order", v.builtInOpenOrder.joinToString(","))
             .apply()
-    }
-
-    private fun decodeFileMenuOrder(raw: String?): List<String> {
-        // Migrate the order used by older MTApktool builds to the MT-style action order.
-        val legacy = "copy,move,delete,rename,tools,compress,properties,share,open_with,bookmark"
-        return decodeOrder(if (raw == legacy) null else raw, ExplorerPrefs.defaultFileMenuOrder)
     }
 
     private fun decodeOrder(raw: String?, defaults: List<String>): List<String> {

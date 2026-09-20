@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
@@ -51,14 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import io.github.lootdev78.mtapktool.core.i18n.UiText
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
-import io.github.lootdev78.mtapktool.feature.explorer.state.isApkFile
-import io.github.lootdev78.mtapktool.feature.explorer.state.isArchiveFile
-import io.github.lootdev78.mtapktool.feature.explorer.state.isAudioFile
-import io.github.lootdev78.mtapktool.feature.explorer.state.isEditableTextFile
-import io.github.lootdev78.mtapktool.feature.explorer.state.isImageFile
-import io.github.lootdev78.mtapktool.feature.explorer.state.isVideoFile
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import kotlinx.coroutines.delay
@@ -84,7 +78,6 @@ fun FileContextMenuDialog(
     onShare: () -> Unit,
     onOpenWith: () -> Unit,
     onAddBookmark: () -> Unit,
-    onTypeAction: () -> Unit,
 ) {
     var isVisible by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -130,38 +123,17 @@ fun FileContextMenuDialog(
                 modifier = Modifier.fillMaxWidth(0.88f),
             ) {
                 Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 8.dp)) {
-                    targetItem?.let { item ->
-                        val typeTitle = when {
-                            item.isApkFile() -> UiText.t("APK information", "APK-Informationen")
-                            item.isImageFile() -> UiText.t("Image viewer", "Bildbetrachter")
-                            item.isVideoFile() -> UiText.t("Video player", "Videoplayer")
-                            item.isAudioFile() -> UiText.t("Audio player", "Audioplayer")
-                            item.isArchiveFile() -> UiText.t("Open archive", "Archiv öffnen")
-                            item.isEditableTextFile() -> UiText.t("Text editor", "Texteditor")
-                            else -> null
-                        }
-                        typeTitle?.let { title ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable(onClick = onTypeAction).padding(horizontal = 6.dp, vertical = 11.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Text(title, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
                     val actions = mapOf(
-                        "copy" to MenuAction(addArrow(UiText.t("Copy", "Kopieren")), Icons.Outlined.ContentCopy, targetItem != null, onCopy),
-                        "move" to MenuAction(addArrow(UiText.t("Move", "Verschieben")), Icons.AutoMirrored.Outlined.DriveFileMove, targetItem != null, onMove),
-                        "delete" to MenuAction(UiText.t("Delete", "Löschen"), Icons.Default.Delete, targetItem != null, onDelete),
-                        "rename" to MenuAction(UiText.t("Rename", "Umbenennen"), Icons.Default.Edit, targetItem != null, onRename),
-                        "tools" to MenuAction(UiText.t("Tools", "Tools"), Icons.Default.Build, targetItem != null, onTools),
-                        "compress" to MenuAction(UiText.t("Compress", "Komprimieren"), Icons.Default.Archive, targetItem != null, onCompress),
-                        "properties" to MenuAction(UiText.t("Properties", "Eigenschaften"), Icons.Outlined.Info, targetItem != null, onProperty),
-                        "share" to MenuAction(UiText.t("Share", "Teilen"), Icons.Default.Share, targetItem?.isDirectory == false, onShare),
-                        "open_with" to MenuAction(UiText.t("Open with…", "Öffnen mit…"), Icons.Default.Check, targetItem?.isDirectory == false, onOpenWith),
-                        "bookmark" to MenuAction(UiText.t("Bookmarks…", "Lesezeichen…"), Icons.Outlined.BookmarkAdd, targetItem != null, onAddBookmark),
+                        "copy" to MenuAction(addArrow("Kopieren"), Icons.Outlined.ContentCopy, targetItem != null, onCopy),
+                        "move" to MenuAction(addArrow("Verschieben"), Icons.AutoMirrored.Outlined.DriveFileMove, targetItem != null, onMove),
+                        "delete" to MenuAction("Löschen", Icons.Default.Delete, targetItem != null, onDelete),
+                        "rename" to MenuAction("Umbenennen", Icons.Default.Edit, targetItem != null, onRename),
+                        "tools" to MenuAction("Tools", Icons.Default.Build, targetItem != null, onTools),
+                        "compress" to MenuAction("Komprimieren", Icons.Default.Archive, targetItem != null, onCompress),
+                        "properties" to MenuAction("Eigenschaften", Icons.Outlined.Info, targetItem != null, onProperty),
+                        "share" to MenuAction("Teilen", Icons.Default.Share, targetItem?.isDirectory == false, onShare),
+                        "open_with" to MenuAction("Öffnen mit…", Icons.Default.Check, targetItem?.isDirectory == false, onOpenWith),
+                        "bookmark" to MenuAction("Lesezeichen…", Icons.Outlined.BookmarkAdd, targetItem != null, onAddBookmark),
                     )
                     prefs.fileMenuOrder.mapNotNull(actions::get).chunked(2).forEach { pair ->
                         ActionRow(
@@ -171,7 +143,7 @@ fun FileContextMenuDialog(
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { animateDismiss() }) { Text(UiText.t("CLOSE", "SCHLIESSEN")) }
+                        TextButton(onClick = { animateDismiss() }) { Text("SCHLIESSEN") }
                     }
                 }
             }

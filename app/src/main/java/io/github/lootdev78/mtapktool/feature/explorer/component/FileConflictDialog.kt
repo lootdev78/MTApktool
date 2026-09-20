@@ -42,7 +42,7 @@ fun FileConflictDialog(
             tonalElevation = 0.dp,
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("File already exist"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text("File already exist", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text(
                     request.name,
                     modifier = Modifier.padding(top = 16.dp),
@@ -65,15 +65,15 @@ fun FileConflictDialog(
                 ) {
                     Checkbox(checked = applyAll, onCheckedChange = { applyAll = it })
                     Spacer(Modifier.width(4.dp))
-                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Apply to all"))
+                    Text("Apply to all")
                 }
 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { onResolve(FileConflictAction.CANCEL, false) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("CANCEL")) }
+                    TextButton(onClick = { onResolve(FileConflictAction.CANCEL, false) }) { Text("CANCEL") }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { onResolve(FileConflictAction.SKIP, applyAll) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("SKIP")) }
-                    TextButton(onClick = { onResolve(FileConflictAction.KEEP_BOTH, applyAll) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("KEEP BOTH")) }
-                    TextButton(onClick = { onResolve(FileConflictAction.OVERWRITE, applyAll) }) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("OVERWRITE")) }
+                    TextButton(onClick = { onResolve(FileConflictAction.SKIP, applyAll) }) { Text("SKIP") }
+                    TextButton(onClick = { onResolve(FileConflictAction.KEEP_BOTH, applyAll) }) { Text("KEEP BOTH") }
+                    TextButton(onClick = { onResolve(FileConflictAction.OVERWRITE, applyAll) }) { Text("OVERWRITE") }
                 }
             }
         }

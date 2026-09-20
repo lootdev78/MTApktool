@@ -13,7 +13,6 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.ColorDrawable;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
@@ -28,13 +27,11 @@ import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.WindowInsets;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.util.Log;
@@ -51,7 +48,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 import modder.hub.editor.buffer.GapBuffer;
@@ -84,13 +80,7 @@ public class MainActivity extends Activity {
     private LinearLayout search_pad, linear_rep;
 
     private FrameLayout editorContainer;
-    private FrameLayout bottomFrame;
     private LinearLayout functionBar;
-    private LinearLayout fileNavDrawer;
-    private LinearLayout fileNavList;
-    private static final int MENU_FILES = 0x4D540101;
-    private boolean hostDark = true;
-    private int hostAccent = Color.rgb(25, 118, 210);
 
     private static final List<String> SYMBOLS = Arrays.asList(
             "(", ")", "[", "]", "{", "}", ".", ",", ";",
@@ -116,9 +106,8 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(true);
         }
-        getWindow().setStatusBarColor(hostDark ? Color.rgb(48, 48, 48) : Color.rgb(250, 250, 250));
-        getWindow().setNavigationBarColor(hostDark ? Color.rgb(48, 48, 48) : Color.rgb(250, 250, 250));
-        if (getActionBar() != null) getActionBar().setBackgroundDrawable(new ColorDrawable(hostAccent));
+        getWindow().setStatusBarColor(Color.BLACK);
+        getWindow().setNavigationBarColor(Color.BLACK);
         setContentView(R.layout.activity_main);
         initialize();
         initializeLogic();
@@ -136,29 +125,7 @@ public class MainActivity extends Activity {
             dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                     == Configuration.UI_MODE_NIGHT_YES;
         }
-        hostDark = dark;
-        String accentKey = getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE)
-                .getString("accent_key", "blue");
-        hostAccent = accentColor(accentKey, dark);
         setTheme(dark ? R.style.MTApktoolEditorTheme_Dark : R.style.MTApktoolEditorTheme_Light);
-    }
-
-    private int accentColor(String key, boolean dark) {
-        if ("cyan".equals(key)) return Color.rgb(13, 123, 168);
-        if ("indigo".equals(key)) return Color.rgb(57, 73, 171);
-        if ("brown".equals(key)) return Color.rgb(162, 103, 84);
-        if ("pink".equals(key)) return Color.rgb(169, 71, 105);
-        if ("purple".equals(key)) return Color.rgb(92, 70, 149);
-        if ("lime".equals(key)) return Color.rgb(90, 130, 56);
-        if ("green".equals(key)) return Color.rgb(38, 108, 45);
-        if ("teal_dark".equals(key)) return Color.rgb(0, 105, 92);
-        if ("black".equals(key) || "true_black".equals(key)) return dark ? Color.LTGRAY : Color.rgb(32, 33, 36);
-        if ("gray".equals(key)) return dark ? Color.rgb(184, 184, 184) : Color.rgb(85, 85, 85);
-        return dark ? Color.rgb(25, 118, 210) : Color.rgb(66, 165, 245);
-    }
-
-    private String tr(String en, String de) {
-        return Locale.getDefault().getLanguage().equalsIgnoreCase("de") ? de : en;
     }
 
     private void initialize() {
@@ -178,10 +145,7 @@ public class MainActivity extends Activity {
         linear_rep = findViewById(R.id.linear_rep);
 
         editorContainer = findViewById(R.id.editorContainer);
-        bottomFrame = findViewById(R.id.frameLayout);
         functionBar = findViewById(R.id.functionBar);
-        applyBottomSystemInsets();
-        buildFileNavigation();
 
         editView = new EditView(this);
         editView.setWordWrap(editor_pref.getBoolean("word_wrap", false));
@@ -191,144 +155,6 @@ public class MainActivity extends Activity {
         editView.setShowIndentGuides(editor_pref.getBoolean("show_indent_guides", true));
         editView.setShowWrapArrows(editor_pref.getBoolean("show_wrap_arrows", true));
         editView.setAutoIndentEnabled(editor_pref.getBoolean("auto_indent", true));
-    }
-
-    /** Keep symbol/search controls above Android gesture/navigation areas. */
-    private void applyBottomSystemInsets() {
-        final View root = findViewById(R.id.rootLayout);
-        if (root == null || bottomFrame == null) return;
-        final int left = bottomFrame.getPaddingLeft();
-        final int top = bottomFrame.getPaddingTop();
-        final int right = bottomFrame.getPaddingRight();
-        final int bottom = bottomFrame.getPaddingBottom();
-        root.setOnApplyWindowInsetsListener((view, insets) -> {
-            int navigationBottom;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                navigationBottom = insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
-            } else {
-                navigationBottom = insets.getSystemWindowInsetBottom();
-            }
-            int extra = Build.VERSION.SDK_INT >= 35 ? navigationBottom : 0;
-            bottomFrame.setPadding(left, top, right, bottom + extra);
-            return insets;
-        });
-        root.requestApplyInsets();
-    }
-
-    /** MT-style left file navigation: current directory plus ordered recent files. */
-    private void buildFileNavigation() {
-        FrameLayout root = findViewById(R.id.rootLayout);
-        if (root == null) return;
-        fileNavDrawer = new LinearLayout(this);
-        fileNavDrawer.setOrientation(LinearLayout.VERTICAL);
-        fileNavDrawer.setBackgroundColor(themeColor(android.R.attr.colorBackground, Color.DKGRAY));
-        fileNavDrawer.setElevation(dp(12));
-        fileNavDrawer.setVisibility(View.GONE);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(292), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START);
-        root.addView(fileNavDrawer, lp);
-
-        TextView header = navText(tr("Files / Recent", "Dateien / Zuletzt"), 20, true);
-        header.setPadding(dp(18), dp(18), dp(12), dp(14));
-        fileNavDrawer.addView(header, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        ScrollView scroll = new ScrollView(this);
-        fileNavList = new LinearLayout(this);
-        fileNavList.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(fileNavList, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
-        fileNavDrawer.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-    }
-
-    private int dp(int value) { return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()); }
-
-    private TextView navText(String text, int sp, boolean bold) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextSize(sp);
-        view.setTextColor(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
-        if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
-        view.setGravity(Gravity.CENTER_VERTICAL);
-        return view;
-    }
-
-    private void toggleFileNavigation() {
-        if (fileNavDrawer == null) return;
-        if (fileNavDrawer.getVisibility() == View.VISIBLE) fileNavDrawer.setVisibility(View.GONE);
-        else { refreshFileNavigation(); fileNavDrawer.setVisibility(View.VISIBLE); fileNavDrawer.bringToFront(); }
-    }
-
-    private void refreshFileNavigation() {
-        if (fileNavList == null) return;
-        fileNavList.removeAllViews();
-        final String current = mSharedPreference.getString("path", "");
-        File currentFile = current == null ? null : new File(current);
-        File parent = currentFile == null ? null : currentFile.getParentFile();
-        addNavSection(tr("Current folder", "Aktueller Ordner"));
-        if (parent != null && parent.isDirectory()) {
-            File[] siblings = parent.listFiles(file -> file.isFile());
-            if (siblings != null) {
-                Arrays.sort(siblings, (a,b) -> a.getName().compareToIgnoreCase(b.getName()));
-                int count = 0;
-                for (File file : siblings) {
-                    if (count++ >= 40) break;
-                    addNavFile(file, currentFile != null && file.equals(currentFile));
-                }
-            }
-        }
-        addNavSection(tr("Recent files", "Zuletzt geöffnet"));
-        for (String path : recentFiles()) {
-            File file = new File(path);
-            if (file.isFile()) addNavFile(file, currentFile != null && file.equals(currentFile));
-        }
-    }
-
-    private void addNavSection(String title) {
-        TextView view = navText(title, 13, true);
-        view.setTextColor(hostAccent);
-        view.setPadding(dp(16), dp(15), dp(10), dp(6));
-        fileNavList.addView(view);
-    }
-
-    private void addNavFile(final File file, boolean selected) {
-        TextView view = navText(file.getName(), 15, selected);
-        view.setSingleLine(true);
-        view.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        view.setPadding(dp(18), dp(10), dp(10), dp(10));
-        if (selected) view.setBackgroundColor((hostAccent & 0x00FFFFFF) | 0x33000000);
-        view.setOnClickListener(v -> openEditorFile(file));
-        fileNavList.addView(view);
-    }
-
-    private void openEditorFile(File file) {
-        if (file == null || !file.isFile()) return;
-        sourceUri = null;
-        sourceDisplayName = null;
-        mSharedPreference.edit().putString("path", file.getAbsolutePath()).apply();
-        setTitle(file.getName());
-        recordRecent(file.getAbsolutePath());
-        new ReadFileThread().execute(file.getAbsolutePath());
-        if (fileNavDrawer != null) fileNavDrawer.setVisibility(View.GONE);
-    }
-
-    private void recordRecent(String path) {
-        if (path == null || path.isEmpty()) return;
-        ArrayList<String> list = new ArrayList<>(recentFiles());
-        list.remove(path);
-        list.add(0, path);
-        while (list.size() > 20) list.remove(list.size() - 1);
-        JSONArray array = new JSONArray();
-        for (String item : list) array.put(item);
-        editor_pref.edit().putString("recent_files_json", array.toString()).apply();
-    }
-
-    private List<String> recentFiles() {
-        ArrayList<String> result = new ArrayList<>();
-        try {
-            JSONArray array = new JSONArray(editor_pref.getString("recent_files_json", "[]"));
-            for (int i = 0; i < array.length(); i++) {
-                String value = array.optString(i, "");
-                if (!value.isEmpty() && !result.contains(value)) result.add(value);
-            }
-        } catch (Exception ignored) { }
-        return result;
     }
 
     private void initializeLogic() {
@@ -422,7 +248,6 @@ public class MainActivity extends Activity {
         } else if (directPath != null && !directPath.isEmpty() && new File(directPath).isFile()) {
             mSharedPreference.edit().putString("path", directPath).apply();
             setTitle(new File(directPath).getName());
-            recordRecent(directPath);
             new ReadFileThread().execute(directPath);
         } else if (mSharedPreference.contains("path")) {
             String path = mSharedPreference.getString("path", "");
@@ -597,19 +422,13 @@ public class MainActivity extends Activity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.editor_menu, menu);
-        MenuItem files = menu.add(Menu.NONE, MENU_FILES, 0, tr("Files", "Dateien"));
-        files.setIcon(android.R.drawable.ic_menu_agenda);
-        files.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
         return super.onCreateOptionsMenu(menu);
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
-        if (id == MENU_FILES) {
-            toggleFileNavigation();
-            return true;
-        } else if (id == R.id.undo) {
+        if (id == R.id.undo) {
             editView.undo();
         } else if (id == R.id.search) {
             searchPanel();
@@ -862,7 +681,8 @@ public class MainActivity extends Activity {
             public void onClick(DialogInterface dia, int which) {
                 String pathname = pathEdit.getText().toString();
                 if (!pathname.isEmpty()) {
-                    openEditorFile(new File(pathname));
+                    mSharedPreference.edit().putString("path", pathname).commit();
+                    new ReadFileThread().execute(pathname);
                 }
             }
         });
@@ -940,8 +760,6 @@ public class MainActivity extends Activity {
             super.onPostExecute(result);
             if (result && loadedBuffer != null) {
                 editView.setBuffer(loadedBuffer);
-                String path = mSharedPreference.getString("path", "");
-                if (path != null && !path.isEmpty() && sourceUri == null) recordRecent(path);
             }
             editView.setEditedMode(true);
             mHandler.sendEmptyMessage(0);
@@ -1098,7 +916,7 @@ public class MainActivity extends Activity {
     }
 
     public void addFunctionBar(LinearLayout container, final EditView editView) {
-        
+        Toast.makeText(getApplication(), "A basic implantation has done here.. Currently i am studing about it to fix the known issues", Toast.LENGTH_SHORT).show();
         container.setOrientation(LinearLayout.HORIZONTAL);
         container.removeAllViews();
 

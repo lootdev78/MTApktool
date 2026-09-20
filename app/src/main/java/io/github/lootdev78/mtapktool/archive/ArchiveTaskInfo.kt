@@ -1,22 +1,17 @@
 package io.github.lootdev78.mtapktool.archive
 
-import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
-
-enum class ExplorerTaskKind { ARCHIVE_CREATE, ARCHIVE_EXTRACT, ARCHIVE_UPDATE, COPY, MOVE, DELETE }
+enum class ArchiveTaskKind { OPEN, CREATE, EXTRACT, UPDATE }
+enum class ArchiveTaskStatus { QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED }
 
 data class ArchiveTaskInfo(
-    val id: String,
+    val id: Long,
+    val kind: ArchiveTaskKind,
     val title: String,
     val detail: String,
+    val status: ArchiveTaskStatus = ArchiveTaskStatus.QUEUED,
     val progress: Int? = null,
-    val kind: ExplorerTaskKind = ExplorerTaskKind.ARCHIVE_CREATE,
-)
-
-data class ArchiveUpdateRequest(
-    val pane: ActivePane,
-    val archiveName: String,
-    val changedEntries: Int,
-    val isApk: Boolean,
-    val readOnly: Boolean,
-    val closeAfterUpdate: Boolean = false,
-)
+    val message: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+) {
+    val isTerminal: Boolean get() = status in setOf(ArchiveTaskStatus.SUCCEEDED, ArchiveTaskStatus.FAILED, ArchiveTaskStatus.CANCELLED)
+}

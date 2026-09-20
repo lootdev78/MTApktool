@@ -111,6 +111,8 @@ dependencies {
 
     implementation("io.coil-kt.coil3:coil:3.5.0")
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
+    implementation("androidx.media3:media3-exoplayer:1.8.0")
+    implementation("androidx.media3:media3-ui:1.8.0")
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.foundation.layout)
     implementation(libs.editor)
@@ -126,9 +128,6 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.zip4j)
     implementation(libs.xz)
-    implementation(libs.junrar)
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.ui)
     // Use the Android AAR so libzstd JNI payloads are packaged as native libraries.
     implementation("com.github.luben:zstd-jni:1.5.7-4@aar")
 

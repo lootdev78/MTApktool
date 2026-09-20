@@ -45,15 +45,15 @@ fun MTExplorerApp(navController: NavHostController) {
         composable(
             route = Screen.MediaPlayer.route,
             arguments = listOf(
-                navArgument("source") { defaultValue = "" },
+                navArgument("filePath") { defaultValue = "" },
                 navArgument("fileName") { defaultValue = "" },
-                navArgument("video") { defaultValue = "false" },
-            )
+                navArgument("video") { defaultValue = false },
+            ),
         ) { backStackEntry ->
             MediaPlayerScreen(
-                source = backStackEntry.arguments?.getString("source") ?: "",
-                displayName = backStackEntry.arguments?.getString("fileName") ?: "",
-                video = backStackEntry.arguments?.getString("video").toBoolean(),
+                source = backStackEntry.arguments?.getString("filePath").orEmpty(),
+                displayName = backStackEntry.arguments?.getString("fileName").orEmpty(),
+                video = backStackEntry.arguments?.getBoolean("video") ?: false,
                 onBack = { navController.popBackStack() },
             )
         }

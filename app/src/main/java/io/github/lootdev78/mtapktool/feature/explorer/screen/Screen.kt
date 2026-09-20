@@ -13,11 +13,11 @@ sealed class Screen(val route: String) {
         }
     }
 
-    object MediaPlayer : Screen("media/{source}/{fileName}/{video}") {
-        fun createRoute(source: String, fileName: String, video: Boolean): String {
-            val encodedSource = URLEncoder.encode(source, "UTF-8")
+    object MediaPlayer : Screen("mediaPlayer/{filePath}/{fileName}/{video}") {
+        fun createRoute(filePath: String, fileName: String, video: Boolean): String {
+            val encodedPath = URLEncoder.encode(filePath, "UTF-8")
             val encodedName = URLEncoder.encode(fileName, "UTF-8")
-            return "media/$encodedSource/$encodedName/$video"
+            return "mediaPlayer/$encodedPath/$encodedName/$video"
         }
     }
 

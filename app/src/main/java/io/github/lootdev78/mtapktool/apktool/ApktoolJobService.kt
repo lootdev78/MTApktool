@@ -11,6 +11,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
+import com.android.apksig.ApkVerifier
 import androidx.core.content.ContextCompat
 import io.github.lootdev78.mtapktool.MainActivity
 import io.github.apktool.android.runtime.ApktoolCommandRunner
@@ -53,6 +54,7 @@ class ApktoolJobService : Service() {
         const val EXTRA_LOG = "log"
         const val EXTRA_OUTPUT = "output"
         const val EXTRA_CREATED_AT = "created_at"
+        const val EXTRA_STAGE = "stage"
         const val EXTRA_POST_ALIGN = "post_align"
         const val EXTRA_POST_SIGN = "post_sign"
         const val EXTRA_WORKERS = "workers"
@@ -64,7 +66,9 @@ class ApktoolJobService : Service() {
         private const val EXTRA_SIGN_V3 = "sign_v3"
         private const val EXTRA_SIGN_V4 = "sign_v4"
         private const val EXTRA_CLEAN_PROJECT = "clean_project"
+        private const val EXTRA_PROJECT_ROOT = "project_root"
         private const val EXTRA_POST_DECODE_ROOT = "post_decode_root"
+        private const val EXTRA_SOURCE_APK = "source_apk"
         private const val EXTRA_CREATE_NOMEDIA = "create_nomedia"
         private const val EXTRA_REMOVE_SPLIT = "remove_split"
         private const val EXTRA_REMOVE_PROPERTY = "remove_property"
@@ -85,7 +89,9 @@ class ApktoolJobService : Service() {
             postSign: Boolean = false,
             signature: ApktoolSignatureDefaults? = null,
             cleanBuildProject: String? = null,
+            projectRoot: String? = null,
             postDecodeRoot: String? = null,
+            sourceApk: String? = null,
             createNomedia: Boolean = false,
             removeSplitTraces: Boolean = false,
             removePropertyTags: Boolean = false,
@@ -107,7 +113,9 @@ class ApktoolJobService : Service() {
                 putExtra(EXTRA_SIGN_V3, sign.v3)
                 putExtra(EXTRA_SIGN_V4, sign.v4)
                 putExtra(EXTRA_CLEAN_PROJECT, cleanBuildProject)
+                putExtra(EXTRA_PROJECT_ROOT, projectRoot)
                 putExtra(EXTRA_POST_DECODE_ROOT, postDecodeRoot)
+                putExtra(EXTRA_SOURCE_APK, sourceApk)
                 putExtra(EXTRA_CREATE_NOMEDIA, createNomedia)
                 putExtra(EXTRA_REMOVE_SPLIT, removeSplitTraces)
                 putExtra(EXTRA_REMOVE_PROPERTY, removePropertyTags)
@@ -176,7 +184,9 @@ class ApktoolJobService : Service() {
         val signV3: Boolean,
         val signV4: Boolean,
         val cleanBuildProject: String?,
+        val projectRoot: String?,
         val postDecodeRoot: String?,
+        val sourceApk: String?,
         val createNomedia: Boolean,
         val removeSplitTraces: Boolean,
         val removePropertyTags: Boolean,
@@ -184,6 +194,7 @@ class ApktoolJobService : Service() {
         val suppressCompletionWhileOpen: Boolean,
         val createdAt: Long = System.currentTimeMillis(),
         @Volatile var status: Status = Status.QUEUED,
+        @Volatile var stage: ApktoolWorkflowStage = ApktoolWorkflowStage.QUEUED,
         @Volatile var line: String = "Queued",
         @Volatile var output: String? = null,
         @Volatile var cancelRequested: Boolean = false,
@@ -197,6 +208,7 @@ class ApktoolJobService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        ApktoolProjectSessionManager.configure(filesDir)
         createChannels()
         // Do not read SharedPreferences in this secondary process. A job carries
         // the current worker setting and resizes the pool before it is submitted.
@@ -245,7 +257,9 @@ class ApktoolJobService : Service() {
             signV3 = intent.getBooleanExtra(EXTRA_SIGN_V3, true),
             signV4 = intent.getBooleanExtra(EXTRA_SIGN_V4, false),
             cleanBuildProject = intent.getStringExtra(EXTRA_CLEAN_PROJECT),
+            projectRoot = intent.getStringExtra(EXTRA_PROJECT_ROOT),
             postDecodeRoot = intent.getStringExtra(EXTRA_POST_DECODE_ROOT),
+            sourceApk = intent.getStringExtra(EXTRA_SOURCE_APK),
             createNomedia = intent.getBooleanExtra(EXTRA_CREATE_NOMEDIA, false),
             removeSplitTraces = intent.getBooleanExtra(EXTRA_REMOVE_SPLIT, false),
             removePropertyTags = intent.getBooleanExtra(EXTRA_REMOVE_PROPERTY, false),
@@ -268,6 +282,7 @@ class ApktoolJobService : Service() {
             return
         }
         record.status = Status.RUNNING
+        record.stage = ApktoolWorkflowStage.PROVISIONING
         record.line = "Starting…"
         appendLog(record, record.line)
         broadcast(record, force = true)
@@ -275,6 +290,8 @@ class ApktoolJobService : Service() {
         var log: PrintWriter? = null
         try {
             val toolchain = Toolchain(this)
+            record.stage = ApktoolWorkflowStage.PROVISIONING
+            broadcast(record, force = true)
             toolchain.provision()
             checkCancelled(record)
             val logFile = File(toolchain.logsDir, "job-${stamp()}-${record.id.take(8)}.log")
@@ -289,6 +306,14 @@ class ApktoolJobService : Service() {
                 broadcast(record)
             }
             val runner = ApktoolCommandRunner(toolchain, listener)
+            val commandHead = record.command.trim().substringBefore(' ').lowercase()
+            record.stage = when (commandHead) {
+                "d", "decode" -> ApktoolWorkflowStage.DECODING
+                "b", "build" -> ApktoolWorkflowStage.BUILDING
+                else -> ApktoolWorkflowStage.PROVISIONING
+            }
+            record.projectRoot?.let { project -> if (record.stage == ApktoolWorkflowStage.BUILDING) ApktoolProjectSessionManager.begin(File(project), ApktoolWorkflowStage.BUILDING) }
+            broadcast(record, force = true)
             var result = if (SplitArchiveSupport.isSplitDecodeCommand(record.command)) {
                 SplitArchiveSupport.executeDecode(record.command, toolchain, listener)
             } else {
@@ -297,15 +322,37 @@ class ApktoolJobService : Service() {
             checkCancelled(record)
 
             if (result.isSuccess && !record.postDecodeRoot.isNullOrBlank()) {
+                record.stage = ApktoolWorkflowStage.POST_DECODE
+                broadcast(record, force = true)
                 ProjectPostProcessor.process(
                     File(record.postDecodeRoot),
                     ProjectPostProcessor.Options(record.createNomedia, record.removeSplitTraces, record.removePropertyTags),
                     listener,
                 )
+                val decodedRoot = File(record.postDecodeRoot)
+                val sourceApk = record.sourceApk?.takeIf { it.isNotBlank() }?.let(::File)
+                val projects = buildList {
+                    if (File(decodedRoot, "apktool.yml").isFile) add(decodedRoot)
+                    decodedRoot.walkTopDown().maxDepth(3)
+                        .filter { it.isDirectory && it != decodedRoot && File(it, "apktool.yml").isFile }
+                        .forEach { add(it) }
+                }.distinctBy { it.canonicalPath }
+                if (projects.isEmpty()) {
+                    ApktoolProjectSessionManager.registerDecodedProject(decodedRoot, sourceApk)
+                } else {
+                    projects.forEach { ApktoolProjectSessionManager.registerDecodedProject(it, sourceApk) }
+                }
             }
             checkCancelled(record)
 
             if (result.isSuccess && (record.postAlign || record.postSign)) {
+                record.stage = ApktoolWorkflowStage.POST_PROCESSING
+                record.line = when {
+                    record.postAlign && record.postSign -> "Aligning and signing…"
+                    record.postAlign -> "Aligning…"
+                    else -> "Signing…"
+                }
+                broadcast(record, force = true)
                 result = runner.postProcessBuild(
                     result,
                     record.postAlign,
@@ -320,6 +367,14 @@ class ApktoolJobService : Service() {
             }
             checkCancelled(record)
 
+            val verifiedOutput = result.output
+            if (result.isSuccess && verifiedOutput?.isFile == true && verifiedOutput.extension.equals("apk", true)) {
+                record.stage = ApktoolWorkflowStage.VERIFYING
+                record.line = "Verifying APK…"
+                broadcast(record, force = true)
+                val verify = ApkVerifier.Builder(verifiedOutput).build().verify()
+                if (!verify.isVerified) error("APK verification failed")
+            }
             if (result.isSuccess && !record.cleanBuildProject.isNullOrBlank()) {
                 val buildDir = File(record.cleanBuildProject, "build")
                 if (buildDir.exists()) deleteRecursivelyCancellable(buildDir)
@@ -327,6 +382,15 @@ class ApktoolJobService : Service() {
 
             record.output = result.output?.absolutePath
             record.status = if (result.isSuccess) Status.SUCCEEDED else Status.FAILED
+            record.stage = if (result.isSuccess) ApktoolWorkflowStage.SUCCEEDED else ApktoolWorkflowStage.FAILED
+            record.projectRoot?.let { projectPath ->
+                val project = File(projectPath)
+                if (result.isSuccess) {
+                    ApktoolProjectSessionManager.completeBuild(project, result.output)
+                } else {
+                    ApktoolProjectSessionManager.fail(project, IllegalStateException(result.summary.ifBlank { "Apktool build failed" }))
+                }
+            }
             record.line = result.summary + (record.output?.let { "\n$it" } ?: "") + "\nLog: ${logFile.absolutePath}"
             appendLog(record, result.summary)
             record.output?.let { appendLog(record, "Output: $it") }
@@ -341,6 +405,8 @@ class ApktoolJobService : Service() {
                 finishCancelled(record, send = false)
             } else {
                 record.status = Status.FAILED
+                record.stage = ApktoolWorkflowStage.FAILED
+                record.projectRoot?.let { ApktoolProjectSessionManager.fail(File(it), t) }
                 record.line = stackMessage(t)
                 appendLog(record, record.line)
                 log?.println(record.line)
@@ -369,6 +435,8 @@ class ApktoolJobService : Service() {
 
     private fun finishCancelled(record: Record, send: Boolean = true) {
         record.status = Status.CANCELLED
+        record.stage = ApktoolWorkflowStage.CANCELLED
+        record.projectRoot?.let { runCatching { ApktoolProjectSessionManager.cancel(File(it)) } }
         record.line = "Cancelled"
         appendLog(record, record.line)
         if (send) broadcast(record, force = true)
@@ -412,6 +480,7 @@ class ApktoolJobService : Service() {
             putExtra(EXTRA_TITLE, record.title)
             putExtra(EXTRA_COMMAND, record.command)
             putExtra(EXTRA_STATUS, record.status.name)
+            putExtra(EXTRA_STAGE, record.stage.name)
             putExtra(EXTRA_LINE, record.line)
             putExtra(EXTRA_LOG, logTail)
             putExtra(EXTRA_OUTPUT, record.output)

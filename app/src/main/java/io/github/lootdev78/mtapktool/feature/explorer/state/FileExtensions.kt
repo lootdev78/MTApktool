@@ -76,19 +76,8 @@ private val ARCHIVE_SUFFIXES = setOf(
     ".tar.zst",
     ".tar.bz2",
     ".tar.lz4",
-    ".tgz",
-    ".txz",
-    ".tbz",
-    ".tbz2",
-    ".tzst",
-    ".tlz4",
     ".gz",
     ".xz",
-    ".bz2",
-    ".zst",
-    ".zstd",
-    ".lz4",
-    ".rar",
 )
 
 private val APK_EXTENSIONS = setOf(

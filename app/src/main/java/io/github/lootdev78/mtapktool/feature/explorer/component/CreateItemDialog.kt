@@ -31,14 +31,14 @@ fun CreateItemDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Create New")) },
+        title = { Text("Create New") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = isFolder, onClick = { isFolder = true })
-                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Folder"), modifier = Modifier.padding(end = 16.dp))
+                    Text("Folder", modifier = Modifier.padding(end = 16.dp))
                     RadioButton(selected = !isFolder, onClick = { isFolder = false })
-                    Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("File"))
+                    Text("File")
                 }
                 OutlinedTextField(
                     value = name,
@@ -46,7 +46,7 @@ fun CreateItemDialog(
                         name = it
                         errorMessage = null
                     },
-                    label = { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Name")) },
+                    label = { Text("Name") },
                     singleLine = true,
                     isError = errorMessage != null
                 )
@@ -73,11 +73,11 @@ fun CreateItemDialog(
                     }
                 }
             ) {
-                Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Create"))
+                Text("Create")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Cancel")) }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

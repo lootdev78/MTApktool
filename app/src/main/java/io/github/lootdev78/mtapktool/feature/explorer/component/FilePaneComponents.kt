@@ -1,7 +1,9 @@
 package io.github.lootdev78.mtapktool.feature.explorer.component
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -50,7 +52,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -59,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -108,20 +110,11 @@ fun ClassicFilePane(
     val explorerPrefs by ExplorerPreferences.state.collectAsState()
     val listState = rememberLazyListState()
     val pullToRefreshState = rememberPullToRefreshState()
-    // PaneState.filteredItems sorts and filters; cache it across scroll recompositions.
-    val filteredItems = remember(
-        paneState.items,
-        paneState.searchQuery,
-        paneState.showSystemHidden,
-        paneState.showManuallyHidden,
-        paneState.manuallyHiddenPaths,
-        paneState.sortSpec,
-        paneState.filter,
-    ) { paneState.filteredItems }
 
 
     // Highlight border for active pane (optional visual clue)
     val paneBgColor = if (isActive) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background
+    val elevation = if (isActive) 2.dp else 0.dp
 
     LaunchedEffect(paneState.highlightedItemName) {
         val targetIndex = paneState.items.indexOfFirst { it.name == paneState.highlightedItemName }
@@ -134,8 +127,7 @@ fun ClassicFilePane(
     Surface(
         modifier = modifier
             .fillMaxHeight()
-            // Avoid a full-pane GPU shadow while scrolling; the lightweight inner edge cue below
-            // already marks the active MT pane without forcing offscreen layer rendering.
+            .shadow(elevation = elevation, shape = RoundedCornerShape(0.dp))
             // Focus on pointer-down before a child row consumes the gesture. This keeps the
             // single path/header at the top synchronized with whichever pane the user touches.
             .pointerInput(onFocus) {
@@ -222,14 +214,8 @@ fun ClassicFilePane(
 
                         // 2. File & Directory Items
                         items(
-                            items = filteredItems,
-                            key = { it.path },
-                            contentType = { item -> when {
-                                item.isDirectory -> "directory"
-                                item.isImageFile() -> "image"
-                                item.isApkFile() -> "apk"
-                                else -> "file"
-                            } },
+                            items = paneState.filteredItems,
+                            key = { it.path }
                         ) { item ->
                             val isHighlighted = item.name == paneState.highlightedItemName
                             ClassicFileRow(
@@ -293,8 +279,8 @@ private fun ApktoolProjectBuildRow(project: File, prefs: ExplorerPrefs, onClick:
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("Dieses Projekt kompilieren"), fontSize = metrics.nameSize, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(io.github.lootdev78.mtapktool.core.i18n.UiText.auto("${project.name} • apktool.yml"), fontSize = metrics.detailSize, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Dieses Projekt kompilieren", fontSize = metrics.nameSize, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${project.name} • apktool.yml", fontSize = metrics.detailSize, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -336,13 +322,13 @@ private fun ParentDirectoryRow(prefs: ExplorerPrefs, onClick: () -> Unit) {
             modifier = Modifier
                 .size(metrics.iconSize)
                 .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                .background(Color(0xFF111111)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector =  Icons.Default.Folder,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.tertiary,
+                tint = Color(0xFFD0D0D0),
                 modifier = Modifier.size(metrics.innerIconSize)
             )
         }
@@ -382,14 +368,14 @@ private fun ClassicFileRow(
         }
     }
 
-    // Float state is updated directly during drag. The previous implementation launched
-    // a coroutine for every pointer delta, which caused visible jank on long file lists.
-    var offsetX by remember(item.path) { mutableFloatStateOf(0f) }
-    var hasTriggeredSwipe by remember(item.path) { mutableStateOf(false) }
+    // Tracks horizontal swipe offset for visual feedback
+    val offsetX = remember { Animatable(0f) }
+    var hasTriggeredSwipe by remember { mutableStateOf(false) }
 
+    // Dynamic background color state
     val targetBackgroundColor = when {
-        isPressed -> MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
-        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        isPressed -> Color(0xFF365F6E)
+        isSelected -> Color(0xFF2B5666)
         else -> Color.Transparent
     }
 
@@ -404,7 +390,7 @@ private fun ClassicFileRow(
             .fillMaxWidth()
             // 1. Move row visually during swipe
             .graphicsLayer {
-                translationX = offsetX
+                translationX = offsetX.value
             }
             .background(animatedBgColor)
             // 2. Gesture handling: Horizontal Drag (Swipe)
@@ -415,22 +401,33 @@ private fun ClassicFileRow(
                     },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
-                        offsetX = (offsetX + dragAmount).coerceIn(-180f, 180f)
-                        if (kotlin.math.abs(offsetX) > 60f && !hasTriggeredSwipe) {
-                            hasTriggeredSwipe = true
-                            onSwipeSelect(item)
-                        }
-                    },
-                    onDragEnd = {
-                        val start = offsetX
                         scope.launch {
-                            animate(initialValue = start, targetValue = 0f, animationSpec = tween(120)) { value, _ ->
-                                offsetX = value
+                            // 1. Allow symmetric drag both Left (-180f) and Right (+180f)
+                            val newOffset = (offsetX.value + dragAmount).coerceIn(-180f, 180f)
+                            offsetX.snapTo(newOffset)
+
+                            // 2. Trigger selection when dragging past threshold in EITHER direction (-60f or +60f)
+                            if (kotlin.math.abs(offsetX.value) > 60f && !hasTriggeredSwipe) {
+                                hasTriggeredSwipe = true
+                                onSwipeSelect(item)
                             }
                         }
                     },
+                    onDragEnd = {
+                        scope.launch {
+                            offsetX.animateTo(
+                                targetValue = 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            )
+                        }
+                    },
                     onDragCancel = {
-                        offsetX = 0f
+                        scope.launch {
+                            offsetX.animateTo(0f)
+                        }
                     }
                 )
             }
@@ -439,7 +436,7 @@ private fun ClassicFileRow(
                 detectTapGestures(
                     onPress = {
                         // Only trigger tap highlight if row is not currently being swiped
-                        if (offsetX == 0f) {
+                        if (offsetX.value == 0f) {
                             isPressed = true
                             try {
                                 awaitRelease()
@@ -458,7 +455,7 @@ private fun ClassicFileRow(
         val isApktoolProject = item.isDirectory && File(item.path, "apktool.yml").isFile
         val (icon, iconColor) = when {
             isApktoolProject -> Icons.Default.Build to ColorApk
-            item.isDirectory -> Icons.Default.Folder to MaterialTheme.colorScheme.tertiary
+            item.isDirectory -> Icons.Default.Folder to Color(0xFFD0D0D0)
 
             item.isApkFile() ->
                 Icons.Default.Android to ColorApk
@@ -510,7 +507,7 @@ private fun ClassicFileRow(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(if (item.isDirectory) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else iconColor.copy(alpha = 0.18f)),
+                        .background(if (item.isDirectory) Color(0xFF111111) else iconColor.copy(alpha = 0.18f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
