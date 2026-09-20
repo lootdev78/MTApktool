@@ -27,8 +27,6 @@ data class ExplorerPrefs(
     val optimizeExternalTransfer: Boolean = true,
     val startupLeft: String = "home",
     val startupRight: String = "home",
-    val requestRootAtStartup: Boolean = false,
-    val requestShellAtStartup: Boolean = false,
     val fileMenuOrder: List<String> = defaultFileMenuOrder,
     val builtInOpenOrder: List<String> = defaultBuiltInOpenOrder,
 ) {
@@ -96,8 +94,6 @@ object ExplorerPreferences {
         optimizeExternalTransfer = p.getBoolean("optimize_external_transfer", true),
         startupLeft = p.getString("startup_left", "home") ?: "home",
         startupRight = p.getString("startup_right", "home") ?: "home",
-        requestRootAtStartup = p.getBoolean("request_root_startup", false),
-        requestShellAtStartup = p.getBoolean("request_shell_startup", false),
         fileMenuOrder = decodeOrder(p.getString("file_menu_order", null), ExplorerPrefs.defaultFileMenuOrder),
         builtInOpenOrder = decodeOrder(p.getString("built_in_open_order", null), ExplorerPrefs.defaultBuiltInOpenOrder),
     )
@@ -122,8 +118,6 @@ object ExplorerPreferences {
             .putBoolean("optimize_external_transfer", v.optimizeExternalTransfer)
             .putString("startup_left", v.startupLeft)
             .putString("startup_right", v.startupRight)
-            .putBoolean("request_root_startup", v.requestRootAtStartup)
-            .putBoolean("request_shell_startup", v.requestShellAtStartup)
             .putString("file_menu_order", v.fileMenuOrder.joinToString(","))
             .putString("built_in_open_order", v.builtInOpenOrder.joinToString(","))
             .apply()

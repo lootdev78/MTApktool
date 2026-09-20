@@ -563,7 +563,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                         ensureTransferTargetIsSafe(source, destination)
                         if (destination.exists()) {
                             when (askConflict(item, destination.absolutePath)) {
-                                FileConflictAction.SKIP -> return@forEach
+                                FileConflictAction.SKIP -> return@forEachIndexed
                                 FileConflictAction.CANCEL -> throw TransferCancelledException()
                                 FileConflictAction.KEEP_BOTH -> destination = uniqueLocalTarget(destination)
                                 FileConflictAction.OVERWRITE -> deleteExistingLocal(destination)

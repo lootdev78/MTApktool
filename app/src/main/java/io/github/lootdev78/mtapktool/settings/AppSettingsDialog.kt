@@ -60,7 +60,7 @@ import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
 import kotlinx.coroutines.launch
 
-private enum class SettingsPage { ROOT, GENERAL, APKTOOL, SIGNATURE, ARCHIVE, CLI, FAQ, ABOUT }
+enum class SettingsPage { ROOT, GENERAL, APKTOOL, SIGNATURE, ARCHIVE, CLI, FAQ, ABOUT }
 
 private data class SettingsEntry(
     val title: String,
@@ -74,8 +74,9 @@ private data class SettingsEntry(
 fun AppSettingsDialog(
     onDismiss: () -> Unit,
     onJobQueued: (String) -> Unit = {},
+    initialPage: SettingsPage = SettingsPage.ROOT,
 ) {
-    var page by remember { mutableStateOf(SettingsPage.ROOT) }
+    var page by remember(initialPage) { mutableStateOf(initialPage) }
     var searchMode by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
@@ -257,7 +258,8 @@ private fun AboutDialog(onBack: () -> Unit) {
         text = {
             Text(
                 "MTApktool ${BuildConfig.VERSION_NAME}\n\n" +
-                    "Integrierte Funktionen: Apktool Decode/Build, Framework-Verwaltung, AAPT2, Signierung, Job-Runner, Dual-Panel-Dateimanager und Archivierung."
+                    "Integrierte Funktionen: Apktool Decode/Build, Framework-Verwaltung, AAPT2, Signierung, Job-Runner, Dual-Panel-Dateimanager und Archivierung.\n\n" +
+                    "MTDataFilesProvider: In-Tree-Modul aus dem vom Nutzer bereitgestellten Upstream-Archiv; stellt MTApktool-Dateibereiche über Androids DocumentsProvider bereit."
             )
         },
         confirmButton = { TextButton(onClick = onBack) { Text("ZURÜCK") } },

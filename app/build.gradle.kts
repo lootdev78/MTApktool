@@ -108,6 +108,7 @@ dependencies {
     implementation(project(":apkextractor"))
     implementation(project(":apkcloner"))
     implementation(project(":mh-editor"))
+    implementation(project(":mt-data-files-provider"))
 
     implementation("io.coil-kt.coil3:coil:3.5.0")
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")

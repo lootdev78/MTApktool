@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Environment
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import com.android.apksig.ApkVerifier
@@ -139,6 +141,7 @@ import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewMode
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.FileConflictAction
 import io.github.lootdev78.mtapktool.feature.explorer.util.FileOpener
 import io.github.lootdev78.mtapktool.settings.AppSettingsDialog
+import io.github.lootdev78.mtapktool.settings.SettingsPage
 import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -249,6 +252,7 @@ fun ExplorerScreen(
     var showApktoolBuild by remember { mutableStateOf(false) }
     var showApktoolSettings by remember { mutableStateOf(false) }
     var showAppSettings by remember { mutableStateOf(false) }
+    var appSettingsInitialPage by remember { mutableStateOf(SettingsPage.ROOT) }
     var showTaskPanel by remember { mutableStateOf(false) }
     var selectedJobId by remember { mutableStateOf<String?>(null) }
     var showApktoolCli by remember { mutableStateOf(false) }
@@ -904,6 +908,7 @@ fun ExplorerScreen(
     if (showAppSettings) {
         AppSettingsDialog(
             onDismiss = { showAppSettings = false },
+            initialPage = appSettingsInitialPage,
             onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId },
         )
     }
@@ -1120,12 +1125,19 @@ fun ExplorerScreen(
                         onOpenApkExtractor = { navController.navigate(Screen.ApkExtractor.route) },
                         onOpenTextEditor = { runCatching { context.startActivity(Intent(context, MhTextEditorActivity::class.java)) } },
                         onOpenRecycleBin = { viewModel.openRecycleBin(activePane) },
+                        onOpenKeyManager = {
+                            appSettingsInitialPage = SettingsPage.SIGNATURE
+                            showAppSettings = true
+                        },
                         onRemoveBookmark = { path ->
                             val updated = bookmarks.filterNot { it == path }
                             bookmarks = updated
                             bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
                         },
-                        onOpenSettings = { showAppSettings = true },
+                        onOpenSettings = {
+                            appSettingsInitialPage = SettingsPage.ROOT
+                            showAppSettings = true
+                        },
                         onClose = {
                             scope.launch { drawerState.close() }
                         }

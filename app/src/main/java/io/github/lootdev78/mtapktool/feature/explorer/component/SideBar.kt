@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -90,6 +91,7 @@ fun SideBar(
     onOpenApkExtractor: () -> Unit = {},
     onOpenTextEditor: () -> Unit = {},
     onOpenRecycleBin: () -> Unit = {},
+    onOpenKeyManager: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onClose: () -> Unit,
 ) {
@@ -109,6 +111,7 @@ fun SideBar(
         buildList {
             add("installed")
             add("text")
+            add("keys")
             if (explorerPrefs.recycleBinEnabled) add("recycle")
         }
     }
@@ -120,25 +123,18 @@ fun SideBar(
         drawerContentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier.size(38.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.Android, contentDescription = null, tint = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(27.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("MTApktool", style = MaterialTheme.typography.titleLarge)
-                Text("APKTOOL", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text(
+                text = "Local",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (sortMode) {
                 IconButton(onClick = { sortMode = false }) { Icon(Icons.Default.Check, contentDescription = "Sortierung beenden") }
             } else {
-                IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Brightness6, contentDescription = "Theme") }
                 Box {
                     IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Menü") }
                     DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
@@ -169,13 +165,6 @@ fun SideBar(
             }
         }
 
-        Text(
-            text = "Local",
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
         StorageList(storages = storageRoots) { storage ->
             onClose()
             viewModel.navigateToDirectPath(activePane, storage.path)
@@ -200,15 +189,6 @@ fun SideBar(
             )
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable { onAddLocation() }.padding(horizontal = 18.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(12.dp))
-            Text("Speicher hinzufügen")
-        }
-
         if (bookmarks.isNotEmpty()) {
             HorizontalDivider()
             Text("Lesezeichen", modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -226,14 +206,6 @@ fun SideBar(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Network", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Icon(Icons.Default.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-
-        Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -247,6 +219,9 @@ fun SideBar(
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }
                 "text" -> DrawerToolRow("Text Editor", Icons.Default.EditNote, sortMode, onClick = { onClose(); onOpenTextEditor() }) { delta ->
+                    toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
+                }
+                "keys" -> DrawerToolRow("Key & Certificate Manager", Icons.Default.VpnKey, sortMode, onClick = { onClose(); onOpenKeyManager() }) { delta ->
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }
                 "recycle" -> if (explorerPrefs.recycleBinEnabled) DrawerToolRow("Recycle Bin", Icons.Default.DeleteOutline, sortMode, onClick = { onClose(); onOpenRecycleBin() }) { delta ->

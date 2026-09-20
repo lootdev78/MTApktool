@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -119,7 +118,7 @@ private val builtInLabels = mapOf(
     "external" to SortableChoice("external", "Andere App", Icons.Default.FolderOpen),
 )
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ExplorerPreferencesDialog(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -161,8 +160,6 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
             ) { insets ->
                 LazyColumn(Modifier.fillMaxSize().padding(insets)) {
                     item { SectionTitle("Startup") }
-                    item { PreferenceSwitch("Root-Berechtigung beim Start anfragen", "Beim Start optional Root anfragen.", prefs.requestRootAtStartup) { update(context) { copy(requestRootAtStartup = it) } } }
-                    item { PreferenceSwitch("Shell-Berechtigung beim Start anfragen", "Beim Start optional Shell-Berechtigung anfragen.", prefs.requestShellAtStartup) { update(context) { copy(requestShellAtStartup = it) } } }
                     item { PreferenceValue("Startpfad – linkes Fenster", startupLabel(prefs.startupLeft)) { startupLeftDialog = true } }
                     item { PreferenceValue("Startpfad – rechtes Fenster", startupLabel(prefs.startupRight)) { startupRightDialog = true } }
 
