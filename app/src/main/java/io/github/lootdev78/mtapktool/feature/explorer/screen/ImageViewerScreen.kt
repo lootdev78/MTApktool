@@ -94,7 +94,7 @@ fun ZoomableImage(
         onZoomChanged(newScale > 1f)
         
         if (newScale > 1f) {
-            offset += offsetChange
+            offset = offset + offsetChange
         } else {
             offset = Offset.Zero
         }

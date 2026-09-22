@@ -765,17 +765,13 @@ object ArchiveEngine {
         return GzipCompressorOutputStream(out, parameters)
     }
 
-    private fun xzOutputStream(out: OutputStream, level: ArchiveLevel): XZCompressorOutputStream =
-        XZCompressorOutputStream.builder()
-            .setOutputStream(out)
-            .setPreset(level.preset())
-            .get()
+    private fun xzOutputStream(out: OutputStream, level: ArchiveLevel): XZCompressorOutputStream {
+        return XZCompressorOutputStream(out, level.preset())
+    }
 
-    private fun zstdOutputStream(out: OutputStream, level: ArchiveLevel): ZstdCompressorOutputStream =
-        ZstdCompressorOutputStream.builder()
-            .setOutputStream(out)
-            .setLevel(level.preset())
-            .get()
+    private fun zstdOutputStream(out: OutputStream, level: ArchiveLevel): ZstdCompressorOutputStream {
+        return ZstdCompressorOutputStream(out, level.preset())
+    }
 
     private fun ArchiveLevel.preset(): Int = when (this) {
         ArchiveLevel.STORE -> 0

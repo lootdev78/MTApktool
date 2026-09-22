@@ -599,7 +599,7 @@ class ApktoolJobService : Service() {
         var c: Throwable? = t
         repeat(12) {
             if (c is InterruptedException || c is CancellationException) return true
-            c = c.cause
+            c = c?.cause
             if (c == null) return false
         }
         return false
