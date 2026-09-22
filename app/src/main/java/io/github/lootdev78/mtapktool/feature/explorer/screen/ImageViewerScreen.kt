@@ -1,3 +1,4 @@
+
 package io.github.lootdev78.mtapktool.feature.explorer.screen
 
 import androidx.compose.foundation.background
@@ -10,8 +11,15 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -22,61 +30,98 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import io.github.lootdev78.mtapktool.core.theme.MtClassicTopBar
 import java.io.File
+import kotlin.math.max
 
-@OptIn(ExperimentalMaterial3Api::class)
+private val IMAGE_EXTENSIONS = setOf(
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "bmp"
+)
+
 @Composable
 fun ImageViewerScreen(
     filePath: String,
     onBackClick: () -> Unit
 ) {
-    val currentFile = remember { File(filePath) }
-    val parentDir = remember { currentFile.parentFile }
-    val imageFiles = remember {
-        parentDir?.listFiles { file ->
-            val ext = file.extension.lowercase()
-            ext in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")
-        }?.sortedBy { it.name } ?: listOf(currentFile)
-    }
-    
-    val initialIndex = remember {
-        val index = imageFiles.indexOfFirst { it.absolutePath == currentFile.absolutePath }
-        if (index != -1) index else 0
+    val currentFile = remember(filePath) {
+        File(filePath)
     }
 
-    val pagerState = rememberPagerState(initialPage = initialIndex) {
-        imageFiles.size
+    val parentDir = remember(currentFile) {
+        currentFile.parentFile
+    }
+
+    val imageFiles = remember(currentFile, parentDir) {
+        parentDir
+            ?.listFiles { file ->
+                file.isFile &&
+                    file.extension.lowercase() in IMAGE_EXTENSIONS
+            }
+            ?.sortedBy { it.name.lowercase() }
+            ?: listOf(currentFile)
+    }
+
+    val initialIndex = remember(currentFile, imageFiles) {
+        val index = imageFiles.indexOfFirst {
+            it.absolutePath == currentFile.absolutePath
+        }
+
+        if (index >= 0) index else 0
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex
+    ) {
+        max(1, imageFiles.size)
     }
 
     Scaffold(
         topBar = {
             MtClassicTopBar(
-                title = { Text(imageFiles[pagerState.currentPage].name, maxLines = 1) },
+                title = {
+                    val currentPage = pagerState.currentPage
+                        .coerceIn(0, imageFiles.lastIndex.coerceAtLeast(0))
+
+                    Text(
+                        text = imageFiles.getOrNull(currentPage)?.name
+                            ?: currentFile.name,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
                 },
                 containerColor = Color.Black.copy(alpha = 0.72f),
-                contentColor = Color.White,
+                contentColor = Color.White
             )
         },
         containerColor = Color.Black
     ) { innerPadding ->
+
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
             beyondViewportPageCount = 1,
-            userScrollEnabled = true // We will manage this per-page if needed, or keep it simple for now
+            userScrollEnabled = true
         ) { page ->
-            var isZoomed by remember { mutableStateOf(false) }
-            
-            // Note: In a more advanced implementation, we'd pass isZoomed back to disable pager scrolling
-            ZoomableImage(
-                file = imageFiles[page],
-                onZoomChanged = { zoomed -> isZoomed = zoomed }
-            )
+
+            val imageFile = imageFiles.getOrNull(page)
+
+            if (imageFile != null) {
+                ZoomableImage(
+                    file = imageFile
+                )
+            }
         }
     }
 }
@@ -86,15 +131,29 @@ fun ZoomableImage(
     file: File,
     onZoomChanged: (Boolean) -> Unit = {}
 ) {
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    val state = rememberTransformableState { zoomChange, offsetChange, _, _ ->
-        val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+    var scale by remember(file) {
+        mutableStateOf(1f)
+    }
+
+    var offset by remember(file) {
+        mutableStateOf(Offset.Zero)
+    }
+
+    val transformState = rememberTransformableState {
+            zoomChange,
+            panChange,
+            _,
+            _ ->
+
+        val newScale = (scale * zoomChange)
+            .coerceIn(1f, 5f)
+
         scale = newScale
+
         onZoomChanged(newScale > 1f)
-        
+
         if (newScale > 1f) {
-            offset = offset + offsetChange
+            offset += panChange
         } else {
             offset = Offset.Zero
         }
@@ -103,18 +162,22 @@ fun ZoomableImage(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .transformable(state = state)
-            .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = offset.x,
+            .background(Color.Black)
+            .transformable(
+                state = transformState
+            )
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offset.x
                 translationY = offset.y
-            ),
+            },
         contentAlignment = Alignment.Center
     ) {
+
         AsyncImage(
             model = file,
-            contentDescription = null,
+            contentDescription = file.name,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit
         )
