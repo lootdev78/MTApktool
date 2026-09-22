@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import io.github.lootdev78.mtapktool.core.theme.MtClassicTopBar
 import java.io.File
-import kotlin.math.max
 
 private val IMAGE_EXTENSIONS = setOf(
     "jpg",
@@ -75,7 +74,7 @@ fun ImageViewerScreen(
     val pagerState = rememberPagerState(
         initialPage = initialIndex
     ) {
-        max(1, imageFiles.size)
+        imageFiles.size.coerceAtLeast(1)
     }
 
     Scaffold(
@@ -83,7 +82,10 @@ fun ImageViewerScreen(
             MtClassicTopBar(
                 title = {
                     val currentPage = pagerState.currentPage
-                        .coerceIn(0, imageFiles.lastIndex.coerceAtLeast(0))
+                        .coerceIn(
+                            0,
+                            imageFiles.lastIndex.coerceAtLeast(0)
+                        )
 
                     Text(
                         text = imageFiles.getOrNull(currentPage)?.name
@@ -140,10 +142,10 @@ fun ZoomableImage(
     }
 
     val transformState = rememberTransformableState {
-            zoomChange,
-            panChange,
-            _,
-            _ ->
+        panChange,
+        zoomChange,
+        _,
+        _ ->
 
         val newScale = (scale * zoomChange)
             .coerceIn(1f, 5f)
