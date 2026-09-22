@@ -1,5 +1,6 @@
 package io.github.lootdev78.mtapktool.apktool
 
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,12 +17,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,25 +59,30 @@ fun ApkFileActionDialog(
     onDecode: () -> Unit,
     onImportFramework: () -> Unit,
 ) {
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onDecode),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
                 ) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(vertical = 10.dp)) {
                         Text("Dekompilieren", fontWeight = FontWeight.SemiBold)
-                        Text("APK mit Apktool in ein Projekt dekompilieren", style = MaterialTheme.typography.bodySmall)
+                        Text("APK mit Apktool in ein Projekt dekompilieren", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Card(
+                HorizontalDivider()
+                Surface(
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onImportFramework),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
                 ) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(vertical = 10.dp)) {
                         Text("Als Framework importieren", fontWeight = FontWeight.SemiBold)
-                        Text("Diese APK über den vorhandenen Apktool-Frameworkpfad installieren", style = MaterialTheme.typography.bodySmall)
+                        Text("Diese APK über den vorhandenen Apktool-Frameworkpfad installieren", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -96,7 +101,7 @@ fun ApktoolFrameworkImportDialog(
     var tag by remember(file) { mutableStateOf("") }
     val validTag = tag.isBlank() || tag.matches(Regex("[A-Za-z0-9._-]{1,80}"))
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Framework importieren") },
         text = {
@@ -194,7 +199,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
         splitScanning = false
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
         text = {
@@ -286,7 +291,7 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
     )
 
     if (showSettings) {
-        AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = { showSettings = false },
             title = { Text("Einstellungen") },
             text = {
@@ -351,12 +356,12 @@ fun ApktoolDecodeDialog(file: File, onDismiss: () -> Unit, onJobQueued: (String)
 @Composable
 fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
     val context = LocalContext.current
-    remember(context) { ApktoolProjectSessionManager.configure(context.filesDir); true }
     val defaults = remember(project) { ApktoolSettings.buildDefaults(context) }
     val general = remember(project) { ApktoolSettings.generalDefaults(context) }
     var projectSession by remember(project.absolutePath) { mutableStateOf<ApktoolProjectSession?>(null) }
 
     LaunchedEffect(project.absolutePath) {
+        ApktoolProjectSessionManager.configure(context.filesDir)
         projectSession = withContext(Dispatchers.IO) { runCatching { ApktoolProjectSessionManager.refresh(project) }.getOrNull() }
     }
 
@@ -383,7 +388,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
     val outputRoot = if (general.buildIntoOutputDirectory) ApktoolSettings.outputRoot(context) else File(project, "dist").absolutePath
     var output by remember(project, suffix, outputRoot) { mutableStateOf(uniqueFilePath(outputRoot, project.name + suffix + ".apk")) }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Projekt kompilieren \"${project.name}\"?") },
         text = {
@@ -396,6 +401,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                         ApktoolWorkflowStage.VERIFYING -> "Prüfung"
                         ApktoolWorkflowStage.FAILED -> "Fehler"
                         ApktoolWorkflowStage.SUCCEEDED -> "Zuletzt erfolgreich erstellt"
+                        ApktoolWorkflowStage.CANCELLED -> "Abgebrochen"
                         else -> "Bereit"
                     }
                     Text(stateLabel, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
@@ -404,11 +410,11 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                         session.changedFiles.take(4).forEach { changed ->
                             Text("• $changed", style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Spacer(Modifier.padding(top = 3.dp))
                     }
                     session.sourceApkPath?.let { source ->
                         Text("Quelle: $source", style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    Spacer(Modifier.width(4.dp))
                 }
                 SectionTitle("AAPT2")
                 Text(
@@ -459,6 +465,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
                         }
                         append(" -o ").append(ShellTokenizer.quote(output)).append(' ').append(ShellTokenizer.quote(project.absolutePath))
                     }
+                    ApktoolProjectSessionManager.configure(context.filesDir)
                     ApktoolProjectSessionManager.begin(project, ApktoolWorkflowStage.QUEUED)
                     val jobId = ApktoolJobService.enqueue(
                         context = context,
@@ -478,7 +485,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
     )
 
     if (showSettings) {
-        AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = { showSettings = false },
             title = { Text("Einstellungen") },
             text = {
@@ -531,7 +538,7 @@ fun ApktoolBuildDialog(project: File, onDismiss: () -> Unit, onJobQueued: (Strin
 @Composable
 private fun ThreadPickerDialog(title: String, value: Int, onSave: (Int) -> Unit, onDismiss: () -> Unit) {
     var selected by remember(value) { mutableIntStateOf(value.coerceIn(1, 4)) }
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -551,15 +558,15 @@ private fun ThreadPickerDialog(title: String, value: Int, onSave: (Int) -> Unit,
 @Composable
 fun ApktoolJobsDialog(jobs: List<ApktoolJobInfo>, onCancel: (String) -> Unit, onCancelAll: () -> Unit, onDismiss: () -> Unit) {
     val active = jobs.count { !it.isTerminal }
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Apktool Jobs${if (active > 0) " ($active aktiv)" else ""}") },
         text = {
             if (jobs.isEmpty()) Text("Keine Jobs in dieser App-Sitzung.")
             else LazyColumn(modifier = Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(jobs, key = { it.id }) { job ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(10.dp)) {
+                    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+                        Column(Modifier.padding(vertical = 8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(job.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(job.status, style = MaterialTheme.typography.labelSmall)
@@ -569,6 +576,7 @@ fun ApktoolJobsDialog(jobs: List<ApktoolJobInfo>, onCancel: (String) -> Unit, on
                             else if (!job.output.isNullOrBlank()) Text(job.output, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
                         }
                     }
+                    HorizontalDivider()
                 }
             }
         },
@@ -581,7 +589,7 @@ fun ApktoolJobsDialog(jobs: List<ApktoolJobInfo>, onCancel: (String) -> Unit, on
 fun ApktoolCliDialog(onDismiss: () -> Unit, onJobQueued: (String) -> Unit = {}) {
     val context = LocalContext.current
     var command by remember { mutableStateOf("apktool --help") }
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Apktool CLI") },
         text = {

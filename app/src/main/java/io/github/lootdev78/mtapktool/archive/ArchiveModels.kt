@@ -53,7 +53,6 @@ data class ArchiveRequest(
     val deleteSourcesAfterCompression: Boolean = false,
 )
 
-
 enum class ArchiveConflictAction { OVERWRITE, SKIP, KEEP_BOTH, CANCEL }
 
 data class ArchiveEntryConflict(

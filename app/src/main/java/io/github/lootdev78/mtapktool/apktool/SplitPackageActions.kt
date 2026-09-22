@@ -10,6 +10,7 @@ import android.widget.Toast
 import io.github.lootdev78.mtapktool.antisplit.AntiSplitEngine
 import io.github.apktool.android.runtime.Toolchain
 import io.github.abdurazaaqmohammed.apksigner.SignWrapper
+import androidx.core.content.IntentCompat
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -131,8 +132,7 @@ class SplitInstallReceiver : BroadcastReceiver() {
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                @Suppress("DEPRECATION")
-                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
                 if (confirm != null) {
                     confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(confirm)

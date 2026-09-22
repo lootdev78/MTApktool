@@ -51,6 +51,7 @@ import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -127,7 +128,7 @@ public class ClipboardPanel {
     private final ArrayList<String> _menuItems = new ArrayList<>();
     private final Map<String, MenuItemConfig> _allMenuItems = new HashMap<>();
 
-    private final Handler _autoHideHandler = new Handler();
+    private final Handler _autoHideHandler = new Handler(Looper.getMainLooper());
     private static final long AUTO_HIDE_DELAY = 5000;
     private final Runnable _autoHideRunnable = new Runnable() {
         @Override

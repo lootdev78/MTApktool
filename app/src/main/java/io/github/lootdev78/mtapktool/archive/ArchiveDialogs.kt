@@ -1,5 +1,6 @@
 package io.github.lootdev78.mtapktool.archive
 
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -37,7 +37,7 @@ fun ArchiveActionDialog(
     var password by remember(archive.absolutePath) { mutableStateOf("") }
     val passwordCapable = format == ArchiveFormat.ZIP || format == ArchiveFormat.SEVEN_Z
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(archive.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
@@ -99,7 +99,7 @@ fun ArchiveExtractDialog(
         baseDirectory
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Extract") },
         text = {

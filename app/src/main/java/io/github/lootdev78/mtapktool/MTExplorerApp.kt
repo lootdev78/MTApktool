@@ -38,7 +38,8 @@ fun MTExplorerApp(navController: NavHostController) {
             CodeEditorScreen(
                 filePath = filePath,
                 fileName = fileName,
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onOpenFile = { path, name -> navController.navigate(Screen.Editor.createRoute(path, name)) },
             )
         }
 

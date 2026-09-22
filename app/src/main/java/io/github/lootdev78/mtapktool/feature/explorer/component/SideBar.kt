@@ -1,5 +1,6 @@
 package io.github.lootdev78.mtapktool.feature.explorer.component
 
+import androidx.annotation.DrawableRes
 import android.content.Context
 import android.provider.DocumentsContract
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -33,7 +34,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
@@ -60,11 +61,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.lootdev78.mtapktool.R
+import io.github.lootdev78.mtapktool.core.theme.MtClassicMetrics
 import io.github.lootdev78.mtapktool.feature.explorer.model.StorageInfo
 import io.github.lootdev78.mtapktool.feature.explorer.model.formatSize
 import io.github.lootdev78.mtapktool.feature.explorer.model.getStorageRoots
@@ -123,7 +127,7 @@ fun SideBar(
         drawerContentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(48.dp).padding(start = 16.dp, end = 4.dp),
+            modifier = Modifier.fillMaxWidth().height(MtClassicMetrics.toolbarHeight).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -133,19 +137,19 @@ fun SideBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (sortMode) {
-                IconButton(onClick = { sortMode = false }) { Icon(Icons.Default.Check, contentDescription = "Sortierung beenden") }
+                IconButton(onClick = { sortMode = false }) { Icon(painterResource(R.drawable.mt_ic_check), contentDescription = "Sortierung beenden") }
             } else {
                 Box {
-                    IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Menü") }
+                    IconButton(onClick = { headerMenu = true }) { Icon(painterResource(R.drawable.mt_ic_more), contentDescription = "Menü") }
                     DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
                         DropdownMenuItem(
                             text = { Text("Lokalen Speicher hinzufügen") },
-                            leadingIcon = { Icon(Icons.Default.Add, null) },
+                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_add), null) },
                             onClick = { headerMenu = false; onAddLocation() },
                         )
                         DropdownMenuItem(
                             text = { Text("Speicher/Tools sortieren") },
-                            leadingIcon = { Icon(Icons.Default.Sort, null) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) },
                             onClick = { headerMenu = false; sortMode = true },
                         )
                         if (customLocations.any { it.hidden }) {
@@ -157,7 +161,7 @@ fun SideBar(
                         }
                         DropdownMenuItem(
                             text = { Text("Preferences") },
-                            leadingIcon = { Icon(Icons.Default.Settings, null) },
+                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_settings), null) },
                             onClick = { headerMenu = false; onOpenSettings() },
                         )
                     }
@@ -197,10 +201,10 @@ fun SideBar(
                     modifier = Modifier.fillMaxWidth().clickable { onClose(); onBookmarkClick(path) }.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(painterResource(R.drawable.mt_ic_folder), contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
                     Text(File(path).name.ifBlank { path }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    IconButton(onClick = { onRemoveBookmark(path) }) { Icon(Icons.Default.DeleteOutline, contentDescription = "Lesezeichen entfernen") }
+                    IconButton(onClick = { onRemoveBookmark(path) }) { Icon(painterResource(R.drawable.mt_ic_delete), contentDescription = "Lesezeichen entfernen") }
                 }
             }
         }
@@ -215,16 +219,16 @@ fun SideBar(
 
         toolOrder.forEach { id ->
             when (id) {
-                "installed" -> DrawerToolRow("Installed Apps", Icons.Default.Android, sortMode, onClick = { onClose(); onOpenApkExtractor() }) { delta ->
+                "installed" -> DrawerToolRow("Installed Apps", R.drawable.mt_ic_android, sortMode, onClick = { onClose(); onOpenApkExtractor() }) { delta ->
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }
-                "text" -> DrawerToolRow("Text Editor", Icons.Default.EditNote, sortMode, onClick = { onClose(); onOpenTextEditor() }) { delta ->
+                "text" -> DrawerToolRow("Text Editor", R.drawable.mt_ic_text, sortMode, onClick = { onClose(); onOpenTextEditor() }) { delta ->
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }
-                "keys" -> DrawerToolRow("Key & Certificate Manager", Icons.Default.VpnKey, sortMode, onClick = { onClose(); onOpenKeyManager() }) { delta ->
+                "keys" -> DrawerToolRow("Key & Certificate Manager", R.drawable.mt_ic_key, sortMode, onClick = { onClose(); onOpenKeyManager() }) { delta ->
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }
-                "recycle" -> if (explorerPrefs.recycleBinEnabled) DrawerToolRow("Recycle Bin", Icons.Default.DeleteOutline, sortMode, onClick = { onClose(); onOpenRecycleBin() }) { delta ->
+                "recycle" -> if (explorerPrefs.recycleBinEnabled) DrawerToolRow("Recycle Bin", R.drawable.mt_ic_delete, sortMode, onClick = { onClose(); onOpenRecycleBin() }) { delta ->
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }
             }
@@ -253,7 +257,7 @@ fun StorageItem(storage: StorageInfo, onStorageClick: () -> Unit) {
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(storage.name, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+            Text(storage.name, fontSize = MtClassicMetrics.drawerText, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(2.dp))
             LinearProgressIndicator(progress = { storage.usedPercentage }, modifier = Modifier.fillMaxWidth().height(2.dp))
             Spacer(Modifier.height(3.dp))
@@ -291,7 +295,7 @@ private fun CustomLocationItem(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(location.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
+            Text(location.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = MtClassicMetrics.drawerText)
             Text(
                 safDisplayPath(location),
                 maxLines = 1,
@@ -305,14 +309,14 @@ private fun CustomLocationItem(
         }
         Box {
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onRename() })
-                DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { menu = false; onDelete() })
+                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_edit), null) }, onClick = { menu = false; onRename() })
+                DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_delete), null) }, onClick = { menu = false; onDelete() })
                 DropdownMenuItem(
                     text = { Text(if (location.hidden) "Show" else "Hide") },
                     leadingIcon = { Icon(if (location.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) },
                     onClick = { menu = false; onHide() },
                 )
-                DropdownMenuItem(text = { Text("Sort") }, leadingIcon = { Icon(Icons.Default.Sort, null) }, onClick = { menu = false; onSort() })
+                DropdownMenuItem(text = { Text("Sort") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) }, onClick = { menu = false; onSort() })
             }
         }
     }
@@ -321,7 +325,7 @@ private fun CustomLocationItem(
 @Composable
 private fun DrawerToolRow(
     title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    @DrawableRes iconRes: Int,
     sortMode: Boolean,
     onClick: () -> Unit,
     onMove: (Int) -> Unit,
@@ -333,9 +337,9 @@ private fun DrawerToolRow(
         Box(
             modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp)) }
+        ) { Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(22.dp)) }
         Spacer(Modifier.width(12.dp))
-        Text(title, modifier = Modifier.weight(1f), fontSize = 15.sp)
+        Text(title, modifier = Modifier.weight(1f), fontSize = MtClassicMetrics.drawerText)
         if (sortMode) DragSortHandle(onMove)
     }
 }

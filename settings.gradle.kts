@@ -44,7 +44,6 @@ include(
     ":apktool-android",
     ":apksig-android",
     ":zipalign-android",
-    ":mt-data-files-provider",
     ":antisplit-m",
     ":apkextractor",
     ":apkcloner",

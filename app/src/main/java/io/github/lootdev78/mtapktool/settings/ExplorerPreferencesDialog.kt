@@ -1,7 +1,6 @@
 package io.github.lootdev78.mtapktool.settings
 
 import android.content.Context
-import android.os.Environment
 import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,10 +32,9 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,7 +45,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,6 +65,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.github.lootdev78.mtapktool.core.theme.MtClassicTopBar
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
+import io.github.lootdev78.mtapktool.core.storage.SharedStorage
 import io.github.lootdev78.mtapktool.apktool.ApktoolSettings
 import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
@@ -118,7 +118,7 @@ private val builtInLabels = mapOf(
     "external" to SortableChoice("external", "Andere App", Icons.Default.FolderOpen),
 )
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ExplorerPreferencesDialog(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -148,7 +148,7 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
-                    TopAppBar(
+                    MtClassicTopBar(
                         title = { Text("Preferences") },
                         navigationIcon = {
                             IconButton(onClick = onBack) {
@@ -163,7 +163,7 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
                     item { PreferenceValue("Startpfad – linkes Fenster", startupLabel(prefs.startupLeft)) { startupLeftDialog = true } }
                     item { PreferenceValue("Startpfad – rechtes Fenster", startupLabel(prefs.startupRight)) { startupRightDialog = true } }
 
-                    item { Divider() }
+                    item { HorizontalDivider() }
                     item { SectionTitle("Darstellung") }
                     item { PreferenceValue("Theme", when (themeMode) { ThemeMode.SYSTEM -> "System"; ThemeMode.LIGHT -> "Hell"; ThemeMode.DARK -> "Dunkel" }) { themeModeDialog = true } }
                     item { PreferenceValue("Theme color", "Farbschema der Oberfläche auswählen.") { accentDialog = true } }
@@ -173,7 +173,7 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
                     item { PreferenceSwitch("Disable permission in file list", "Dateirechte in der Liste nicht anzeigen.", prefs.disablePermissionInFileList) { update(context) { copy(disablePermissionInFileList = it) } } }
                     item { PreferenceValue("Date time format", prefs.dateTimeFormat) { dateFormatDialog = true } }
 
-                    item { Divider() }
+                    item { HorizontalDivider() }
                     item { SectionTitle("General") }
                     item { PreferenceSwitch("Generate backup file", "Beim Speichern im Texteditor die Originaldatei als .bak sichern.", prefs.generateBackupFile) {
                         update(context) { copy(generateBackupFile = it) }
@@ -184,18 +184,18 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
                     item { PreferenceValue("Sort built-in opening method", "Nur MTApktool-eigene Öffnungsmethoden.") { builtInDialog = true } }
                     item { PreferenceValue("Custom MTApktool directory", prefs.customWorkspace) { workspaceDialog = true } }
 
-                    item { Divider() }
+                    item { HorizontalDivider() }
                     item { SectionTitle("Recycle Bin") }
                     item { PreferenceSwitch("Enable recycle bin feature", "Gelöschte lokale Dateien können zuerst in den Papierkorb verschoben werden.", prefs.recycleBinEnabled) { update(context) { copy(recycleBinEnabled = it) } } }
                     item { PreferenceSwitch("Move to recycle bin by default", "Beim Löschen standardmäßig in den Papierkorb verschieben.", prefs.moveToRecycleBinByDefault, enabled = prefs.recycleBinEnabled) { update(context) { copy(moveToRecycleBinByDefault = it) } } }
                     item { PreferenceValue("Automatically clean recycle bin files", if (prefs.autoCleanRecycleBinDays <= 0) "Disable" else "${prefs.autoCleanRecycleBinDays} Tage", enabled = prefs.recycleBinEnabled) { autoCleanDialog = true } }
                     item { PreferenceSwitch("Show deletion warning", "Warnung vor endgültigem Löschen anzeigen.", prefs.showDeletionWarning) { update(context) { copy(showDeletionWarning = it) } } }
 
-                    item { Divider() }
+                    item { HorizontalDivider() }
                     item { SectionTitle("Installation") }
                     item { PreferenceSwitch("APK installation verification", "Signatur und Versionscode vor Installation prüfen.", prefs.apkInstallationVerification) { update(context) { copy(apkInstallationVerification = it) } } }
 
-                    item { Divider() }
+                    item { HorizontalDivider() }
                     item { SectionTitle("External storage") }
                     item { PreferenceSwitch("Load thumbnails from external storage", "Thumbnails auf SAF/USB-Speichern laden.", prefs.loadExternalThumbnails) { update(context) { copy(loadExternalThumbnails = it) } } }
                     item { PreferenceSwitch("Optimize external storage data transfer", "Größere Puffer für Kopieren/Verschieben auf SAF/USB verwenden.", prefs.optimizeExternalTransfer) { update(context) { copy(optimizeExternalTransfer = it) } } }
@@ -307,7 +307,7 @@ private fun PreferenceSwitch(title: String, subtitle: String, checked: Boolean, 
 
 @Composable
 private fun RadioChoiceDialog(title: String, choices: List<Choice>, selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
-    AlertDialog(
+    MtClassicAlertDialog(
         shape = RoundedCornerShape(2.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         onDismissRequest = onDismiss,
@@ -337,7 +337,7 @@ private fun StartupDialog(title: String, selected: String, onDismiss: () -> Unit
 
 @Composable
 private fun ThemeColorDialog(selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
-    AlertDialog(
+    MtClassicAlertDialog(
         shape = RoundedCornerShape(2.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         onDismissRequest = onDismiss,
@@ -347,9 +347,9 @@ private fun ThemeColorDialog(selected: String, onDismiss: () -> Unit, onSelect: 
                 accentChoices.chunked(3).forEachIndexed { rowIndex, row ->
                     if (rowIndex == 4) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Divider(Modifier.weight(1f))
+                            HorizontalDivider(Modifier.weight(1f))
                             Text("Monet Colors", modifier = Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Divider(Modifier.weight(1f))
+                            HorizontalDivider(Modifier.weight(1f))
                         }
                         Spacer(Modifier.height(8.dp))
                     }
@@ -386,7 +386,7 @@ private fun SortGridDialog(
     onSave: (List<String>) -> Unit,
 ) {
     var order by remember(initial) { mutableStateOf(initial) }
-    AlertDialog(
+    MtClassicAlertDialog(
         shape = RoundedCornerShape(2.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         onDismissRequest = onDismiss,
@@ -469,14 +469,14 @@ private fun WorkspaceDialog(initial: String, onDismiss: () -> Unit, onSave: (Str
         val resolved = runCatching {
             val id = DocumentsContract.getTreeDocumentId(uri)
             when {
-                id.startsWith("primary:") -> File(Environment.getExternalStorageDirectory(), id.substringAfter(':')).absolutePath
+                id.startsWith("primary:") -> File(SharedStorage.primaryRoot(), id.substringAfter(':')).absolutePath
                 else -> null
             }
         }.getOrNull()
         if (resolved != null) path = resolved
         else Toast.makeText(context, "Nur direkt auflösbare lokale Ordner können als Apktool-Arbeitsverzeichnis verwendet werden.", Toast.LENGTH_LONG).show()
     }
-    AlertDialog(
+    MtClassicAlertDialog(
         shape = RoundedCornerShape(2.dp),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         onDismissRequest = onDismiss,
@@ -489,7 +489,7 @@ private fun WorkspaceDialog(initial: String, onDismiss: () -> Unit, onSave: (Str
             }
         },
         dismissButton = {
-            TextButton(onClick = { path = Environment.getExternalStorageDirectory().resolve("apktool").absolutePath }) { Text("RESET") }
+            TextButton(onClick = { path = SharedStorage.primaryRoot().resolve("apktool").absolutePath }) { Text("RESET") }
         },
         confirmButton = {
             Row {

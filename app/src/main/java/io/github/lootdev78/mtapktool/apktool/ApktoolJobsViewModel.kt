@@ -5,8 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
 import androidx.lifecycle.AndroidViewModel
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,12 +54,7 @@ class ApktoolJobsViewModel(application: Application) : AndroidViewModel(applicat
     init {
         val app = getApplication<Application>()
         val filter = IntentFilter(ApktoolJobService.ACTION_STATUS)
-        if (Build.VERSION.SDK_INT >= 33) {
-            app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            app.registerReceiver(receiver, filter)
-        }
+        ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         ApktoolJobService.query(app)
     }
 

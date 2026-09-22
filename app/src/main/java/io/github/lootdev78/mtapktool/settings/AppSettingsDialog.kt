@@ -16,12 +16,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VpnKey
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,7 +32,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.github.lootdev78.mtapktool.core.theme.MtClassicTopBar
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import io.github.lootdev78.mtapktool.BuildConfig
 import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolSettingsDialog
@@ -112,10 +112,10 @@ fun AppSettingsDialog(
     val entries = listOf(
         SettingsEntry("Anwendung", "Globale Anwendungseinstellungen konfigurieren.", Icons.Default.Settings, SettingsPage.GENERAL),
         SettingsEntry("Erstellen & Dekodieren", "Apktool für Erstellen, Dekodieren, Frameworks und AAPT2 konfigurieren.", Icons.Default.Build, SettingsPage.APKTOOL),
-        SettingsEntry("Signatur", "Signaturdatei und APK-Signaturschemata konfigurieren.", Icons.Default.VpnKey, SettingsPage.SIGNATURE),
+        SettingsEntry("Schlüssel & Zertifikate", "Keystore, Zertifikat und APK-Signaturschemata verwalten.", Icons.Default.VpnKey, SettingsPage.SIGNATURE),
         SettingsEntry("Archivierung", "Format, Kompressionsstufe und Standardoptionen festlegen.", Icons.Default.Archive, SettingsPage.ARCHIVE),
         SettingsEntry("Apktool CLI", "Vollständige Apktool-Kommandos direkt als Job ausführen.", Icons.Default.Code, SettingsPage.CLI),
-        SettingsEntry("FAQ", "Hilfe zur Benutzung des Programms", Icons.Default.HelpOutline, SettingsPage.FAQ),
+        SettingsEntry("FAQ", "Hilfe zur Benutzung des Programms", Icons.AutoMirrored.Filled.HelpOutline, SettingsPage.FAQ),
         SettingsEntry("Über", "Informationen über App, Runtime und integriertes Apktool", Icons.Default.Info, SettingsPage.ABOUT),
     )
     val filtered = entries.filter {
@@ -129,7 +129,7 @@ fun AppSettingsDialog(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
-                    TopAppBar(
+                    MtClassicTopBar(
                         title = { Text("Einstellungen") },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
@@ -190,7 +190,7 @@ private fun ArchiveDefaultsDialog(onBack: () -> Unit) {
     var formatMenu by remember { mutableStateOf(false) }
     var levelMenu by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onBack,
         title = { Text("Archivierung") },
         text = {
@@ -235,7 +235,7 @@ private fun ToggleText(label: String, value: Boolean, set: (Boolean) -> Unit) {
 
 @Composable
 private fun FaqDialog(onBack: () -> Unit) {
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onBack,
         title = { Text("FAQ") },
         text = {
@@ -252,14 +252,13 @@ private fun FaqDialog(onBack: () -> Unit) {
 
 @Composable
 private fun AboutDialog(onBack: () -> Unit) {
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onBack,
         title = { Text("Über") },
         text = {
             Text(
                 "MTApktool ${BuildConfig.VERSION_NAME}\n\n" +
-                    "Integrierte Funktionen: Apktool Decode/Build, Framework-Verwaltung, AAPT2, Signierung, Job-Runner, Dual-Panel-Dateimanager und Archivierung.\n\n" +
-                    "MTDataFilesProvider: In-Tree-Modul aus dem vom Nutzer bereitgestellten Upstream-Archiv; stellt MTApktool-Dateibereiche über Androids DocumentsProvider bereit."
+                    "Integrierte Funktionen: Apktool Decode/Build, Framework-Verwaltung, AAPT2, Signierung, Job-Runner, Dual-Panel-Dateimanager und Archivierung."
             )
         },
         confirmButton = { TextButton(onClick = onBack) { Text("ZURÜCK") } },

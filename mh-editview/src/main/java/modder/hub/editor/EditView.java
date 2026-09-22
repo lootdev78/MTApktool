@@ -46,6 +46,7 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.Selection;
@@ -126,9 +127,9 @@ public class EditView extends View {
     private final LineHeightManager mHeightManager = new LineHeightManager();
     private final Map<String, Integer> mWordFrequencyMap = new ConcurrentHashMap<String, Integer>();
     // --- Handlers ---
-    private final Handler mSelectionHandler = new Handler();
-    private final Handler mSearchHandler = new Handler();
-    private final Handler mBraceThreadHandler = new Handler();
+    private final Handler mSelectionHandler = new Handler(Looper.getMainLooper());
+    private final Handler mSearchHandler = new Handler(Looper.getMainLooper());
+    private final Handler mBraceThreadHandler = new Handler(Looper.getMainLooper());
     private final boolean isSyntaxDarkMode = false;
     // --- Navigation & History ---
     private final List<Integer> mCursorHistory = new ArrayList<>();
@@ -487,7 +488,7 @@ public class EditView extends View {
         mAutoCompletePopup.setModal(false);
         mAutoCompletePopup.setAnimationStyle(0);
         mAutoCompletePopup.setBackgroundDrawable(
-                getResources().getDrawable(android.R.drawable.dialog_holo_light_frame)
+                getResources().getDrawable(android.R.drawable.dialog_holo_light_frame, getContext().getTheme())
         );
 
         mAutoCompletePopup.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -5137,7 +5138,7 @@ public class EditView extends View {
                 mAutoCompletePopup.setModal(false);
                 mAutoCompletePopup.setAnimationStyle(0); // No animation
                 mAutoCompletePopup.setBackgroundDrawable(
-                        getResources().getDrawable(android.R.drawable.dialog_holo_light_frame)
+                        getResources().getDrawable(android.R.drawable.dialog_holo_light_frame, getContext().getTheme())
                 );
             }
             mAutoCompletePopup.show();

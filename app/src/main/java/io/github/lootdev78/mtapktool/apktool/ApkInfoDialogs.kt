@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveInfo
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveReader
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkSignatureInfo
@@ -226,7 +227,7 @@ private fun SignatureInformationDialog(file: File, onDismiss: () -> Unit) {
     }
 
     if (showRaw) {
-        androidx.compose.material3.AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = { showRaw = false },
             title = { Text("Certificate data") },
             text = {

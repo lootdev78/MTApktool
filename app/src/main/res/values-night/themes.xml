@@ -7,8 +7,6 @@
         <item name="colorSecondaryVariant">#00497D</item>
         <item name="colorOnSecondary">#003258</item>
         <item name="android:windowBackground">#121318</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowNoTitle">true</item>

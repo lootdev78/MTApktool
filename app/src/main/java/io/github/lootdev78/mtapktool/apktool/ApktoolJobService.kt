@@ -8,11 +8,12 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
-import com.android.apksig.ApkVerifier
 import androidx.core.content.ContextCompat
+import com.android.apksig.ApkVerifier
 import io.github.lootdev78.mtapktool.MainActivity
 import io.github.apktool.android.runtime.ApktoolCommandRunner
 import io.github.apktool.android.runtime.Toolchain
@@ -312,7 +313,11 @@ class ApktoolJobService : Service() {
                 "b", "build" -> ApktoolWorkflowStage.BUILDING
                 else -> ApktoolWorkflowStage.PROVISIONING
             }
-            record.projectRoot?.let { project -> if (record.stage == ApktoolWorkflowStage.BUILDING) ApktoolProjectSessionManager.begin(File(project), ApktoolWorkflowStage.BUILDING) }
+            record.projectRoot?.let { project ->
+                if (record.stage == ApktoolWorkflowStage.BUILDING) {
+                    ApktoolProjectSessionManager.begin(File(project), ApktoolWorkflowStage.BUILDING)
+                }
+            }
             broadcast(record, force = true)
             var result = if (SplitArchiveSupport.isSplitDecodeCommand(record.command)) {
                 SplitArchiveSupport.executeDecode(record.command, toolchain, listener)
@@ -323,19 +328,20 @@ class ApktoolJobService : Service() {
 
             if (result.isSuccess && !record.postDecodeRoot.isNullOrBlank()) {
                 record.stage = ApktoolWorkflowStage.POST_DECODE
+                record.line = "Post-processing decoded project…"
                 broadcast(record, force = true)
+                val decodedRoot = File(record.postDecodeRoot)
                 ProjectPostProcessor.process(
-                    File(record.postDecodeRoot),
+                    decodedRoot,
                     ProjectPostProcessor.Options(record.createNomedia, record.removeSplitTraces, record.removePropertyTags),
                     listener,
                 )
-                val decodedRoot = File(record.postDecodeRoot)
                 val sourceApk = record.sourceApk?.takeIf { it.isNotBlank() }?.let(::File)
                 val projects = buildList {
                     if (File(decodedRoot, "apktool.yml").isFile) add(decodedRoot)
                     decodedRoot.walkTopDown().maxDepth(3)
                         .filter { it.isDirectory && it != decodedRoot && File(it, "apktool.yml").isFile }
-                        .forEach { add(it) }
+                        .forEach(::add)
                 }.distinctBy { it.canonicalPath }
                 if (projects.isEmpty()) {
                     ApktoolProjectSessionManager.registerDecodedProject(decodedRoot, sourceApk)
@@ -372,9 +378,10 @@ class ApktoolJobService : Service() {
                 record.stage = ApktoolWorkflowStage.VERIFYING
                 record.line = "Verifying APK…"
                 broadcast(record, force = true)
-                val verify = ApkVerifier.Builder(verifiedOutput).build().verify()
-                if (!verify.isVerified) error("APK verification failed")
+                val verification = ApkVerifier.Builder(verifiedOutput).build().verify()
+                if (!verification.isVerified) error("APK signature verification failed")
             }
+
             if (result.isSuccess && !record.cleanBuildProject.isNullOrBlank()) {
                 val buildDir = File(record.cleanBuildProject, "build")
                 if (buildDir.exists()) deleteRecursivelyCancellable(buildDir)
@@ -406,7 +413,7 @@ class ApktoolJobService : Service() {
             } else {
                 record.status = Status.FAILED
                 record.stage = ApktoolWorkflowStage.FAILED
-                record.projectRoot?.let { ApktoolProjectSessionManager.fail(File(it), t) }
+                record.projectRoot?.let { runCatching { ApktoolProjectSessionManager.fail(File(it), t) } }
                 record.line = stackMessage(t)
                 appendLog(record, record.line)
                 log?.println(record.line)
@@ -545,7 +552,7 @@ class ApktoolJobService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(ongoing)
             .setProgress(0, 0, ongoing)
-            .addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Alle stoppen", stopAll).build())
+            .addAction(Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel), "Alle stoppen", stopAll).build())
             .build()
     }
 
@@ -592,7 +599,7 @@ class ApktoolJobService : Service() {
         var c: Throwable? = t
         repeat(12) {
             if (c is InterruptedException || c is CancellationException) return true
-            c = c?.cause
+            c = c.cause
             if (c == null) return false
         }
         return false
@@ -604,7 +611,7 @@ class ApktoolJobService : Service() {
         repeat(6) {
             if (c == null) return@repeat
             b.append("\ncaused by: ").append(c)
-            c = c?.cause
+            c = c.cause
         }
         return b.toString()
     }

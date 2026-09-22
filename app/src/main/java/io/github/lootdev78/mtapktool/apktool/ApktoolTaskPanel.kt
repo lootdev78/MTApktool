@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -49,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -57,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
+import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.archive.ArchiveTaskInfo
 import io.github.lootdev78.mtapktool.archive.ArchiveTaskStatus
 import kotlin.math.abs
@@ -108,7 +110,7 @@ fun ApktoolTaskPanel(
                         modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = onDismiss) { Icon(Icons.Default.Check, contentDescription = "Schliessen") }
+                        IconButton(onClick = onDismiss) { Icon(painterResource(R.drawable.mt_ic_check), contentDescription = "Schliessen") }
                         Column(Modifier.weight(1f)) {
                             Text("Tasks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Normal)
                             val active = jobs.count { !it.isTerminal } + archiveTasks.count { !it.isTerminal }
@@ -116,7 +118,7 @@ fun ApktoolTaskPanel(
                         }
                         if (jobs.any { it.isTerminal }) {
                             IconButton(onClick = onClearFinished) {
-                                Icon(Icons.Default.DeleteSweep, contentDescription = "Fertige Tasks leeren")
+                                Icon(painterResource(R.drawable.mt_ic_delete), contentDescription = "Fertige Tasks leeren")
                             }
                         }
                         if (jobs.any { !it.isTerminal } || archiveTasks.any { !it.isTerminal }) {
@@ -177,8 +179,12 @@ private fun ArchiveTaskCard(task: ArchiveTaskInfo, onCancel: (Long) -> Unit) {
             }
             if (!task.isTerminal) {
                 Spacer(Modifier.height(7.dp))
-                if (task.progress != null) LinearProgressIndicator(progress = { task.progress.coerceIn(0, 100) / 100f }, modifier = Modifier.fillMaxWidth().height(2.dp))
-                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(2.dp))
+                if (task.progress != null) {
+                    LinearProgressIndicator(
+                        progress = { task.progress.coerceIn(0, 100) / 100f },
+                        modifier = Modifier.fillMaxWidth().height(2.dp),
+                    )
+                } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(2.dp))
             }
             val detail = task.message.ifBlank { task.detail }
             if (detail.isNotBlank()) {
@@ -299,11 +305,11 @@ fun ApktoolJobOutputDialog(
         if (scroll.maxValue > 0) scroll.scrollTo(scroll.maxValue)
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onHide,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Settings, contentDescription = null)
+                Icon(painterResource(R.drawable.mt_ic_settings), contentDescription = null)
                 Spacer(Modifier.width(10.dp))
                 Text(job?.dialogTitle() ?: "Apktool…", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -312,7 +318,7 @@ fun ApktoolJobOutputDialog(
             Column {
                 if (job != null) {
                     Text(
-                        job.statusLabel(),
+                        job.workflowLabel(),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -330,10 +336,11 @@ fun ApktoolJobOutputDialog(
                         color = Color(0xFF65F26B),
                     )
                 }
-                if (!job?.output.isNullOrBlank()) {
+                val outputPath = job?.output.orEmpty()
+                if (outputPath.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        job?.output.orEmpty(),
+                        outputPath,
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
@@ -353,12 +360,12 @@ fun ApktoolJobOutputDialog(
 }
 
 private fun ApktoolJobInfo.workflowLabel(): String = if (status == "RUNNING") when (stage) {
-    "PROVISIONING" -> "VORBEREITUNG"
-    "DECODING" -> "DEKOMPILIEREN"
-    "POST_DECODE" -> "NACHBEARBEITUNG"
-    "BUILDING" -> "ERSTELLEN"
-    "POST_PROCESSING" -> "ALIGN/SIGN"
-    "VERIFYING" -> "PRÜFUNG"
+    ApktoolWorkflowStage.PROVISIONING.name -> "VORBEREITUNG"
+    ApktoolWorkflowStage.DECODING.name -> "DEKOMPILIEREN"
+    ApktoolWorkflowStage.POST_DECODE.name -> "NACHBEARBEITUNG"
+    ApktoolWorkflowStage.BUILDING.name -> "ERSTELLEN"
+    ApktoolWorkflowStage.POST_PROCESSING.name -> "ALIGN/SIGN"
+    ApktoolWorkflowStage.VERIFYING.name -> "PRÜFUNG"
     else -> "LÄUFT"
 } else statusLabel()
 

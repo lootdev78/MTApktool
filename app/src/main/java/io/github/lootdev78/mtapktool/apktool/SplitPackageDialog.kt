@@ -1,6 +1,5 @@
 package io.github.lootdev78.mtapktool.apktool
 
-import android.os.Environment
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,8 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.InstallMobile
-import androidx.compose.material.icons.filled.MergeType
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.automirrored.filled.MergeType
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
+import io.github.lootdev78.mtapktool.core.storage.SharedStorage
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -123,7 +123,7 @@ fun SplitPackageDialog(
                         enabled = !busy && chosen.isNotEmpty(),
                         onClick = { showMerge = true },
                     ) {
-                        Icon(Icons.Default.MergeType, null)
+                        Icon(Icons.AutoMirrored.Filled.MergeType, null)
                         Spacer(Modifier.width(6.dp))
                         Text("ZU APK", maxLines = 1)
                     }
@@ -252,7 +252,7 @@ private fun SplitMergeDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val defaultDir = file.parentFile ?: File(Environment.getExternalStorageDirectory(), "apktool/apks")
+    val defaultDir = file.parentFile ?: File(SharedStorage.primaryRoot(), "apktool/apks")
     var output by remember(file) { mutableStateOf(File(defaultDir, file.nameWithoutExtension + ".merged.apk").absolutePath) }
     var outputPane by remember { mutableStateOf(sourcePane) }
     var compression by remember { mutableStateOf("6") }
@@ -267,7 +267,7 @@ private fun SplitMergeDialog(
         outputPane = pane
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("AntiSplit-M · Zu APK") },
         text = {

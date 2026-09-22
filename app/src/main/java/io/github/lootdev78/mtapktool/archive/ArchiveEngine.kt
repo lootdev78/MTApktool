@@ -201,44 +201,14 @@ object ArchiveEngine {
                 createZipPreserving(output, sources, level, templateArchive)
             } else createZip(output, sources, level, password)
             ArchiveFormat.SEVEN_Z -> create7z(output, sources, level, password)
-            ArchiveFormat.TAR -> createTar(
-                output = output,
-                sources = sources,
-                metadata = templateArchive?.let { readTarMetadata(it, format) },
-                wrapper = { out: OutputStream -> out },
-            )
-            ArchiveFormat.TAR_GZ -> createTar(
-                output = output,
-                sources = sources,
-                metadata = templateArchive?.let { readTarMetadata(it, format) },
-                wrapper = { out: OutputStream -> gzipStream(out, level) },
-            )
-            ArchiveFormat.TAR_XZ -> createTar(
-                output = output,
-                sources = sources,
-                metadata = templateArchive?.let { readTarMetadata(it, format) },
-                wrapper = { out: OutputStream -> XZCompressorOutputStream(out, level.preset()) },
-            )
-            ArchiveFormat.TAR_ZST -> createTar(
-                output = output,
-                sources = sources,
-                metadata = templateArchive?.let { readTarMetadata(it, format) },
-                wrapper = { out: OutputStream -> ZstdCompressorOutputStream(out, level.preset()) },
-            )
-            ArchiveFormat.TAR_BZ2 -> createTar(
-                output = output,
-                sources = sources,
-                metadata = templateArchive?.let { readTarMetadata(it, format) },
-                wrapper = { out: OutputStream -> BZip2CompressorOutputStream(out, level.bzipBlockSize()) },
-            )
-            ArchiveFormat.TAR_LZ4 -> createTar(
-                output = output,
-                sources = sources,
-                metadata = templateArchive?.let { readTarMetadata(it, format) },
-                wrapper = { out: OutputStream -> FramedLZ4CompressorOutputStream(out) },
-            )
+            ArchiveFormat.TAR -> createTar(output, sources, templateArchive?.let { readTarMetadata(it, format) }) { it }
+            ArchiveFormat.TAR_GZ -> createTar(output, sources, templateArchive?.let { readTarMetadata(it, format) }) { gzipStream(it, level) }
+            ArchiveFormat.TAR_XZ -> createTar(output, sources, templateArchive?.let { readTarMetadata(it, format) }) { xzOutputStream(it, level) }
+            ArchiveFormat.TAR_ZST -> createTar(output, sources, templateArchive?.let { readTarMetadata(it, format) }) { zstdOutputStream(it, level) }
+            ArchiveFormat.TAR_BZ2 -> createTar(output, sources, templateArchive?.let { readTarMetadata(it, format) }) { BZip2CompressorOutputStream(it, level.bzipBlockSize()) }
+            ArchiveFormat.TAR_LZ4 -> createTar(output, sources, templateArchive?.let { readTarMetadata(it, format) }) { FramedLZ4CompressorOutputStream(it) }
             ArchiveFormat.GZIP -> compressSingle(output, sources.single()) { gzipStream(it, level) }
-            ArchiveFormat.XZ -> compressSingle(output, sources.single()) { XZCompressorOutputStream(it, level.preset()) }
+            ArchiveFormat.XZ -> compressSingle(output, sources.single()) { xzOutputStream(it, level) }
         }
     }
 
@@ -329,25 +299,36 @@ object ArchiveEngine {
             }
             if (method == java.util.zip.ZipEntry.STORED) {
                 if (symbolic) {
-                    val bytes = linkBytes ?: ByteArray(0); size = bytes.size.toLong(); crc = CRC32().apply { update(bytes) }.value
+                    val bytes = linkBytes ?: ByteArray(0)
+                    size = bytes.size.toLong()
+                    crc = CRC32().apply { update(bytes) }.value
                 } else if (file.isFile) {
                     size = file.length()
                     val checksum = CRC32()
                     FileInputStream(file).buffered().use { input ->
                         val buffer = ByteArray(64 * 1024)
-                        while (true) { val read = input.read(buffer); if (read < 0) break; if (read > 0) checksum.update(buffer, 0, read) }
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            if (read > 0) checksum.update(buffer, 0, read)
+                        }
                     }
                     crc = checksum.value
-                } else { size = 0L; crc = 0L }
+                } else {
+                    size = 0L
+                    crc = 0L
+                }
             }
         }
         zip.putArchiveEntry(entry)
         when {
-            symbolic -> linkBytes?.let { zip.write(it) }
+            symbolic -> linkBytes?.let(zip::write)
             file.isFile -> BufferedInputStream(FileInputStream(file)).use { it.copyTo(zip) }
         }
         zip.closeArchiveEntry()
-        if (!symbolic && file.isDirectory) file.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { addToPreservingZip(zip, base, it, metadata, level) }
+        if (!symbolic && file.isDirectory) {
+            file.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { addToPreservingZip(zip, base, it, metadata, level) }
+        }
     }
 
     private fun ArchiveLevel.toZipLevel(): CompressionLevel = when (this) {
@@ -455,12 +436,12 @@ object ArchiveEngine {
                     ArchiveFormat.TAR_ZST -> ZstdCompressorInputStream(raw)
                     ArchiveFormat.TAR_BZ2 -> BZip2CompressorInputStream(raw)
                     ArchiveFormat.TAR_LZ4 -> FramedLZ4CompressorInputStream(raw)
-                    else -> raw
+                    else -> throw IOException("Not a tar archive: ${archive.name}")
                 }
                 wrapped.use { input ->
                     TarArchiveInputStream(input).use { tar ->
                         while (true) {
-                            val entry = tar.nextTarEntry ?: break
+                            val entry = tar.nextEntry ?: break
                             result[entry.name] = TarMeta(
                                 mode = entry.mode,
                                 userId = entry.longUserId,
@@ -486,7 +467,7 @@ object ArchiveEngine {
         conflictResolver: (ArchiveEntryConflict) -> ArchiveConflictAction,
     ) {
         val zip = if (password.isBlank()) ZipFile(archive) else ZipFile(archive, password.toCharArray())
-        if (zip.isEncrypted && password.isBlank()) throw IOException("Password required for ${archive.name}")
+        if (zip.isEncrypted && password.isBlank()) throw IOException("Password required")
         val headers = zip.fileHeaders.orEmpty()
         if (headers.isEmpty()) { onProgress(100); return }
         headers.forEachIndexed { index, header ->
@@ -573,13 +554,14 @@ object ArchiveEngine {
                 wrapped.use { input ->
                     TarArchiveInputStream(input).use { tar ->
                         while (true) {
-                            val entry = tar.nextTarEntry ?: break
-                            val output = resolveExtractionTarget(destination, entry.name, entry.isDirectory, conflictResolver)
-                            if (output == null) continue
+                            val entry = tar.nextEntry ?: break
+                            val output = resolveExtractionTarget(destination, entry.name, entry.isDirectory, conflictResolver) ?: continue
                             if (entry.isSymbolicLink) {
                                 output.parentFile?.mkdirs()
-                                val targetText = entry.linkName.orEmpty()
-                                runCatching { Files.deleteIfExists(output.toPath()); Files.createSymbolicLink(output.toPath(), java.nio.file.Paths.get(targetText)) }
+                                runCatching {
+                                    Files.deleteIfExists(output.toPath())
+                                    Files.createSymbolicLink(output.toPath(), java.nio.file.Paths.get(entry.linkName.orEmpty()))
+                                }
                                 continue
                             }
                             if (entry.isLink) {
@@ -644,7 +626,7 @@ object ArchiveEngine {
         if (directory && output.isDirectory && !symbolic) return output
         when (conflictResolver(ArchiveEntryConflict(entryName, output, directory))) {
             ArchiveConflictAction.OVERWRITE -> {
-                if (Files.isSymbolicLink(output.toPath())) Files.deleteIfExists(output.toPath())
+                if (symbolic) Files.deleteIfExists(output.toPath())
                 else if (output.isDirectory) {
                     if (!output.deleteRecursively() && output.exists()) throw IOException("Cannot replace: $output")
                 } else if (!output.delete() && output.exists()) throw IOException("Cannot replace: $output")
@@ -705,9 +687,7 @@ object ArchiveEngine {
             ArchiveFormat.ZIP -> {
                 val zip = if (password.isBlank()) ZipFile(file) else ZipFile(file, password.toCharArray())
                 if (!zip.isValidZipFile) throw IOException("Rebuilt ZIP failed validation")
-                zip.fileHeaders.orEmpty().firstOrNull()?.let { header ->
-                    if (!header.isDirectory) zip.getInputStream(header).use { it.read() }
-                }
+                zip.fileHeaders.orEmpty().firstOrNull { !it.isDirectory }?.let { header -> zip.getInputStream(header).use { it.read() } }
             }
             ArchiveFormat.SEVEN_Z -> SevenZFile.builder().setFile(file).let { builder ->
                 if (password.isNotBlank()) builder.setPassword(password.toCharArray())
@@ -722,9 +702,8 @@ object ArchiveEngine {
                         ArchiveFormat.TAR_ZST -> ZstdCompressorInputStream(raw)
                         ArchiveFormat.TAR_BZ2 -> BZip2CompressorInputStream(raw)
                         ArchiveFormat.TAR_LZ4 -> FramedLZ4CompressorInputStream(raw)
-                        else -> raw
                     }
-                    wrapped.use { input -> TarArchiveInputStream(input).use { it.nextTarEntry } }
+                    wrapped.use { input -> TarArchiveInputStream(input).use { it.nextEntry } }
                 }
             }
             ArchiveFormat.GZIP -> GzipCompressorInputStream(BufferedInputStream(FileInputStream(file))).use { it.read() }
@@ -785,6 +764,18 @@ object ArchiveEngine {
         val parameters = GzipParameters().apply { compressionLevel = level.preset() }
         return GzipCompressorOutputStream(out, parameters)
     }
+
+    private fun xzOutputStream(out: OutputStream, level: ArchiveLevel): XZCompressorOutputStream =
+        XZCompressorOutputStream.builder()
+            .setOutputStream(out)
+            .setPreset(level.preset())
+            .get()
+
+    private fun zstdOutputStream(out: OutputStream, level: ArchiveLevel): ZstdCompressorOutputStream =
+        ZstdCompressorOutputStream.builder()
+            .setOutputStream(out)
+            .setLevel(level.preset())
+            .get()
 
     private fun ArchiveLevel.preset(): Int = when (this) {
         ArchiveLevel.STORE -> 0

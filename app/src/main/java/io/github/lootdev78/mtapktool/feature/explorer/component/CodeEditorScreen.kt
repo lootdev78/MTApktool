@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
@@ -19,9 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.apktool.ApktoolProjectSessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,7 +35,12 @@ import java.util.ArrayDeque
 private data class EditorMatch(val start: Int, val end: Int)
 
 @Composable
-fun CodeEditorScreen(filePath: String, fileName: String, onBackClick: () -> Unit) {
+fun CodeEditorScreen(
+    filePath: String,
+    fileName: String,
+    onBackClick: () -> Unit,
+    onOpenFile: (String, String) -> Unit = { _, _ -> },
+) {
     val context = LocalContext.current
     remember(context) { ApktoolProjectSessionManager.configure(context.filesDir); true }
     var content by remember(filePath) { mutableStateOf("") }
@@ -73,6 +81,31 @@ fun CodeEditorScreen(filePath: String, fileName: String, onBackClick: () -> Unit
     var selectionToken by remember { mutableLongStateOf(0L) }
     var selection by remember { mutableStateOf<EditorSelectionRequest?>(null) }
     val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val recentPrefs = remember(context) { context.getSharedPreferences("editor_recent_files", android.content.Context.MODE_PRIVATE) }
+    var recentFiles by remember(filePath) {
+        mutableStateOf(
+            recentPrefs.getString("paths", "").orEmpty().lineSequence().filter { it.isNotBlank() }.toList()
+        )
+    }
+    val siblingFiles = remember(filePath) {
+        if (filePath.startsWith("content://")) emptyList() else {
+            File(filePath).parentFile?.listFiles { candidate ->
+                candidate.isFile && candidate.extension.lowercase() in setOf(
+                    "txt", "xml", "json", "json5", "yml", "yaml", "properties", "gradle", "kts", "kt", "java",
+                    "smali", "html", "htm", "css", "js", "ts", "md", "csv", "ini", "cfg", "conf", "log", "pro"
+                )
+            }?.sortedBy { it.name.lowercase() }.orEmpty()
+        }
+    }
+
+    LaunchedEffect(filePath) {
+        if (filePath.isNotBlank()) {
+            val updated = (listOf(filePath) + recentFiles.filterNot { it == filePath }).take(20)
+            recentFiles = updated
+            recentPrefs.edit().putString("paths", updated.joinToString("\n")).apply()
+        }
+    }
 
     val matches = remember(content, searchQuery, isRegex, isMatchCase) { findMatches(content, searchQuery, isRegex, isMatchCase) }
 
@@ -82,7 +115,8 @@ fun CodeEditorScreen(filePath: String, fileName: String, onBackClick: () -> Unit
             undo.addLast(content)
             while (undo.size > 100) undo.removeFirst()
         }
-        redo.clear(); content = next
+        redo.clear()
+        content = next
     }
 
     fun selectMatch(index: Int) {
@@ -101,15 +135,64 @@ fun CodeEditorScreen(filePath: String, fileName: String, onBackClick: () -> Unit
             val m = matches[if (activeMatch in matches.indices) activeMatch else 0]
             content.substring(0, m.start) + replacementForMatch(content.substring(m.start, m.end), searchQuery, replacement, isRegex, isMatchCase) + content.substring(m.end)
         }
-        recordChange(next); activeMatch = -1
+        recordChange(next)
+        activeMatch = -1
     }
 
     if (showFileInfo && fileObject != null) FileInfoDialog(fileObject!!, onDismiss = { showFileInfo = false })
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.widthIn(max = 330.dp)) {
+                Text("Dateien", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
+                HorizontalDivider()
+                if (siblingFiles.isNotEmpty()) {
+                    Text("Aktueller Ordner", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp))
+                    siblingFiles.take(80).forEach { candidate ->
+                        NavigationDrawerItem(
+                            label = { Text(candidate.name, maxLines = 1) },
+                            selected = candidate.absolutePath == filePath,
+                            onClick = {
+                                if (content != lastSavedContent) {
+                                    Toast.makeText(context, "Datei zuerst speichern", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    scope.launch { drawerState.close() }
+                                    onOpenFile(candidate.absolutePath, candidate.name)
+                                }
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
+                }
+                if (recentFiles.isNotEmpty()) {
+                    HorizontalDivider(Modifier.padding(top = 8.dp))
+                    Text("Zuletzt geöffnet", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp))
+                    recentFiles.take(20).forEach { recent ->
+                        val label = if (recent.startsWith("content://")) Uri.parse(recent).lastPathSegment.orEmpty().ifBlank { recent } else File(recent).name.ifBlank { recent }
+                        NavigationDrawerItem(
+                            label = { Text(label, maxLines = 1) },
+                            selected = recent == filePath,
+                            onClick = {
+                                if (content != lastSavedContent) {
+                                    Toast.makeText(context, "Datei zuerst speichern", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    scope.launch { drawerState.close() }
+                                    onOpenFile(recent, label)
+                                }
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+    ) {
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surfaceVariant, shadowElevation = 2.dp) {
             Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                IconButton(onClick = onBackClick) { Icon(painterResource(R.drawable.mt_ic_back), "Back") }
+                IconButton(onClick = { scope.launch { drawerState.open() } }) { Icon(Icons.Default.Menu, "Dateien") }
                 Text(if (content != lastSavedContent) "$fileName *" else fileName, Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                 IconButton(onClick = {
                     scope.launch(Dispatchers.IO) {
@@ -128,15 +211,15 @@ fun CodeEditorScreen(filePath: String, fileName: String, onBackClick: () -> Unit
                             withContext(Dispatchers.Main) { Toast.makeText(context, "Error saving: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
                         }
                     }
-                }) { Icon(Icons.Default.Save, "Save") }
-                IconButton(enabled = undo.isNotEmpty(), onClick = { if (undo.isNotEmpty()) { redo.addLast(content); content = undo.removeLast() } }) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
-                IconButton(enabled = redo.isNotEmpty(), onClick = { if (redo.isNotEmpty()) { undo.addLast(content); content = redo.removeLast() } }) { Icon(Icons.AutoMirrored.Filled.Redo, "Redo") }
-                IconButton(onClick = { showSearchPanel = !showSearchPanel }) { Icon(Icons.Default.Search, "Search") }
+                }) { Icon(painterResource(R.drawable.mt_ic_save), "Save") }
+                IconButton(enabled = undo.isNotEmpty(), onClick = { if (undo.isNotEmpty()) { redo.addLast(content); content = undo.removeLast() } }) { Icon(painterResource(R.drawable.mt_ic_undo), "Undo") }
+                IconButton(enabled = redo.isNotEmpty(), onClick = { if (redo.isNotEmpty()) { undo.addLast(content); content = redo.removeLast() } }) { Icon(painterResource(R.drawable.mt_ic_redo), "Redo") }
+                IconButton(onClick = { showSearchPanel = !showSearchPanel }) { Icon(painterResource(R.drawable.mt_ic_search), "Search") }
                 Box {
-                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                    IconButton(onClick = { showMenu = true }) { Icon(painterResource(R.drawable.mt_ic_more), "More") }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(text = { Row(verticalAlignment = Alignment.CenterVertically) { Text("Word Wrap"); Spacer(Modifier.weight(1f)); Checkbox(isWordWrap, null) } }, onClick = { isWordWrap = !isWordWrap; showMenu = false })
-                        if (fileObject != null) DropdownMenuItem(text = { Text("File Info") }, leadingIcon = { Icon(Icons.Default.Info, null) }, onClick = { showFileInfo = true; showMenu = false })
+                        if (fileObject != null) DropdownMenuItem(text = { Text("File Info") }, leadingIcon = { Icon(painterResource(R.drawable.mt_ic_info), null) }, onClick = { showFileInfo = true; showMenu = false })
                     }
                 }
             }
@@ -156,7 +239,7 @@ fun CodeEditorScreen(filePath: String, fileName: String, onBackClick: () -> Unit
                         Spacer(Modifier.width(6.dp))
                         Text(if (matches.isEmpty()) "0/0" else "${(activeMatch.coerceAtLeast(0) + 1).coerceAtMost(matches.size)}/${matches.size}", style = MaterialTheme.typography.bodySmall)
                         Box {
-                            IconButton(onClick = { showSearchMenu = true }) { Icon(Icons.Default.MoreVert, "Search Options") }
+                            IconButton(onClick = { showSearchMenu = true }) { Icon(painterResource(R.drawable.mt_ic_more), "Search Options") }
                             DropdownMenu(expanded = showSearchMenu, onDismissRequest = { showSearchMenu = false }) {
                                 DropdownMenuItem(text = { Row(verticalAlignment = Alignment.CenterVertically) { Text("Regex"); Spacer(Modifier.weight(1f)); Checkbox(isRegex, null) } }, onClick = { isRegex = !isRegex; activeMatch = -1 })
                                 DropdownMenuItem(text = { Row(verticalAlignment = Alignment.CenterVertically) { Text("Match case"); Spacer(Modifier.weight(1f)); Checkbox(isMatchCase, null) } }, onClick = { isMatchCase = !isMatchCase; activeMatch = -1 })
@@ -174,6 +257,7 @@ fun CodeEditorScreen(filePath: String, fileName: String, onBackClick: () -> Unit
                 }
             }
         }
+    }
     }
 }
 

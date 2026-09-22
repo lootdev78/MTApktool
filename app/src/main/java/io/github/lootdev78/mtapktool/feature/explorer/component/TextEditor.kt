@@ -127,7 +127,9 @@ private fun applySelection(view: View, text: String, request: EditorSelectionReq
 }
 
 private fun offsetToLineColumn(text: String, offset: Int): Pair<Int, Int> {
-    var line = 0; var column = 0; var i = 0
+    var line = 0
+    var column = 0
+    var i = 0
     val target = offset.coerceIn(0, text.length)
     while (i < target) {
         if (text[i] == '\n') { line++; column = 0 } else column++

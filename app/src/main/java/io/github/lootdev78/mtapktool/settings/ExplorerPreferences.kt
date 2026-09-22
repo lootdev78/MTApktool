@@ -1,8 +1,9 @@
 package io.github.lootdev78.mtapktool.settings
 
+import io.github.lootdev78.mtapktool.core.storage.SharedStorage
+
 import android.content.Context
 import android.content.SharedPreferences
-import android.os.Environment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +18,7 @@ data class ExplorerPrefs(
     val disablePermissionInFileList: Boolean = false,
     val generateBackupFile: Boolean = false,
     val preserveFileTime: Boolean = true,
-    val customWorkspace: String = Environment.getExternalStorageDirectory().resolve("apktool").absolutePath,
+    val customWorkspace: String = SharedStorage.primaryRoot().resolve("apktool").absolutePath,
     val recycleBinEnabled: Boolean = false,
     val moveToRecycleBinByDefault: Boolean = false,
     val autoCleanRecycleBinDays: Int = 0,
@@ -83,8 +84,8 @@ object ExplorerPreferences {
         disablePermissionInFileList = p.getBoolean("disable_permission_in_file_list", false),
         generateBackupFile = p.getBoolean("generate_backup_file", false),
         preserveFileTime = p.getBoolean("preserve_file_time", true),
-        customWorkspace = p.getString("custom_workspace", Environment.getExternalStorageDirectory().resolve("apktool").absolutePath)
-            ?: Environment.getExternalStorageDirectory().resolve("apktool").absolutePath,
+        customWorkspace = p.getString("custom_workspace", SharedStorage.primaryRoot().resolve("apktool").absolutePath)
+            ?: SharedStorage.primaryRoot().resolve("apktool").absolutePath,
         recycleBinEnabled = p.getBoolean("recycle_bin_enabled", false),
         moveToRecycleBinByDefault = p.getBoolean("move_to_recycle_bin_default", false),
         autoCleanRecycleBinDays = p.getInt("auto_clean_recycle_bin_days", 0).coerceAtLeast(0),

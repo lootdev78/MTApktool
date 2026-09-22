@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import java.io.File
@@ -44,10 +45,12 @@ fun MediaPlayerScreen(source: String, displayName: String, video: Boolean, onBac
     }
     var currentName by remember { mutableStateOf(displayName) }
     DisposableEffect(player) {
-        val listener = object : androidx.media3.common.Player.Listener {
+        val listener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val index = player.currentMediaItemIndex.coerceAtLeast(0)
-                currentName = queue.getOrNull(index)?.let { if (it.startsWith("content://")) Uri.parse(it).lastPathSegment else File(it).name } ?: displayName
+                currentName = queue.getOrNull(index)?.let {
+                    if (it.startsWith("content://")) Uri.parse(it).lastPathSegment else File(it).name
+                } ?: displayName
             }
         }
         player.addListener(listener)
@@ -77,18 +80,38 @@ fun MediaPlayerScreen(source: String, displayName: String, video: Boolean, onBac
                     Spacer(Modifier.height(10.dp))
                     AndroidView(
                         factory = { ctx ->
-                            PlayerView(ctx).apply { configurePlayerView(this, player, queue.size > 1) }
+                            PlayerView(ctx).apply {
+                                this.player = player
+                                useController = true
+                                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                                setShowNextButton(queue.size > 1)
+                                setShowPreviousButton(queue.size > 1)
+                            }
                         },
-                        update = { view -> configurePlayerView(view, player, queue.size > 1) },
+                        update = { view ->
+                            view.player = player
+                            view.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                            view.setShowNextButton(queue.size > 1)
+                            view.setShowPreviousButton(queue.size > 1)
+                        },
                         modifier = Modifier.fillMaxWidth().height(110.dp),
                     )
                 }
             } else {
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).apply { configurePlayerView(this, player, queue.size > 1) }
+                        PlayerView(ctx).apply {
+                            this.player = player
+                            useController = true
+                            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                            setShowNextButton(queue.size > 1)
+                            setShowPreviousButton(queue.size > 1)
+                        }
                     },
-                    update = { view -> configurePlayerView(view, player, queue.size > 1) },
+                    update = { view ->
+                        view.player = player
+                        view.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    },
                     modifier = Modifier.fillMaxSize().background(Color.Black),
                 )
             }
@@ -99,17 +122,11 @@ fun MediaPlayerScreen(source: String, displayName: String, video: Boolean, onBac
 private fun buildMediaQueue(source: String, video: Boolean): List<String> {
     if (source.startsWith("content://")) return listOf(source)
     val file = File(source)
-    val extensions = if (video) setOf("mp4", "mkv", "webm", "avi", "mov", "m4v", "3gp", "ts") else setOf("mp3", "m4a", "aac", "ogg", "opus", "flac", "wav", "amr")
+    val extensions = if (video) {
+        setOf("mp4", "mkv", "webm", "avi", "mov", "m4v", "3gp", "ts")
+    } else {
+        setOf("mp3", "m4a", "aac", "ogg", "opus", "flac", "wav", "amr")
+    }
     return file.parentFile?.listFiles { candidate -> candidate.isFile && candidate.extension.lowercase() in extensions }
         ?.sortedBy { it.name.lowercase() }?.map(File::getAbsolutePath).orEmpty().ifEmpty { listOf(source) }
-}
-
-private fun configurePlayerView(view: PlayerView, player: ExoPlayer, showSkip: Boolean) {
-    view.player = player
-    view.useController = true
-    // Media3 has changed these controller setters between releases. Reflection keeps
-    // this screen source-compatible and avoids touching PlayerView's private fields.
-    runCatching { view.javaClass.getMethod("setShowBuffering", Int::class.javaPrimitiveType).invoke(view, 1) }
-    runCatching { view.javaClass.getMethod("setShowNextButton", Boolean::class.javaPrimitiveType).invoke(view, showSkip) }
-    runCatching { view.javaClass.getMethod("setShowPreviousButton", Boolean::class.javaPrimitiveType).invoke(view, showSkip) }
 }

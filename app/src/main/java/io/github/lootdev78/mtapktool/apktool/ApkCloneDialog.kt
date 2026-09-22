@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -57,7 +57,7 @@ fun ApkCloneDialog(
         output = File(path, file.nameWithoutExtension + "_clone.apk").absolutePath
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("APK klonen") },
         text = {

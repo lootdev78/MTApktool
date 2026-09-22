@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.content.pm.PackageInfoCompat
 import com.android.apksig.ApkVerifier
 import java.io.File
 import java.security.MessageDigest
@@ -78,22 +79,14 @@ object ApkArchiveReader {
 
         val label = runCatching { appInfo.loadLabel(pm).toString() }.getOrDefault(file.nameWithoutExtension)
         val bitmap = icon(context, file)
-        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else {
-            @Suppress("DEPRECATION")
-            info.versionCode.toLong()
-        }
+        val versionCode = PackageInfoCompat.getLongVersionCode(info)
         val minSdk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) appInfo.minSdkVersion else null
         val targetSdk = appInfo.targetSdkVersion
         val schemes = verifySchemes(file)
 
         val installed = runCatching { installedPackageInfo(pm, info.packageName) }.getOrNull()
         val installedApp = installed?.applicationInfo
-        val installedCode = installed?.let {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) it.longVersionCode else {
-                @Suppress("DEPRECATION")
-                it.versionCode.toLong()
-            }
-        }
+        val installedCode = installed?.let(PackageInfoCompat::getLongVersionCode)
         val installedVersion = installed?.let { "${it.versionName ?: "?"} (${installedCode ?: 0})" }
 
         return ApkArchiveInfo(
@@ -108,7 +101,7 @@ object ApkArchiveReader {
             signatureSchemes = schemes,
             installedVersion = installedVersion,
             installedDataDir = installedApp?.dataDir,
-            externalDataDir = info.packageName?.takeIf { it.isNotBlank() }?.let { "/storage/emulated/0/Android/data/$it" },
+            externalDataDir = info.packageName.takeIf { it.isNotBlank() }?.let { "/storage/emulated/0/Android/data/$it" },
             installedApkPath = installedApp?.sourceDir,
             installedUid = installedApp?.uid,
             firstInstallTime = installed?.firstInstallTime,
@@ -145,7 +138,7 @@ object ApkArchiveReader {
             publicKey = "${key.algorithm} · $bitCount bits",
             validFrom = cert.notBefore.time,
             validUntil = cert.notAfter.time,
-            owner = cert.subjectX500Principal?.name ?: "-",
+            owner = cert.subjectX500Principal.name,
             hash = "0x${cert.hashCode().toUInt().toString(16).uppercase(Locale.ROOT)} (${cert.hashCode()})",
             crc32 = "0x${crc.toString(16).uppercase(Locale.ROOT)} ($crc)",
             md5 = digest("MD5"),
@@ -167,21 +160,27 @@ object ApkArchiveReader {
     }.getOrDefault("Unbekannt")
 
     private fun archivePackageInfo(pm: PackageManager, file: File, flags: Int): PackageInfo? {
-        return if (Build.VERSION.SDK_INT >= 33) {
-            pm.getPackageArchiveInfo(file.absolutePath, PackageManager.PackageInfoFlags.of(flags.toLong()))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageArchiveInfo(file.absolutePath, flags)
+        if (Build.VERSION.SDK_INT >= 33) {
+            return pm.getPackageArchiveInfo(file.absolutePath, PackageManager.PackageInfoFlags.of(flags.toLong()))
         }
+        val method = PackageManager::class.java.getMethod(
+            "getPackageArchiveInfo",
+            String::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        return method.invoke(pm, file.absolutePath, flags) as? PackageInfo
     }
 
     private fun installedPackageInfo(pm: PackageManager, packageName: String): PackageInfo {
-        return if (Build.VERSION.SDK_INT >= 33) {
-            pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(packageName, 0)
+        if (Build.VERSION.SDK_INT >= 33) {
+            return pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
         }
+        val method = PackageManager::class.java.getMethod(
+            "getPackageInfo",
+            String::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        return method.invoke(pm, packageName, 0) as PackageInfo
     }
 }
 

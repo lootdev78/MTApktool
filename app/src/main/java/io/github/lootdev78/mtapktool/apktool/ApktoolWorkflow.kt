@@ -3,9 +3,9 @@ package io.github.lootdev78.mtapktool.apktool
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 
@@ -24,14 +24,6 @@ data class ApktoolProjectSession(
     val updatedAt: Long,
 )
 
-/**
- * Stateful project layer around the Apktool port.
- *
- * ApktoolJobService runs in :apktool, while editor/explorer run in the main
- * process. The small properties sidecar under app-private filesDir keeps both
- * processes on the same project state without storing anything in the decoded
- * project itself.
- */
 object ApktoolProjectSessionManager {
     private data class EntryStamp(val directory: Boolean, val size: Long, val modified: Long, val digestHint: String)
     private data class MutableSession(
@@ -45,7 +37,6 @@ object ApktoolProjectSessionManager {
         var updatedAt: Long = System.currentTimeMillis(),
     )
     private data class Persisted(
-        val projectPath: String,
         val sourceApkPath: String?,
         val state: ApktoolWorkflowStage,
         val changed: Set<String>,
@@ -73,8 +64,12 @@ object ApktoolProjectSessionManager {
 
     fun open(project: File, sourceApk: File? = null): ApktoolProjectSession {
         val canonical = project.canonicalFile
-        val key = canonical.path
-        val session = sessions[key] ?: MutableSession(canonical, sourceApk?.canonicalFile, snapshot(canonical), ApktoolWorkflowStage.READY).also { sessions[key] = it }
+        val session = sessions[canonical.path] ?: MutableSession(
+            canonical,
+            sourceApk?.canonicalFile,
+            snapshot(canonical),
+            ApktoolWorkflowStage.READY,
+        ).also { sessions[canonical.path] = it }
         if (sourceApk != null) session.sourceApk = sourceApk.canonicalFile
         mergePersisted(session)
         refresh(session)
@@ -93,7 +88,8 @@ object ApktoolProjectSessionManager {
 
     fun markDirty(project: File, path: File? = null): ApktoolProjectSession {
         val canonical = project.canonicalFile
-        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.READY).also { sessions[canonical.path] = it }
+        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.READY)
+            .also { sessions[canonical.path] = it }
         mergePersisted(session)
         session.state = ApktoolWorkflowStage.DIRTY
         path?.let { runCatching { it.canonicalFile.relativeTo(session.project).invariantSeparatorsPath }.getOrNull() }
@@ -107,7 +103,8 @@ object ApktoolProjectSessionManager {
 
     fun begin(project: File, stage: ApktoolWorkflowStage): ApktoolProjectSession {
         val canonical = project.canonicalFile
-        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), stage).also { sessions[canonical.path] = it }
+        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), stage)
+            .also { sessions[canonical.path] = it }
         mergePersisted(session)
         session.state = stage
         session.error = null
@@ -118,7 +115,8 @@ object ApktoolProjectSessionManager {
 
     fun completeBuild(project: File, output: File?): ApktoolProjectSession {
         val canonical = project.canonicalFile
-        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.SUCCEEDED).also { sessions[canonical.path] = it }
+        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.SUCCEEDED)
+            .also { sessions[canonical.path] = it }
         mergePersisted(session)
         session.output = output?.canonicalFile
         session.baseline = snapshot(canonical)
@@ -132,7 +130,8 @@ object ApktoolProjectSessionManager {
 
     fun fail(project: File, error: Throwable): ApktoolProjectSession {
         val canonical = project.canonicalFile
-        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.FAILED).also { sessions[canonical.path] = it }
+        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.FAILED)
+            .also { sessions[canonical.path] = it }
         mergePersisted(session)
         session.state = ApktoolWorkflowStage.FAILED
         session.error = error.message ?: error.javaClass.simpleName
@@ -143,7 +142,8 @@ object ApktoolProjectSessionManager {
 
     fun cancel(project: File): ApktoolProjectSession {
         val canonical = project.canonicalFile
-        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.CANCELLED).also { sessions[canonical.path] = it }
+        val session = sessions[canonical.path] ?: MutableSession(canonical, null, snapshot(canonical), ApktoolWorkflowStage.CANCELLED)
+            .also { sessions[canonical.path] = it }
         mergePersisted(session)
         session.state = ApktoolWorkflowStage.CANCELLED
         session.updatedAt = System.currentTimeMillis()
@@ -177,7 +177,6 @@ object ApktoolProjectSessionManager {
         session.state = persisted.state
         session.changed = persisted.changed
         session.updatedAt = persisted.updatedAt
-        // A successful build/decode in the worker process establishes a new clean baseline.
         if (persisted.state in setOf(ApktoolWorkflowStage.SUCCEEDED, ApktoolWorkflowStage.READY)) {
             session.baseline = snapshot(session.project)
             session.changed = emptySet()
@@ -210,10 +209,8 @@ object ApktoolProjectSessionManager {
         if (!file.isFile) return null
         return runCatching {
             val props = Properties().apply { FileInputStream(file).use { input -> load(input) } }
-            val projectPath = props.getProperty("project").orEmpty()
-            if (projectPath != project.canonicalPath) return@runCatching null
+            if (props.getProperty("project").orEmpty() != project.canonicalPath) return@runCatching null
             Persisted(
-                projectPath = projectPath,
                 sourceApkPath = props.getProperty("source").orEmpty().ifBlank { null },
                 state = runCatching { ApktoolWorkflowStage.valueOf(props.getProperty("state")) }.getOrDefault(ApktoolWorkflowStage.READY),
                 changed = props.getProperty("changed").orEmpty().split('\u001F').filter(String::isNotBlank).toSet(),
@@ -237,13 +234,13 @@ object ApktoolProjectSessionManager {
             .onEnter { directory -> directory == root || !Files.isSymbolicLink(directory.toPath()) }
             .filter { it != root }
             .associate { file ->
-            file.relativeTo(root).invariantSeparatorsPath to EntryStamp(
-                file.isDirectory,
-                if (file.isFile) file.length() else 0L,
-                file.lastModified(),
-                if (file.isFile) digestHint(file) else "dir",
-            )
-        }
+                file.relativeTo(root).invariantSeparatorsPath to EntryStamp(
+                    file.isDirectory,
+                    if (file.isFile) file.length() else 0L,
+                    file.lastModified(),
+                    if (file.isFile) digestHint(file) else "dir",
+                )
+            }
     }
 
     private fun digestHint(file: File): String {

@@ -1,10 +1,10 @@
 package io.github.lootdev78.mtapktool.feature.explorer.component
 
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -29,7 +29,7 @@ fun CreateItemDialog(
     var isFolder by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Create New") },
         text = {

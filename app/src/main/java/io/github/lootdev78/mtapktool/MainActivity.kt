@@ -9,6 +9,8 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -20,7 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
@@ -28,9 +30,6 @@ import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
 import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import androidx.core.net.toUri
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import android.graphics.Color as AndroidColor
 
 class MainActivity : ComponentActivity() {
 
@@ -49,10 +48,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Android 15/16 can enforce edge-to-edge. Keep the window edge-to-edge but
-        // consume safeDrawing in Compose so explorer content never sits under status/navigation bars.
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-
         requestStoragePermission()
         requestNotificationPermission()
         ExternalOpenBridge.publish(intent)
@@ -69,16 +64,26 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.DARK -> true
                 ThemeMode.LIGHT -> false
             }
-            LaunchedEffect(themeMode, darkBars) {
+            SideEffect {
                 applicationContext.getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE)
                     .edit()
                     .putString("mode", themeMode.name)
                     .apply()
-                val controller = WindowInsetsControllerCompat(window, window.decorView)
-                window.statusBarColor = if (darkBars) AndroidColor.rgb(18, 19, 24) else AndroidColor.rgb(246, 243, 247)
-                window.navigationBarColor = if (darkBars) AndroidColor.rgb(10, 11, 15) else AndroidColor.rgb(246, 243, 247)
-                controller.isAppearanceLightStatusBars = !darkBars
-                controller.isAppearanceLightNavigationBars = !darkBars
+                val statusDark = 0xFF121318.toInt()
+                val navDark = 0xFF0A0B0F.toInt()
+                val light = 0xFFF6F3F7.toInt()
+                enableEdgeToEdge(
+                    statusBarStyle = if (darkBars) {
+                        SystemBarStyle.dark(statusDark)
+                    } else {
+                        SystemBarStyle.light(light, statusDark)
+                    },
+                    navigationBarStyle = if (darkBars) {
+                        SystemBarStyle.dark(navDark)
+                    } else {
+                        SystemBarStyle.light(light, navDark)
+                    },
+                )
             }
 
             MTExplorerTheme(themeMode = themeMode, accentKey = explorerPrefs.accentKey) {

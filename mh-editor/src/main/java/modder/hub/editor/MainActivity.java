@@ -1,25 +1,20 @@
 package modder.hub.editor;
 
-import android.Manifest;
-import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 import android.content.res.Configuration;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
-import android.preference.PreferenceManager;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.TypedValue;
@@ -36,6 +31,12 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.util.Log;
 
+import androidx.activity.ComponentActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
@@ -49,6 +50,8 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import modder.hub.editor.buffer.GapBuffer;
 import modder.hub.editor.component.ClipboardPanel;
@@ -57,7 +60,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.mozilla.universalchardet.UniversalDetector;
 
-public class MainActivity extends Activity {
+public class MainActivity extends ComponentActivity {
 
     private final String TAG = this.getClass().getSimpleName();
 
@@ -89,11 +92,10 @@ public class MainActivity extends Activity {
             "#", "@", "`"
     );
 
-    @SuppressLint("HandlerLeak")
-    private Handler mHandler = new Handler() {
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mHandler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(Message msg) {
-            // TODO: Implement this method
             super.handleMessage(msg);
             invalidateOptionsMenu();
         }
@@ -103,14 +105,35 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         applyHostTheme();
         super.onCreate(savedInstanceState);
-        if (Build.VERSION.SDK_INT >= 30) {
-            getWindow().setDecorFitsSystemWindows(true);
-        }
-        getWindow().setStatusBarColor(Color.BLACK);
-        getWindow().setNavigationBarColor(Color.BLACK);
         setContentView(R.layout.activity_main);
+        configureWindowInsets();
         initialize();
         initializeLogic();
+    }
+
+    private void configureWindowInsets() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        final View root = findViewById(R.id.rootLayout);
+        final View bottom = findViewById(R.id.linear_bottom_layout);
+        final boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+        WindowInsetsControllerCompat bars = new WindowInsetsControllerCompat(getWindow(), root);
+        bars.setAppearanceLightStatusBars(!dark);
+        bars.setAppearanceLightNavigationBars(!dark);
+        final int baseBottomPadding = bottom.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
+            Insets statusAndCutout = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
+            view.setPadding(statusAndCutout.left, statusAndCutout.top, statusAndCutout.right, 0);
+            Insets navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            bottom.setPadding(
+                    bottom.getPaddingLeft(),
+                    bottom.getPaddingTop(),
+                    bottom.getPaddingRight(),
+                    baseBottomPadding + navigation.bottom);
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
     }
 
     private void applyHostTheme() {
@@ -131,8 +154,8 @@ public class MainActivity extends Activity {
     private void initialize() {
         mIndeterminateBar = findViewById(R.id.indeterminateBar);
         mIndeterminateBar.setBackground(null);
-        editor_pref = getSharedPreferences("editor_pref", Activity.MODE_PRIVATE);
-        mSharedPreference = PreferenceManager.getDefaultSharedPreferences(this);
+        editor_pref = getSharedPreferences("editor_pref", MODE_PRIVATE);
+        mSharedPreference = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
 
         edittext_replace = findViewById(R.id.edittext_replace);
         edittext_find = findViewById(R.id.edittext_find);
@@ -241,45 +264,24 @@ public class MainActivity extends Activity {
                 }
                 mSharedPreference.edit().putString("path", temp.getAbsolutePath()).apply();
                 setTitle(sourceDisplayName == null ? "Text Editor" : sourceDisplayName);
-                new ReadFileThread().execute(temp.getAbsolutePath());
+                readFileAsync(temp.getAbsolutePath());
             } catch (Exception error) {
                 Toast.makeText(this, error.getMessage() == null ? "Open failed" : error.getMessage(), Toast.LENGTH_LONG).show();
             }
         } else if (directPath != null && !directPath.isEmpty() && new File(directPath).isFile()) {
             mSharedPreference.edit().putString("path", directPath).apply();
             setTitle(new File(directPath).getName());
-            new ReadFileThread().execute(directPath);
+            readFileAsync(directPath);
         } else if (mSharedPreference.contains("path")) {
             String path = mSharedPreference.getString("path", "");
             if (new File(path).exists()) {
                 setTitle(new File(path).getName());
-                new ReadFileThread().execute(path);
+                readFileAsync(path);
             }
-        }
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            String permission = Manifest.permission.WRITE_EXTERNAL_STORAGE;
-            if (!hasPermission(permission)) applyPermission(permission);
         }
 
         if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
-            externalPath = Environment.getExternalStorageDirectory().getAbsolutePath();
-        }
-    }
-
-    public boolean hasPermission(String permission) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-            return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
-        else
-            return true;
-    }
-
-    public void applyPermission(String permission) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (shouldShowRequestPermissionRationale(permission)) {
-                Toast.makeText(this, "request read sdcard permmission", Toast.LENGTH_SHORT).show();
-            }
-            requestPermissions(new String[]{permission}, 0);
+            externalPath = resolveSharedStorageRoot().getAbsolutePath();
         }
     }
 
@@ -517,7 +519,7 @@ public class MainActivity extends Activity {
         } else if (id == R.id.save) {
             String path = mSharedPreference.getString("path", "");
             if (!path.isEmpty()) {
-                new WriteFileThread().execute(path);
+                writeFileAsync(path);
             }
         } else if (id == R.id.delete_line) {
             editView.deleteLine();
@@ -682,44 +684,34 @@ public class MainActivity extends Activity {
                 String pathname = pathEdit.getText().toString();
                 if (!pathname.isEmpty()) {
                     mSharedPreference.edit().putString("path", pathname).commit();
-                    new ReadFileThread().execute(pathname);
+                    readFileAsync(pathname);
                 }
             }
         });
         builder.setCancelable(true).show();
     }
 
-    // read file
-    class ReadFileThread extends AsyncTask<String, Integer, Boolean> {
-        private GapBuffer loadedBuffer;
-
-        @Override
-        protected void onPreExecute() {
-            // TODO: Implement this method
-            super.onPreExecute();
-            loadedBuffer = null;
-            editView.setEditedMode(false);
-            mHandler.sendEmptyMessage(0);
-            mIndeterminateBar.setVisibility(View.VISIBLE);
-        }
-
-        @Override
-        protected Boolean doInBackground(String... params) {
-            File file = new File(params[0]);
+    // Read/write on a dedicated executor. AsyncTask was removed because it is deprecated.
+    private void readFileAsync(final String path) {
+        editView.setEditedMode(false);
+        mHandler.sendEmptyMessage(0);
+        mIndeterminateBar.setVisibility(View.VISIBLE);
+        ioExecutor.execute(() -> {
+            GapBuffer loadedBuffer = null;
+            boolean success = false;
             try {
-                // detect the file charset
+                File file = new File(path);
                 String charset = UniversalDetector.detectCharset(file);
                 if (charset != null) {
                     try {
                         mDefaultCharset = Charset.forName(charset);
-                    } catch (Exception e) {
+                    } catch (Exception ignored) {
                         mDefaultCharset = StandardCharsets.UTF_8;
                     }
                 } else {
                     mDefaultCharset = StandardCharsets.UTF_8;
                 }
 
-                // Read bytes
                 byte[] bytes = new byte[(int) file.length()];
                 try (InputStream fis = new java.io.FileInputStream(file)) {
                     int offset = 0;
@@ -731,49 +723,32 @@ public class MainActivity extends Activity {
                 }
 
                 String fullText = new String(bytes, mDefaultCharset);
-
-                // Detect line separator
-                if (fullText.contains("\r\n")) {
-                    mLineSeparator = "\r\n";
-                } else if (fullText.contains("\r")) {
-                    mLineSeparator = "\r";
-                } else {
-                    mLineSeparator = "\n";
-                }
-                
+                if (fullText.contains("\r\n")) mLineSeparator = "\r\n";
+                else if (fullText.contains("\r")) mLineSeparator = "\r";
+                else mLineSeparator = "\n";
                 mFileModifiedManually = false;
-
-                // Replace buffer wholesale (like setText, but async)
                 loadedBuffer = new GapBuffer(fullText);
-
-            } catch (Exception e) {
-                e.printStackTrace();
-                return false;
+                success = true;
+            } catch (Exception error) {
+                Log.e(TAG, "Read failed", error);
             }
-
-            return true;
-        }
-
-        @Override
-        protected void onPostExecute(Boolean result) {
-            // TODO: Implement this method
-            super.onPostExecute(result);
-            if (result && loadedBuffer != null) {
-                editView.setBuffer(loadedBuffer);
-            }
-            editView.setEditedMode(true);
-            mHandler.sendEmptyMessage(0);
-            mIndeterminateBar.setVisibility(View.GONE);
-        }
+            final GapBuffer resultBuffer = loadedBuffer;
+            final boolean result = success;
+            mHandler.post(() -> {
+                if (result && resultBuffer != null) editView.setBuffer(resultBuffer);
+                editView.setEditedMode(true);
+                mHandler.sendEmptyMessage(0);
+                mIndeterminateBar.setVisibility(View.GONE);
+                if (!result) Toast.makeText(MainActivity.this, "Open failed", Toast.LENGTH_LONG).show();
+            });
+        });
     }
 
-    // write file
-    class WriteFileThread extends AsyncTask<String, Integer, Boolean> {
-
-        @Override
-        protected Boolean doInBackground(String... params) {
-            File file = new File(params[0]);
+    private void writeFileAsync(final String path) {
+        ioExecutor.execute(() -> {
+            boolean success = false;
             try {
+                File file = new File(path);
                 if (sourceUri == null && file.isFile() && editor_pref.getBoolean("generate_backup_file", false)) {
                     File backup = new File(file.getParentFile(), file.getName() + ".bak");
                     try (InputStream original = new java.io.FileInputStream(file);
@@ -784,10 +759,7 @@ public class MainActivity extends Activity {
                     }
                 }
                 String content = editView.getBuffer().toString();
-                if (!"\n".equals(mLineSeparator)) {
-                    content = content.replace("\n", mLineSeparator);
-                }
-
+                if (!"\n".equals(mLineSeparator)) content = content.replace("\n", mLineSeparator);
                 try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
                      java.io.OutputStreamWriter osw = new java.io.OutputStreamWriter(fos, mDefaultCharset)) {
                     osw.write(content);
@@ -804,19 +776,30 @@ public class MainActivity extends Activity {
                     }
                 }
                 mFileModifiedManually = false;
-            } catch (Exception e) {
-                e.printStackTrace();
-                return false;
+                success = true;
+            } catch (Exception error) {
+                Log.e(TAG, "Write failed", error);
             }
-            return true;
-        }
+            final boolean result = success;
+            mHandler.post(() -> Toast.makeText(
+                    getApplicationContext(),
+                    result ? "saved success!" : "save failed!",
+                    result ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG
+            ).show());
+        });
+    }
 
-        @Override
-        protected void onPostExecute(Boolean result) {
-            // TODO: Implement this method
-            super.onPostExecute(result);
-            Toast.makeText(getApplicationContext(), "saved success!", Toast.LENGTH_SHORT).show();
-        }
+    private File resolveSharedStorageRoot() {
+        File current = getExternalFilesDir(null);
+        if (current == null) return new File("/storage/emulated/0");
+        for (int i = 0; i < 4 && current.getParentFile() != null; i++) current = current.getParentFile();
+        return current;
+    }
+
+    @Override
+    protected void onDestroy() {
+        ioExecutor.shutdownNow();
+        super.onDestroy();
     }
 
 
@@ -956,11 +939,7 @@ public class MainActivity extends Activity {
         TypedValue outValue = new TypedValue();
         getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
 
-        if (Build.VERSION.SDK_INT >= 21) {
-            return getResources().getDrawable(outValue.resourceId, getTheme());
-        } else {
-            return getResources().getDrawable(outValue.resourceId);
-        }
+        return getResources().getDrawable(outValue.resourceId, getTheme());
     }
 	
 	private List<SyntaxItem> loadSyntaxList() {

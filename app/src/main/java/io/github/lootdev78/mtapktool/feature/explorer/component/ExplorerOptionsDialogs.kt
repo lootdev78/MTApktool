@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import io.github.lootdev78.mtapktool.feature.explorer.state.FileFilter
 import io.github.lootdev78.mtapktool.feature.explorer.state.SortField
 import io.github.lootdev78.mtapktool.feature.explorer.state.SortSpec
@@ -49,7 +49,7 @@ fun HiddenFilesDialog(
     onEditHidden: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Versteckte Dateien") },
         text = {
@@ -128,7 +128,7 @@ fun EditHiddenFilesDialog(
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Manuell versteckte Dateien") },
         text = {
@@ -167,7 +167,7 @@ fun SortFilesDialog(
     var descending by remember(current) { mutableStateOf(current.descending) }
     var onlyFolder by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Sortieren – $windowLabel") },
         text = {
@@ -227,7 +227,7 @@ fun FileFilterDialog(
     onApply: (FileFilter) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Filter") },
         text = {

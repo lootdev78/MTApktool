@@ -1,5 +1,7 @@
 package io.github.lootdev78.mtapktool.apktool
 
+import io.github.lootdev78.mtapktool.core.theme.MtClassicTopBar
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -19,9 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -35,7 +35,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,7 +89,7 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
-                    TopAppBar(
+                    MtClassicTopBar(
                         title = { Text("Erstellen & Dekodieren") },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
@@ -159,7 +158,7 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
                     item { SettingSwitchRow("<Eigenschaft> entfernen", "<property>-Tags nach Decode entfernen", decode.removePropertyTags) { saveDecode(decode.copy(removePropertyTags = it)) } }
                     item { SettingSwitchRow("Netzwerksicherheitskonfiguration hinzufügen", "Permissive networkSecurityConfig beim Build", build.networkSecurityConfig) { saveBuild(build.copy(networkSecurityConfig = it)) } }
                     item { SettingSwitchRow("Nicht ändern, wenn sie vorhanden ist", "Vorhandene networkSecurityConfig erhalten", build.networkSecurityKeepExisting, build.networkSecurityConfig) { saveBuild(build.copy(networkSecurityKeepExisting = it)) } }
-                    item { SettingNavigationRow("Signatur", "Vorgabesignatur, Keystore und v1-v4", ApktoolSettings.signatureLabel(ApktoolSettings.signatureDefaults(context))) { overlay = SettingsOverlay.SIGNATURE } }
+                    item { SettingNavigationRow("Schlüssel & Zertifikate", "Vorgabesignatur, Keystore und v1-v4", ApktoolSettings.signatureLabel(ApktoolSettings.signatureDefaults(context))) { overlay = SettingsOverlay.SIGNATURE } }
                     item { SettingNavigationRow("Pfade & Jobs", "1-4 parallele Runner und 1-4 Apktool-Threads") { overlay = SettingsOverlay.PATHS } }
                     item { SettingNavigationRow("Runtime", "SDK 36 • AGP 8.10.1 • Gradle 8.11.1 • NDK 29.0.14033849") { overlay = SettingsOverlay.RUNTIME } }
                 }
@@ -232,7 +231,7 @@ private fun FrameworkManagerDialog(onBack: () -> Unit) {
         result.exceptionOrNull()?.let { status = it.message.orEmpty() }
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onBack,
         title = { Text("Verwaltung der installierten Frameworks") },
         text = {
@@ -306,7 +305,7 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
             .onFailure { error -> info = error.message ?: error.toString(); valid = false }
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onBack,
         title = { Text("AAPT2 Manager") },
         text = {
@@ -316,7 +315,11 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
                 if (selected == "custom") {
                     OutlinedTextField(custom, { custom = it }, label = { Text("AAPT2 Pfad") }, supportingText = { Text("Muss auf Android ausführbar sein") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
-                Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    tonalElevation = 0.dp,
+                ) {
                     Text(info, modifier = Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                 }
             }
@@ -353,9 +356,9 @@ fun SignatureManagerDialog(onBack: () -> Unit) {
         }
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onBack,
-        title = { Text("Signatur") },
+        title = { Text("Schlüssel & Zertifikate") },
         text = {
             Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
                 CompactPicker(profile, ApktoolSettings.signatureProfiles, { if (it == "testkey") "Vorgabesignatur (testkey)" else "Benutzerdefinierte Signatur" }) { profile = it }
@@ -386,7 +389,7 @@ private fun PathsAndJobsDialog(onBack: () -> Unit) {
     var threads by remember { mutableIntStateOf(ApktoolSettings.apktoolThreads(context)) }
     var projects by remember { mutableStateOf(ApktoolSettings.projectsRoot(context)) }
     var output by remember { mutableStateOf(ApktoolSettings.outputRoot(context)) }
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onBack,
         title = { Text("Pfade & Jobs") },
         text = {
@@ -427,13 +430,13 @@ Root: ${tc.root.absolutePath}"""
             }.getOrElse { it.stackTraceToString() }
         }
     }
-    AlertDialog(onDismissRequest = onBack, title = { Text("Runtime") }, text = { Text(info, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }, confirmButton = { TextButton(onClick = onBack) { Text("ZURÜCK") } })
+    MtClassicAlertDialog(onDismissRequest = onBack, title = { Text("Runtime") }, text = { Text(info, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }, confirmButton = { TextButton(onClick = onBack) { Text("ZURÜCK") } })
 }
 
 @Composable
 private fun TextValueDialog(title: String, value: String, hint: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var text by remember(value) { mutableStateOf(value) }
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { OutlinedTextField(text, { text = it }, placeholder = { Text(hint) }, singleLine = true, modifier = Modifier.fillMaxWidth()) },

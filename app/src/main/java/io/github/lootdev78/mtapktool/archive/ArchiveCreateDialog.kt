@@ -1,5 +1,6 @@
 package io.github.lootdev78.mtapktool.archive
 
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -73,7 +73,7 @@ fun ArchiveCreateDialog(
         if (newFormat !in setOf(ArchiveFormat.ZIP, ArchiveFormat.SEVEN_Z)) password = ""
     }
 
-    AlertDialog(
+    MtClassicAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Create archive", fontWeight = FontWeight.SemiBold) },
         text = {

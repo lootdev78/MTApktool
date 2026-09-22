@@ -17,6 +17,8 @@ android {
 }
 
 dependencies {
+    implementation("androidx.activity:activity:1.13.0")
+    implementation(libs.androidx.core.ktx)
     implementation(project(":mh-editview"))
     implementation(files("libs/juniversalchardet-2.4.1-SNAPSHOT.jar"))
 }

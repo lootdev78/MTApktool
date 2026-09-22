@@ -3,7 +3,6 @@ package io.github.lootdev78.mtapktool.feature.explorer.screen
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.text.format.Formatter
@@ -43,7 +42,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -78,6 +77,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
+import io.github.lootdev78.mtapktool.core.storage.SharedStorage
 import io.github.lootdev78.mtapktool.ExplorerOutputBridge
 import io.github.lootdev78.mtapktool.apkextractor.ApkExtractorEngine
 import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveReader
@@ -218,7 +218,7 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
                             DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
                                 DropdownMenuItem(
                                     text = { Text("Sort") },
-                                    leadingIcon = { Icon(Icons.Default.Sort, null) },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) },
                                     onClick = { overflow = false; showSort = true },
                                 )
                                 DropdownMenuItem(
@@ -684,6 +684,6 @@ private fun uriToLocalTreePath(uri: Uri): String? {
     val parts = id.split(':', limit = 2)
     val volume = parts.getOrNull(0) ?: return null
     val relative = parts.getOrNull(1).orEmpty()
-    val root = if (volume.equals("primary", true)) Environment.getExternalStorageDirectory().absolutePath else "/storage/$volume"
+    val root = if (volume.equals("primary", true)) SharedStorage.primaryRoot().absolutePath else "/storage/$volume"
     return if (relative.isBlank()) root else "$root/$relative"
 }

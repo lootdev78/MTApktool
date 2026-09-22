@@ -1,7 +1,7 @@
 package io.github.lootdev78.mtapktool.apktool
 
 import android.content.Context
-import android.os.Environment
+import io.github.lootdev78.mtapktool.core.storage.SharedStorage
 import java.io.File
 
 data class ApktoolDecodeDefaults(
@@ -303,10 +303,10 @@ object ApktoolSettings {
         ApktoolJobService.setWorkerLimit(context, 2)
     }
 
-    fun defaultProjectsRoot(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/projects"
-    fun defaultOutputRoot(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/output"
-    fun frameworkDir(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/frameworks"
-    fun aaptMirrorDir(): String = Environment.getExternalStorageDirectory().absolutePath + "/apktool/bin/aapt2/arm64-v8a"
+    fun defaultProjectsRoot(): String = SharedStorage.primaryRoot().absolutePath + "/apktool/projects"
+    fun defaultOutputRoot(): String = SharedStorage.primaryRoot().absolutePath + "/apktool/output"
+    fun frameworkDir(): String = SharedStorage.primaryRoot().absolutePath + "/apktool/frameworks"
+    fun aaptMirrorDir(): String = SharedStorage.primaryRoot().absolutePath + "/apktool/bin/aapt2/arm64-v8a"
 
     fun aaptLabel(value: String): String = when (value) {
         "default" -> "Automatisch (empfohlen)"

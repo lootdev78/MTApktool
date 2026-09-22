@@ -3,9 +3,10 @@ package io.github.lootdev78.mtapktool.feature.explorer.screen
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Environment
+import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
@@ -17,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,11 +44,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
@@ -77,7 +78,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +89,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.navigation.NavHostController
+import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
+import io.github.lootdev78.mtapktool.core.storage.SharedStorage
 import io.github.lootdev78.mtapktool.ExternalOpenBridge
 import io.github.lootdev78.mtapktool.ExplorerOutputBridge
 import io.github.lootdev78.mtapktool.apktool.ApkFunctionsDialog
@@ -124,6 +127,7 @@ import io.github.lootdev78.mtapktool.feature.explorer.component.FileToolsDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.RenameDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.GoToPathDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.SelectionBottomBar
+import io.github.lootdev78.mtapktool.feature.explorer.component.BookmarkBottomSheet
 import io.github.lootdev78.mtapktool.feature.explorer.component.SideBar
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.saf.CustomLocation
@@ -170,7 +174,7 @@ fun ExplorerScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    val rootPath = Environment.getExternalStorageDirectory().absolutePath
+    val rootPath = SharedStorage.primaryRoot().absolutePath
     val activeState = if (activePane == ActivePane.LEFT) leftState else rightState
     val context = navController.context
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -193,6 +197,8 @@ fun ExplorerScreen(
     var bookmarks by remember(bookmarkPreferences) {
         mutableStateOf(bookmarkPreferences.getStringSet("paths", emptySet()).orEmpty().toList().sorted())
     }
+    var showBookmarkSheet by remember { mutableStateOf(false) }
+    var showSelectionMore by remember { mutableStateOf(false) }
     var customLocations by remember(context) { mutableStateOf(CustomLocationStore.load(context)) }
     var locationToEdit by remember { mutableStateOf<CustomLocation?>(null) }
     var locationEditName by remember { mutableStateOf("") }
@@ -326,7 +332,7 @@ fun ExplorerScreen(
                 val id = DocumentsContract.getDocumentId(uri)
                 val parts = id.split(':', limit = 2)
                 if (parts.firstOrNull().equals("primary", ignoreCase = true)) {
-                    File(Environment.getExternalStorageDirectory(), parts.getOrElse(1) { "" })
+                    File(SharedStorage.primaryRoot(), parts.getOrElse(1) { "" })
                 } else null
             } else null
         }.getOrNull()
@@ -615,7 +621,7 @@ fun ExplorerScreen(
     if (showPropertyDialog && targetItem != null) {
         val item = targetItem!!
         if (item.isSaf) {
-            AlertDialog(
+            MtClassicAlertDialog(
                 onDismissRequest = { showPropertyDialog = false },
                 title = { Text(item.name) },
                 text = {
@@ -713,7 +719,7 @@ fun ExplorerScreen(
     }
 
     if (showSortManage) {
-        AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = { showSortManage = false },
             title = { Text("Sortierung verwalten") },
             text = { Text("Ordnerspezifische Sortierungen für ${if (activePane == ActivePane.LEFT) "das linke" else "das rechte"} Fenster zurücksetzen?") },
@@ -927,7 +933,7 @@ fun ExplorerScreen(
     }
 
     locationToEdit?.let { location ->
-        AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = { locationToEdit = null },
             title = { Text("Speicherort") },
             text = {
@@ -979,7 +985,7 @@ fun ExplorerScreen(
 
     archivePasswordRequest?.let { request ->
         var password by remember(request.archive.absolutePath, request.purpose) { mutableStateOf("") }
-        AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = viewModel::cancelArchivePasswordRequest,
             title = { Text("Passwort") },
             text = {
@@ -1008,7 +1014,7 @@ fun ExplorerScreen(
     }
 
     archiveUpdateRequest?.let { request ->
-        AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = { viewModel.resolveArchiveUpdate(ArchiveUpdateDecision.CANCEL) },
             title = { Text("Archiv aktualisieren?") },
             text = {
@@ -1040,7 +1046,7 @@ fun ExplorerScreen(
     if (showDeleteConfirm) {
         val state = if (deletePane == ActivePane.LEFT) leftState else rightState
         val count = state.selectedPaths.size
-        AlertDialog(
+        MtClassicAlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Löschen") },
             text = {
@@ -1250,7 +1256,7 @@ fun ExplorerScreen(
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Sortieren") },
-                                        leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null) },
                                         onClick = { showApktoolOptions = false; showSortFiles = true },
                                     )
                                     DropdownMenuItem(
@@ -1443,34 +1449,33 @@ fun ExplorerScreen(
                     SelectionBottomBar(
                         selectedCount = activeState.selectedPaths.size,
                         onSelectAll = { viewModel.selectAll(activePane) },
-                        onInvertSelection = { viewModel.invertSelection(activePane) },
+                        onCopySelected = { viewModel.copySelectedToOppositePane(activePane) },
+                        onMoveSelected = { viewModel.moveSelectedToOppositePane(activePane) },
                         onDeleteSelected = { requestDelete(activePane) },
-                        onCloseSelected = { viewModel.cancelSelection(activePane) },
-                        onArchiveSelected = {
-                            archivePane = activePane
-                            archiveSources = activeState.selectedPaths.map(::File)
-                            showArchiveDialog = archiveSources.isNotEmpty()
-                        },
-                        onMoreOptions = { viewModel.moveSelectedToOppositePane(activePane) },
-                        modifier = Modifier.drawerSwipe(
-                            onOpenLeft = { scope.launch { drawerState.open() } },
-                            onOpenRight = { showTaskPanel = true },
-                        ),
+                        onMoreOptions = { showSelectionMore = true },
+                        modifier = Modifier
+                            .bookmarkSwipeUp { showBookmarkSheet = true }
+                            .drawerSwipe(
+                                onOpenLeft = { scope.launch { drawerState.open() } },
+                                onOpenRight = { showTaskPanel = true },
+                            ),
                     )
                 } else {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        shadowElevation = 8.dp,
-                        modifier = Modifier.fillMaxWidth().drawerSwipe(
-                            onOpenLeft = { scope.launch { drawerState.open() } },
-                            onOpenRight = { showTaskPanel = true },
-                        )
+                        shadowElevation = 2.dp,
+                        modifier = Modifier.fillMaxWidth()
+                            .bookmarkSwipeUp { showBookmarkSheet = true }
+                            .drawerSwipe(
+                                onOpenLeft = { scope.launch { drawerState.open() } },
+                                onOpenRight = { showTaskPanel = true },
+                            )
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .height(io.github.lootdev78.mtapktool.core.theme.MtClassicMetrics.bottomBarHeight),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -1501,6 +1506,53 @@ fun ExplorerScreen(
         }
     }
 
+    if (showBookmarkSheet) {
+        BookmarkBottomSheet(
+            bookmarks = bookmarks,
+            currentPath = activeState.currentPath,
+            activePane = activePane,
+            onDismiss = { showBookmarkSheet = false },
+            onOpen = { pane, path ->
+                showBookmarkSheet = false
+                viewModel.setActive(pane)
+                viewModel.navigateToDirectPath(pane, path)
+            },
+            onAddCurrent = {
+                val path = activeState.currentPath
+                if (path.isNotBlank()) {
+                    val updated = (bookmarks + path).distinct().sorted()
+                    bookmarks = updated
+                    bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
+                }
+            },
+            onRemove = { path ->
+                val updated = bookmarks.filterNot { it == path }
+                bookmarks = updated
+                bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
+            },
+        )
+    }
+
+    if (showSelectionMore) {
+        MtClassicAlertDialog(
+            onDismissRequest = { showSelectionMore = false },
+            title = { Text("${activeState.selectedPaths.size} ausgewählt") },
+            text = {
+                Column {
+                    TextButton(onClick = { showSelectionMore = false; viewModel.invertSelection(activePane) }) { Text("AUSWAHL UMKEHREN") }
+                    TextButton(onClick = {
+                        showSelectionMore = false
+                        archivePane = activePane
+                        archiveSources = activeState.selectedPaths.map(::File)
+                        showArchiveDialog = archiveSources.isNotEmpty()
+                    }) { Text("KOMPRIMIEREN") }
+                    TextButton(onClick = { showSelectionMore = false; viewModel.cancelSelection(activePane) }) { Text("AUSWAHL BEENDEN") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSelectionMore = false }) { Text("SCHLIESSEN") } },
+        )
+    }
+
     ApktoolTaskPanel(
         visible = showTaskPanel,
         jobs = apktoolJobs,
@@ -1520,6 +1572,23 @@ fun ExplorerScreen(
 }
 
 private fun formatDiskG(bytes: Long): String = String.format(Locale.US, "%.2fG", bytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
+
+private fun Modifier.bookmarkSwipeUp(onOpen: () -> Unit): Modifier = pointerInput(onOpen) {
+    val threshold = 44.dp.toPx()
+    var totalY = 0f
+    var opened = false
+    detectVerticalDragGestures(
+        onDragStart = { totalY = 0f; opened = false },
+        onVerticalDrag = { change, dragAmount ->
+            totalY += dragAmount
+            if (!opened && totalY <= -threshold) {
+                opened = true
+                onOpen()
+                change.consume()
+            }
+        },
+    )
+}
 
 private fun Modifier.drawerSwipe(
     onOpenLeft: () -> Unit,
@@ -1640,13 +1709,9 @@ private fun installApk(context: Context, file: File) {
             if (!verifyResult.isVerified) return@runCatching "APK-Signaturprüfung fehlgeschlagen."
 
             val pm = context.packageManager
-            val archive = pm.getPackageArchiveInfo(file.absolutePath, 0)
+            val archive = pm.packageArchiveInfoCompat(file.absolutePath)
             if (archive != null) {
-                val installed = try {
-                    pm.getPackageInfo(archive.packageName, 0)
-                } catch (_: PackageManager.NameNotFoundException) {
-                    null
-                }
+                val installed = pm.packageInfoCompat(archive.packageName)
                 if (installed != null && archive.longVersionCode < installed.longVersionCode) {
                     return@runCatching "Versionscode ${archive.longVersionCode} ist niedriger als die installierte Version ${installed.longVersionCode}."
                 }
@@ -1676,3 +1741,22 @@ private fun shareFile(context: Context, file: File) {
         Toast.makeText(context, "Teilen fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show()
     }
 }
+
+
+private fun PackageManager.packageArchiveInfoCompat(path: String): PackageInfo? = runCatching {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getPackageArchiveInfo(path, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        javaClass.getMethod("getPackageArchiveInfo", String::class.java, Int::class.javaPrimitiveType)
+            .invoke(this, path, 0) as? PackageInfo
+    }
+}.getOrNull()
+
+private fun PackageManager.packageInfoCompat(packageName: String): PackageInfo? = runCatching {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        javaClass.getMethod("getPackageInfo", String::class.java, Int::class.javaPrimitiveType)
+            .invoke(this, packageName, 0) as? PackageInfo
+    }
+}.getOrNull()

@@ -2,8 +2,8 @@ package io.github.lootdev78.mtapktool.archive
 
 import java.io.File
 import java.io.IOException
-import java.security.MessageDigest
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -28,10 +28,6 @@ data class ArchiveSessionSnapshot(
     val lastError: String?,
 )
 
-/**
- * Session layer used by the explorer. It mirrors the stateful behavior of a
- * desktop/MT-style archive browser without depending on proprietary code.
- */
 class ArchiveSessionManager(private val cacheRoot: File) {
     private data class MutableSession(
         val id: String,
@@ -50,7 +46,7 @@ class ArchiveSessionManager(private val cacheRoot: File) {
     private val sessions = ConcurrentHashMap<String, MutableSession>()
     private val passwordVault = ConcurrentHashMap<String, String>()
 
-    fun cachedPassword(archive: File): String? = passwordVault[archive.canonicalPath]
+    fun cachedPassword(archive: File): String? = runCatching { passwordVault[archive.canonicalPath] }.getOrNull()
 
     fun open(
         archive: File,
@@ -96,7 +92,6 @@ class ArchiveSessionManager(private val cacheRoot: File) {
     }
 
     fun get(id: String): ArchiveSessionSnapshot? = sessions[id]?.also(::refreshState)?.toSnapshot()
-
     fun refresh(id: String): ArchiveSessionSnapshot? = get(id)
 
     fun markDirty(id: String, relativePath: String? = null): ArchiveSessionSnapshot? {
@@ -152,10 +147,10 @@ class ArchiveSessionManager(private val cacheRoot: File) {
         return session.toSnapshot()
     }
 
-    fun clearPassword(archive: File) { passwordVault.remove(archive.canonicalPath) }
+    fun clearPassword(archive: File) { runCatching { passwordVault.remove(archive.canonicalPath) } }
 
     fun discardAll() {
-        sessions.values.toList().forEach { session -> session.workspaceRoot.deleteRecursively() }
+        sessions.values.toList().forEach { it.workspaceRoot.deleteRecursively() }
         sessions.clear()
         passwordVault.clear()
     }
@@ -179,18 +174,17 @@ class ArchiveSessionManager(private val cacheRoot: File) {
             .onEnter { directory -> directory == root || !Files.isSymbolicLink(directory.toPath()) }
             .filter { it != root }
             .associate { file ->
-            val relative = file.relativeTo(root).invariantSeparatorsPath
-            relative to ArchiveEntryStamp(
-                directory = file.isDirectory,
-                size = if (file.isFile) file.length() else 0L,
-                modifiedAt = file.lastModified(),
-                digestHint = if (file.isFile) digestHint(file) else "dir",
-            )
-        }
+                val relative = file.relativeTo(root).invariantSeparatorsPath
+                relative to ArchiveEntryStamp(
+                    directory = file.isDirectory,
+                    size = if (file.isFile) file.length() else 0L,
+                    modifiedAt = file.lastModified(),
+                    digestHint = if (file.isFile) digestHint(file) else "dir",
+                )
+            }
     }
 
     private fun digestHint(file: File): String {
-        if (!file.isFile) return ""
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(16 * 1024)
