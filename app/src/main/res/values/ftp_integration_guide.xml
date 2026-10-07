@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Integration point: Add to ExplorerScreen main layout -->
+    <!-- This shows where FTP integration should be called from -->
+    
+    <!-- In ExplorerScreen composable, add state for FTP -->
+    <!-- var showFtpServer by remember { mutableStateOf(false) } -->
+    <!-- var showFtpClient by remember { mutableStateOf(false) } -->
+    
+    <!-- Then add these dialogs to the screen: -->
+    <!-- if (showFtpServer) { FtpIntegrationScreen(onClose = { showFtpServer = false }) } -->
+    <!-- if (showFtpClient) { FtpIntegrationScreen(onClose = { showFtpClient = false }) } -->
+    
+    <!-- Add to SideBar toolbar buttons: -->
+    <!-- DrawerToolRow("FTP Server", R.drawable.mt_ic_server, sortMode, -->
+    <!--     onClick = { showFtpServer = true }) { delta -> ... } -->
+    <!-- DrawerToolRow("FTP Client", R.drawable.mt_ic_network, sortMode, -->
+    <!--     onClick = { showFtpClient = true }) { delta -> ... } -->
+</resources>

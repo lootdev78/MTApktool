@@ -1,25 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- FTP Server Strings -->
     <string name="ftp_server">FTP Server</string>
+    <string name="ftp_server_active">FTP Server Active</string>
+    <string name="ftp_server_start">Start FTP Server</string>
+    <string name="ftp_server_stop">Stop Server</string>
+    <string name="ftp_server_new_profile">New Server Profile</string>
+    <string name="ftp_server_running_at">Running at %s:%d</string>
+    
+    <!-- FTP Client Strings -->
     <string name="ftp_client">FTP Client</string>
-    <string name="ftp_start_server">Start FTP Server</string>
-    <string name="ftp_connect_client">Connect to FTP Server</string>
-    <string name="ftp_running_at">FTP running at %s</string>
-    <string name="ftp_stop">Stop</string>
-    <string name="ftp_copy_ip">Copy IP</string>
-    <string name="ftp_port">Port</string>
-    <string name="ftp_username">Username</string>
-    <string name="ftp_password">Password</string>
-    <string name="ftp_security">Security Type</string>
+    <string name="ftp_client_connected">Connected</string>
+    <string name="ftp_client_connect">Connect to FTP Server</string>
+    <string name="ftp_client_disconnect">Disconnect</string>
+    <string name="ftp_client_new_connection">New Connection</string>
+    <string name="ftp_client_path">Path: %s</string>
+    
+    <!-- FTP Dialog Strings -->
+    <string name="ftp_dialog_start_server">Start FTP Server</string>
+    <string name="ftp_dialog_connect_client">Connect to FTP Server</string>
+    <string name="ftp_input_port">Port</string>
+    <string name="ftp_input_ip">Server IP</string>
+    <string name="ftp_input_username">Username</string>
+    <string name="ftp_input_password">Password</string>
+    <string name="ftp_input_security">Security Type</string>
     <string name="ftp_security_ftp">FTP</string>
     <string name="ftp_security_ftps_explicit">FTPS (Explicit)</string>
     <string name="ftp_security_ftps_implicit">FTPS (Implicit)</string>
-    <string name="ftp_profiles">Profiles</string>
-    <string name="ftp_add_profile">Add Profile</string>
-    <string name="ftp_edit_profile">Edit Profile</string>
-    <string name="ftp_delete_profile">Delete Profile</string>
+    <string name="ftp_button_start">Start</string>
+    <string name="ftp_button_connect">Connect</string>
+    <string name="ftp_button_cancel">Cancel</string>
+    <string name="ftp_button_delete">Delete</string>
+    
+    <!-- FTP Profile Strings -->
+    <string name="ftp_profiles_label">Available Server Profiles</string>
+    <string name="ftp_profiles_empty">No server profiles. Create one below.</string>
+    <string name="ftp_connections_label">Available Connections</string>
+    <string name="ftp_connections_empty">No saved connections. Create one below.</string>
     <string name="ftp_profile_name">Profile Name</string>
-    <string name="ftp_server_ip">Server IP</string>
-    <string name="notif_channel_background">Background Tasks</string>
-    <string name="copied">Copied to clipboard</string>
+    <string name="ftp_profile_port">Port</string>
+    <string name="ftp_profile_user">User</string>
+    
+    <!-- FTP Error Strings -->
+    <string name="ftp_error_connection_failed">Connection failed</string>
+    <string name="ftp_error_authentication_failed">Authentication failed</string>
+    <string name="ftp_error_not_connected">Not connected to server</string>
+    <string name="ftp_error_server_already_running">Server already running</string>
+    <string name="ftp_error_list_files">Error listing files</string>
+    
+    <!-- Notification Strings -->
+    <string name="notif_ftp_server_running">FTP Server Running</string>
+    <string name="notif_ftp_server_address">Address: %s:%d</string>
 </resources>
