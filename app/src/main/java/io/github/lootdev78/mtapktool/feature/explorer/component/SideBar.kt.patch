@@ -1,0 +1,8 @@
+// PATCH: Add FTP tools to SideBar
+// In the toolOrder forEach block, add these entries:
+// "ftp_server" -> DrawerToolRow("FTP Server", R.drawable.mt_ic_server, sortMode, onClick = { onClose(); onOpenFtpServer() }) { delta -> ... }
+// "ftp_client" -> DrawerToolRow("FTP Client", R.drawable.mt_ic_network, sortMode, onClick = { onClose(); onOpenFtpClient() }) { delta -> ... }
+//
+// And add parameters:
+// onOpenFtpServer: () -> Unit = {},
+// onOpenFtpClient: () -> Unit = {},

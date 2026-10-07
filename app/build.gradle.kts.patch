@@ -1,0 +1,6 @@
+// PATCH: Add to dependencies block in app/build.gradle.kts:
+// Local FTP libraries from libs folder
+// implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+//
+// Also add Gson dependency if not already present:
+// implementation("com.google.code.gson:gson:2.10.1")
