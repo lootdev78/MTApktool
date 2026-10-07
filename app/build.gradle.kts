@@ -110,6 +110,18 @@ dependencies {
     implementation(project(":apkcloner"))
     implementation(project(":mh-editor"))
 
+    // FTP/SFTP Libraries from MP-Manager
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf(
+        "ftp4j-1.7.2.jar",
+        "ftplet-api-1.1.1.jar",
+        "ftpserver-core-1.1.1.jar",
+        "commons-net-3.11.1.jar",
+        "mina-core-2.0.16.jar",
+        "slf4j-api-1.7.21.jar",
+        "slf4j-log4j12-1.7.21.jar",
+        "log4j-1.2.17.jar"
+    ))))
+
     implementation("io.coil-kt.coil3:coil:3.5.0")
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     implementation("androidx.media3:media3-exoplayer:1.8.0")
@@ -129,6 +141,7 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.zip4j)
     implementation(libs.xz)
+    implementation("com.google.code.gson:gson:2.10.1")
     // Use the Android AAR so libzstd JNI payloads are packaged as native libraries.
     implementation("com.github.luben:zstd-jni:1.5.7-4@aar")
 
