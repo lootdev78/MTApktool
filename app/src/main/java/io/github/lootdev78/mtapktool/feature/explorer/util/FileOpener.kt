@@ -12,11 +12,12 @@ object FileOpener {
 
     fun openFile(
         context: Context,
-        file: File
+        file: File,
+        overrideMime: String? = null
     ) {
         val extension = file.extension.lowercase()
 
-        val mimeType =
+        val mimeType = overrideMime ?:
             MimeTypeMap
                 .getSingleton()
                 .getMimeTypeFromExtension(extension)

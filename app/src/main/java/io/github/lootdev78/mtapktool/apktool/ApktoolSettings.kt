@@ -1,6 +1,7 @@
 package io.github.lootdev78.mtapktool.apktool
 
 import android.content.Context
+import io.github.lootdev78.mtapktool.feature.keys.SigningCredentials
 import io.github.lootdev78.mtapktool.core.storage.SharedStorage
 import java.io.File
 
@@ -45,6 +46,8 @@ data class ApktoolSignatureDefaults(
     val v2: Boolean = true,
     val v3: Boolean = false,
     val v4: Boolean = false,
+    val customKeystoreAlias: String = "",
+    val customKeyPassword: String = "",
 )
 
 data class ApktoolGeneralDefaults(
@@ -192,7 +195,9 @@ object ApktoolSettings {
         return ApktoolSignatureDefaults(
             profile = p.getString(KEY_SIG_PROFILE, "testkey")?.takeIf { it in signatureProfiles } ?: "testkey",
             customKeystorePath = p.getString(KEY_SIG_PATH, "").orEmpty(),
-            customKeystorePassword = p.getString(KEY_SIG_PASSWORD, "").orEmpty(),
+            customKeystorePassword = SigningCredentials.read(context, "store", p.getString(KEY_SIG_PASSWORD, "").orEmpty()),
+            customKeystoreAlias = p.getString("signature_alias", "").orEmpty(),
+            customKeyPassword = SigningCredentials.read(context, "key"),
             v1 = p.getBoolean(KEY_SIG_V1, true),
             v2 = p.getBoolean(KEY_SIG_V2, true),
             v3 = p.getBoolean(KEY_SIG_V3, false),
@@ -273,10 +278,12 @@ object ApktoolSettings {
     }
 
     fun saveSignatureDefaults(context: Context, value: ApktoolSignatureDefaults) {
+        SigningCredentials.save(context, value.customKeystorePassword, value.customKeyPassword)
         prefs(context).edit()
             .putString(KEY_SIG_PROFILE, value.profile.takeIf { it in signatureProfiles } ?: "testkey")
             .putString(KEY_SIG_PATH, value.customKeystorePath.trim())
-            .putString(KEY_SIG_PASSWORD, value.customKeystorePassword)
+            .remove(KEY_SIG_PASSWORD)
+            .putString("signature_alias", value.customKeystoreAlias)
             .putBoolean(KEY_SIG_V1, value.v1)
             .putBoolean(KEY_SIG_V2, value.v2)
             .putBoolean(KEY_SIG_V3, value.v3)

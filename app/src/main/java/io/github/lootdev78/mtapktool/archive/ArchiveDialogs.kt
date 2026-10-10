@@ -83,10 +83,12 @@ fun ArchiveExtractDialog(
     onDismiss: () -> Unit,
     onExtract: (ArchiveExtractRequest) -> Unit,
 ) {
-    var useSubdirectory by remember(archive.absolutePath) { mutableStateOf(true) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val defaults = remember(archive.absolutePath) { ArchiveSettings.load(context) }
+    var useSubdirectory by remember(archive.absolutePath) { mutableStateOf(defaults.extractToSubdirectory) }
     var relativePath by remember(archive.absolutePath) { mutableStateOf(defaultExtractFolderName(archive)) }
-    var toOtherPane by remember(archive.absolutePath) { mutableStateOf(false) }
-    var deleteSource by remember(archive.absolutePath) { mutableStateOf(false) }
+    var toOtherPane by remember(archive.absolutePath) { mutableStateOf(defaults.extractToOtherPane) }
+    var deleteSource by remember(archive.absolutePath) { mutableStateOf(defaults.deleteSourceAfterExtraction) }
     var password by remember(archive.absolutePath) { mutableStateOf(initialPassword) }
     val format = ArchiveFormat.fromFile(archive)
     val passwordCapable = format == ArchiveFormat.ZIP || format == ArchiveFormat.SEVEN_Z

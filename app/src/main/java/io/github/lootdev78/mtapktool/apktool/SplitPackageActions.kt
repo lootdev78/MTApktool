@@ -44,12 +44,12 @@ object SplitPackageActions {
         val toolchain = Toolchain(context)
         val keystore = if (signature.profile == "custom") File(signature.customKeystorePath) else toolchain.getDebugKeystore()
         if (!keystore.isFile) throw IOException("Signing keystore not found: $keystore")
-        val password = if (signature.profile == "custom") signature.customKeystorePassword.ifBlank { "android" } else "android"
+        val password = if (signature.profile == "custom") signature.customKeystorePassword else "android"
         val temp = File(apk.parentFile, ".${apk.nameWithoutExtension}.sign-${System.nanoTime()}.apk")
         val tempIdsig = File(temp.absolutePath + ".idsig")
         val finalIdsig = File(apk.absolutePath + ".idsig")
         onLine("Signing ${apk.name} …")
-        SignWrapper(keystore.absolutePath, password, signature.v1, signature.v2, signature.v3, signature.v4).signApk(apk, temp)
+        SignWrapper(keystore.absolutePath, password, if (signature.profile == "custom") signature.customKeystoreAlias else "", if (signature.profile == "custom") signature.customKeyPassword.ifBlank { password } else password, signature.v1, signature.v2, signature.v3, signature.v4).signApk(apk, temp)
         if (!temp.isFile || temp.length() == 0L) throw IOException("Signing produced no APK")
         if (!apk.delete()) throw IOException("Could not replace unsigned APK")
         if (!temp.renameTo(apk)) {

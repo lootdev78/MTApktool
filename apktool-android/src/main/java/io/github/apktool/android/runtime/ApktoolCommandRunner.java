@@ -461,6 +461,8 @@ public final class ApktoolCommandRunner {
         o.addOption(Option.builder("o").longOpt("out").hasArg().build());
         o.addOption(Option.builder().longOpt("ks").hasArg().build());
         o.addOption(Option.builder().longOpt("ks-pass").hasArg().build());
+        o.addOption(Option.builder().longOpt("ks-key-alias").hasArg().build());
+        o.addOption(Option.builder().longOpt("key-pass").hasArg().build());
         o.addOption(Option.builder().longOpt("v1-signing-enabled").hasArg().build());
         o.addOption(Option.builder().longOpt("v2-signing-enabled").hasArg().build());
         o.addOption(Option.builder().longOpt("v3-signing-enabled").hasArg().build());
@@ -486,7 +488,7 @@ public final class ApktoolCommandRunner {
         deleteExistingOutput(output);
         if (v4) deleteExistingOutput(new File(output.getAbsolutePath() + ".idsig"));
         checkCancelled();
-        new SignWrapper(ks.getAbsolutePath(), pass, v1, v2, v3, v4).signApk(input, output);
+        new SignWrapper(ks.getAbsolutePath(), pass, cli.getOptionValue("ks-key-alias", ""), cli.getOptionValue("key-pass", pass), v1, v2, v3, v4).signApk(input, output);
         checkCancelled();
         line("Signed: " + output.getAbsolutePath());
         return new Result(0, "Signing complete", output);
@@ -498,6 +500,10 @@ public final class ApktoolCommandRunner {
 
     public Result postProcessBuild(Result built, boolean align, boolean sign, String keystorePath,
             String keystorePassword, boolean v1, boolean v2, boolean v3, boolean v4) throws Exception {
+        return postProcessBuild(built, align, sign, keystorePath, keystorePassword, v1, v2, v3, v4, "", keystorePassword);
+    }
+    public Result postProcessBuild(Result built, boolean align, boolean sign, String keystorePath,
+            String keystorePassword, boolean v1, boolean v2, boolean v3, boolean v4, String keyAlias, String keyPassword) throws Exception {
         if (built == null || !built.isSuccess() || built.output == null || (!align && !sign)) return built;
         File current = built.output;
         if (align) {
@@ -522,9 +528,9 @@ public final class ApktoolCommandRunner {
             if (v4) deleteExistingOutput(signedV4);
             File ks = keystorePath == null || keystorePath.trim().isEmpty() ? toolchain.getDebugKeystore() : new File(keystorePath);
             if (!ks.isFile()) throw new IOException("Signing keystore not found: " + ks);
-            String pass = keystorePassword == null || keystorePassword.isEmpty() ? "android" : keystorePassword;
+            String pass = keystorePassword == null ? "android" : keystorePassword;
             line("Signing v1=" + v1 + " v2=" + v2 + " v3=" + v3 + " v4=" + v4 + ": " + current.getName());
-            new SignWrapper(ks.getAbsolutePath(), pass, v1, v2, v3, v4).signApk(current, signed);
+            new SignWrapper(ks.getAbsolutePath(), pass, keyAlias, keyPassword == null ? pass : keyPassword, v1, v2, v3, v4).signApk(current, signed);
             checkCancelled();
             current = signed;
         }

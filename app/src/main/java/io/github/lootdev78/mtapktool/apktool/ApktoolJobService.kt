@@ -59,9 +59,12 @@ class ApktoolJobService : Service() {
         const val EXTRA_POST_ALIGN = "post_align"
         const val EXTRA_POST_SIGN = "post_sign"
         const val EXTRA_WORKERS = "workers"
+        private const val EXTRA_APK_EDITOR = "apk_editor_request"
 
         private const val EXTRA_SIGN_KEYSTORE = "sign_keystore"
         private const val EXTRA_SIGN_PASSWORD = "sign_password"
+        private const val EXTRA_SIGN_ALIAS = "sign_alias"
+        private const val EXTRA_SIGN_KEY_PASSWORD = "sign_key_password"
         private const val EXTRA_SIGN_V1 = "sign_v1"
         private const val EXTRA_SIGN_V2 = "sign_v2"
         private const val EXTRA_SIGN_V3 = "sign_v3"
@@ -96,6 +99,7 @@ class ApktoolJobService : Service() {
             createNomedia: Boolean = false,
             removeSplitTraces: Boolean = false,
             removePropertyTags: Boolean = false,
+            apkEditorRequest: String? = null,
         ): String {
             val id = UUID.randomUUID().toString()
             val sign = signature ?: ApktoolSignatureDefaults(v3 = true)
@@ -109,6 +113,8 @@ class ApktoolJobService : Service() {
                 putExtra(EXTRA_POST_SIGN, postSign)
                 putExtra(EXTRA_SIGN_KEYSTORE, if (sign.profile == "custom") sign.customKeystorePath else "")
                 putExtra(EXTRA_SIGN_PASSWORD, if (sign.profile == "custom") sign.customKeystorePassword else "android")
+                putExtra(EXTRA_SIGN_ALIAS, if (sign.profile == "custom") sign.customKeystoreAlias else "")
+                putExtra(EXTRA_SIGN_KEY_PASSWORD, if (sign.profile == "custom") sign.customKeyPassword.ifBlank { sign.customKeystorePassword } else "android")
                 putExtra(EXTRA_SIGN_V1, sign.v1)
                 putExtra(EXTRA_SIGN_V2, sign.v2)
                 putExtra(EXTRA_SIGN_V3, sign.v3)
@@ -120,6 +126,7 @@ class ApktoolJobService : Service() {
                 putExtra(EXTRA_CREATE_NOMEDIA, createNomedia)
                 putExtra(EXTRA_REMOVE_SPLIT, removeSplitTraces)
                 putExtra(EXTRA_REMOVE_PROPERTY, removePropertyTags)
+                putExtra(EXTRA_APK_EDITOR, apkEditorRequest)
                 // Settings are snapshotted in the UI process. This keeps the
                 // dedicated :apktool process independent from multi-process prefs.
                 putExtra(EXTRA_WORKERS, ApktoolSettings.maxWorkers(context))
@@ -129,6 +136,16 @@ class ApktoolJobService : Service() {
             ContextCompat.startForegroundService(context, intent)
             return id
         }
+
+        fun enqueueEditor(context: Context, request: ApkEditorRequest, align: Boolean, sign: Boolean): String = enqueue(
+            context = context,
+            title = "${request.action.title}: ${File(request.input).name}",
+            command = "APKEditor ${request.action.name} ${request.input}",
+            postAlign = align,
+            postSign = sign,
+            signature = ApktoolSettings.signatureDefaults(context),
+            apkEditorRequest = request.toJson(),
+        )
 
         fun cancel(context: Context, id: String) {
             runCatching {
@@ -180,6 +197,8 @@ class ApktoolJobService : Service() {
         val postSign: Boolean,
         val signKeystore: String,
         val signPassword: String,
+        val signAlias: String,
+        val signKeyPassword: String,
         val signV1: Boolean,
         val signV2: Boolean,
         val signV3: Boolean,
@@ -193,6 +212,7 @@ class ApktoolJobService : Service() {
         val removePropertyTags: Boolean,
         val notifyOnCompletion: Boolean,
         val suppressCompletionWhileOpen: Boolean,
+        val apkEditorRequest: String?,
         val createdAt: Long = System.currentTimeMillis(),
         @Volatile var status: Status = Status.QUEUED,
         @Volatile var stage: ApktoolWorkflowStage = ApktoolWorkflowStage.QUEUED,
@@ -253,6 +273,8 @@ class ApktoolJobService : Service() {
             postSign = intent.getBooleanExtra(EXTRA_POST_SIGN, false),
             signKeystore = intent.getStringExtra(EXTRA_SIGN_KEYSTORE).orEmpty(),
             signPassword = intent.getStringExtra(EXTRA_SIGN_PASSWORD).orEmpty(),
+            signAlias = intent.getStringExtra(EXTRA_SIGN_ALIAS).orEmpty(),
+            signKeyPassword = intent.getStringExtra(EXTRA_SIGN_KEY_PASSWORD) ?: intent.getStringExtra(EXTRA_SIGN_PASSWORD).orEmpty(),
             signV1 = intent.getBooleanExtra(EXTRA_SIGN_V1, true),
             signV2 = intent.getBooleanExtra(EXTRA_SIGN_V2, true),
             signV3 = intent.getBooleanExtra(EXTRA_SIGN_V3, true),
@@ -266,6 +288,7 @@ class ApktoolJobService : Service() {
             removePropertyTags = intent.getBooleanExtra(EXTRA_REMOVE_PROPERTY, false),
             notifyOnCompletion = intent.getBooleanExtra(EXTRA_NOTIFY_DONE, true),
             suppressCompletionWhileOpen = intent.getBooleanExtra(EXTRA_SUPPRESS_NOTIFY_WHILE_OPEN, true),
+            apkEditorRequest = intent.getStringExtra(EXTRA_APK_EDITOR),
         )
         appendLog(record, "$ ${record.command}")
         appendLog(record, "Queued")
@@ -307,6 +330,28 @@ class ApktoolJobService : Service() {
                 broadcast(record)
             }
             val runner = ApktoolCommandRunner(toolchain, listener)
+            record.apkEditorRequest?.let { json ->
+                val request = ApkEditorRequest.fromJson(json)
+                val logger = object : com.reandroid.apk.APKLogger {
+                    override fun logMessage(msg: String) = listener.onLine(msg)
+                    override fun logVerbose(msg: String) = listener.onLine(msg)
+                    override fun logError(msg: String, tr: Throwable) = listener.onLine("$msg: ${tr.message}")
+                }
+                val output = ApkEditorJobRunner.run(
+                    this, request, logger, { checkCancelled(record) },
+                    { stage, line -> record.stage = stage; record.line = line; broadcast(record, force = true) },
+                    { result -> runner.postProcessBuild(result, record.postAlign, record.postSign,
+                        record.signKeystore.takeIf { it.isNotBlank() }, record.signPassword,
+                        record.signV1, record.signV2, record.signV3, record.signV4,
+                        record.signAlias, record.signKeyPassword) },
+                    record.postSign,
+                )
+                record.output = output.absolutePath
+                record.status = Status.SUCCEEDED; record.stage = ApktoolWorkflowStage.SUCCEEDED
+                record.line = "${request.action.title} abgeschlossen\n${output.absolutePath}\nLog: ${logFile.absolutePath}"
+                appendLog(record, record.line)
+                return
+            }
             val commandHead = record.command.trim().substringBefore(' ').lowercase()
             record.stage = when (commandHead) {
                 "d", "decode" -> ApktoolWorkflowStage.DECODING
@@ -364,11 +409,13 @@ class ApktoolJobService : Service() {
                     record.postAlign,
                     record.postSign,
                     record.signKeystore.takeIf { it.isNotBlank() },
-                    record.signPassword.ifBlank { "android" },
+                    if (record.signKeystore.isBlank()) "android" else record.signPassword,
                     record.signV1,
                     record.signV2,
                     record.signV3,
                     record.signV4,
+                    record.signAlias,
+                    record.signKeyPassword,
                 )
             }
             checkCancelled(record)

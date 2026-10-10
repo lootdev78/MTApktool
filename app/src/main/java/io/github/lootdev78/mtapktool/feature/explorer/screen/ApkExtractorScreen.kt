@@ -84,6 +84,7 @@ import io.github.lootdev78.mtapktool.feature.explorer.util.ApkArchiveReader
 import io.github.lootdev78.mtapktool.feature.explorer.util.sdkLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -120,15 +121,29 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
     var showUninstallConfirm by remember { mutableStateOf(false) }
     var busyText by remember { mutableStateOf<String?>(null) }
     var busyProgress by remember { mutableStateOf(0f) }
+    var reloadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     fun reload() {
+        reloadJob?.cancel()
         loading = true
-        scope.launch {
-            apps = withContext(Dispatchers.IO) { ApkExtractorEngine.listInstalled(context, true) }
-            loading = false
+        reloadJob = scope.launch {
+            try {
+                apps = withContext(Dispatchers.IO) { ApkExtractorEngine.listInstalled(context, true) }
+                selectedPackages = selectedPackages.intersect(apps.map { it.packageName }.toSet())
+                selectedApp = selectedApp?.let { selected -> apps.firstOrNull { it.packageName == selected.packageName } }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { Toast.makeText(context, "App-Liste konnte nicht geladen werden: ${error.message}", Toast.LENGTH_LONG).show() }
+            finally { if (kotlinx.coroutines.currentCoroutineContext().isActive) loading = false }
         }
     }
     LaunchedEffect(Unit) { reload() }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val latestReload by androidx.compose.runtime.rememberUpdatedState({ reload() })
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event -> if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) latestReload() }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer); reloadJob?.cancel() }
+    }
 
     val visible = remember(apps, query, systemTab, prefs.sortMode) {
         val filtered = apps.asSequence()
@@ -250,7 +265,8 @@ fun ApkExtractorScreen(onBack: () -> Unit) {
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 7.dp)) {
                     items(visible, key = { it.packageName }) { app ->
-                        val icon by produceState<android.graphics.Bitmap?>(null, app.packageName) {
+                        val icon by produceState<android.graphics.Bitmap?>(null, app.packageName, app.lastUpdateTime, app.sourceDir) {
+                            value = null
                             value = withContext(Dispatchers.IO) {
                                 runCatching { context.packageManager.getApplicationIcon(app.packageName).toBitmap(84, 84) }.getOrNull()
                             }
@@ -445,10 +461,12 @@ private fun InstalledAppInfoDialog(
 ) {
     val context = LocalContext.current
     var more by remember { mutableStateOf(false) }
-    val icon by produceState<android.graphics.Bitmap?>(null, app.packageName) {
+    val icon by produceState<android.graphics.Bitmap?>(null, app.packageName, app.lastUpdateTime, app.sourceDir) {
+        value = null
         value = withContext(Dispatchers.IO) { runCatching { context.packageManager.getApplicationIcon(app.packageName).toBitmap(104, 104) }.getOrNull() }
     }
-    val signature by produceState(if (verifySignature) "Checking…" else "Not checked", app.packageName, verifySignature) {
+    val signature by produceState(if (verifySignature) "Checking…" else "Not checked", app.packageName, app.lastUpdateTime, app.sourceDir, verifySignature) {
+        value = if (verifySignature) "Checking…" else "Not checked"
         value = if (!verifySignature || app.sourceDir.isNullOrBlank()) "Not checked" else withContext(Dispatchers.IO) {
             ApkArchiveReader.signatureInfo(File(app.sourceDir))?.schemes ?: "Unknown"
         }

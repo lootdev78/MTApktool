@@ -1,0 +1,7 @@
+REAndroid APKEditor refactor/protect source additions
+Copyright (C) 2022 github.com/REAndroid
+https://github.com/REAndroid/APKEditor
+Apache License 2.0, retained in each source header.
+
+The selected source files were obtained from the supplied MP-Manager-main archive. They extend the existing antisplit-m REAndroid source; a second APKEditor JAR is not bundled.
+MTAPKTool replaces command/CLI options and the host Protector adapter, completes value-based string naming, adds cancellation checks, and wires output/signing/verification to its own foreground worker pool. Decompilation and cloning implementations are unchanged.

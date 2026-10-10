@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 enum class ApktoolWorkflowStage {
     QUEUED, PROVISIONING, DECODING, POST_DECODE, READY, DIRTY,
-    BUILDING, POST_PROCESSING, VERIFYING, SUCCEEDED, FAILED, CANCELLED
+    BUILDING, EDITING, POST_PROCESSING, VERIFYING, SUCCEEDED, FAILED, CANCELLED
 }
 
 data class ApktoolProjectSession(

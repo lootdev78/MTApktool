@@ -23,6 +23,10 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.GppBad
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -74,9 +78,12 @@ fun ApkInfoDialog(
 ) {
     val context = LocalContext.current
     var showSignatureInfo by remember { mutableStateOf(false) }
-    val info by produceState<ApkArchiveInfo?>(initialValue = null, file.absolutePath, file.lastModified()) {
-        value = withContext(Dispatchers.IO) { ApkArchiveReader.read(context, file) }
+    var reload by remember(file.absolutePath) { mutableStateOf(0) }
+    val loaded by produceState<Result<ApkArchiveInfo>?>(null, file.absolutePath, file.lastModified(), file.length(), reload) {
+        value = null
+        value = withContext(Dispatchers.IO) { runCatching { ApkArchiveReader.read(context, file) ?: error("APK-Metadaten konnten nicht gelesen werden. Datei prüfen oder erneut laden.") } }
     }
+    val info = loaded?.getOrNull()
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
@@ -99,7 +106,10 @@ fun ApkInfoDialog(
                 }
 
                 Spacer(Modifier.size(12.dp))
-                if (info == null) {
+                if (loaded != null && info == null) {
+                    Text(loaded?.exceptionOrNull()?.message ?: "APK nicht lesbar", color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { reload++ }) { Text("ERNEUT LADEN") }
+                } else if (info == null) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 28.dp), verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f)); CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp); Spacer(Modifier.weight(1f))
                     }
@@ -155,9 +165,11 @@ private fun SignatureInformationDialog(file: File, onDismiss: () -> Unit) {
     var upperCase by remember { mutableStateOf(true) }
     var showRaw by remember { mutableStateOf(false) }
     var compareText by remember { mutableStateOf<String?>(null) }
-    val signature by produceState<ApkSignatureInfo?>(null, file.absolutePath, file.lastModified(), addColons, upperCase) {
-        value = withContext(Dispatchers.IO) { ApkArchiveReader.signatureInfo(file, addColons, upperCase) }
+    val signatureResult by produceState<Result<ApkSignatureInfo>?>(null, file.absolutePath, file.lastModified(), file.length(), addColons, upperCase) {
+        value = null
+        value = withContext(Dispatchers.IO) { runCatching { ApkArchiveReader.signatureInfo(file, addColons, upperCase) ?: error("Keine lesbare Signatur vorhanden") } }
     }
+    val signature = signatureResult?.getOrNull()
     val compareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -189,7 +201,9 @@ private fun SignatureInformationDialog(file: File, onDismiss: () -> Unit) {
                 Text("Signature information", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.size(10.dp))
                 val sig = signature
-                if (sig == null) {
+                if (signatureResult != null && sig == null) {
+                    Text(signatureResult?.exceptionOrNull()?.message ?: "Signatur nicht lesbar", color = MaterialTheme.colorScheme.error)
+                } else if (sig == null) {
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
                 } else {
                     Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
@@ -252,11 +266,16 @@ fun ApkFunctionsDialog(
     onFileInfo: () -> Unit,
     onOpenWith: () -> Unit,
     onShare: () -> Unit,
+    onEditorAction: (ApkEditorAction) -> Unit,
 ) {
     val actions = listOf(
         Triple(Icons.Default.Extension, "Dekompilieren", onDecode),
         Triple(Icons.Default.FolderOpen, "Als Framework importieren", onImportFramework),
         Triple(Icons.Default.ContentCopy, "APK klonen", onClone),
+        Triple(Icons.Default.GppBad, "Kill signature verification", { onEditorAction(ApkEditorAction.KILL_SIGNATURE) }),
+        Triple(Icons.Default.TextFields, "Refactor obfuscated resource names", { onEditorAction(ApkEditorAction.REFACTOR) }),
+        Triple(Icons.Default.Speed, "Optimize APK", { onEditorAction(ApkEditorAction.OPTIMIZE) }),
+        Triple(Icons.Default.Security, "Protect APK (REAndroid APKEditor)", { onEditorAction(ApkEditorAction.PROTECT) }),
         Triple(Icons.Default.Description, "Dateiinformationen", onFileInfo),
         Triple(Icons.Default.InstallMobile, "Öffnen mit…", onOpenWith),
         Triple(Icons.Default.Share, "Teilen", onShare),
@@ -272,8 +291,8 @@ fun ApkFunctionsDialog(
                 Text("Funktionen", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Text(file.name, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.size(8.dp))
-                actions.forEach { (icon, title, action) ->
-                    FunctionRow(icon, title, action)
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+                    actions.forEach { (icon, title, action) -> FunctionRow(icon, title, action) }
                 }
                 Row(Modifier.fillMaxWidth()) { Spacer(Modifier.weight(1f)); TextButton(onClick = onDismiss) { Text("SCHLIESSEN") } }
             }

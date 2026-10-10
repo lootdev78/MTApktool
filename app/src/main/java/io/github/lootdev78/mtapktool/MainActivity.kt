@@ -24,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.navigation.compose.rememberNavController
 import io.github.lootdev78.mtapktool.core.theme.MTExplorerTheme
 import io.github.lootdev78.mtapktool.core.theme.ThemeManager
@@ -48,6 +49,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        modder.hub.editor.EditorTaskBridge.listener = object : modder.hub.editor.EditorTaskBridge.Listener {
+            override fun begin(title: String, detail: String): String = io.github.lootdev78.mtapktool.tasks.ToolTaskRegistry.begin(title, detail)
+            override fun finish(id: String, success: Boolean, message: String) {
+                io.github.lootdev78.mtapktool.tasks.ToolTaskRegistry.finish(id,
+                    if (success) io.github.lootdev78.mtapktool.tasks.ToolTaskStatus.SUCCEEDED else io.github.lootdev78.mtapktool.tasks.ToolTaskStatus.FAILED, message)
+            }
+        }
         requestStoragePermission()
         requestNotificationPermission()
         ExternalOpenBridge.publish(intent)
@@ -64,29 +72,26 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.DARK -> true
                 ThemeMode.LIGHT -> false
             }
-            SideEffect {
-                applicationContext.getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE)
-                    .edit()
-                    .putString("mode", themeMode.name)
-                    .apply()
-                val statusDark = 0xFF121318.toInt()
-                val navDark = 0xFF0A0B0F.toInt()
-                val light = 0xFFF6F3F7.toInt()
-                enableEdgeToEdge(
-                    statusBarStyle = if (darkBars) {
-                        SystemBarStyle.dark(statusDark)
-                    } else {
-                        SystemBarStyle.light(light, statusDark)
-                    },
-                    navigationBarStyle = if (darkBars) {
-                        SystemBarStyle.dark(navDark)
-                    } else {
-                        SystemBarStyle.light(light, navDark)
-                    },
-                )
-            }
 
             MTExplorerTheme(themeMode = themeMode, accentKey = explorerPrefs.accentKey) {
+                val palette = androidx.compose.material3.MaterialTheme.colorScheme
+                SideEffect {
+                    applicationContext.getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE).edit()
+                        .putString("mode", themeMode.name)
+                        .putInt("primary", palette.primary.toArgb())
+                        .putInt("on_primary", palette.onPrimary.toArgb())
+                        .putInt("surface", palette.surface.toArgb())
+                        .putInt("on_surface", palette.onSurface.toArgb())
+                        .putInt("navigation", palette.surfaceVariant.toArgb())
+                        .putInt("container", palette.primaryContainer.toArgb())
+                        .putInt("on_container", palette.onPrimaryContainer.toArgb()).apply()
+                    val status = palette.surface.toArgb()
+                    val navigation = palette.surfaceVariant.toArgb()
+                    enableEdgeToEdge(
+                        statusBarStyle = if (darkBars) SystemBarStyle.dark(status) else SystemBarStyle.light(status, status),
+                        navigationBarStyle = if (darkBars) SystemBarStyle.dark(navigation) else SystemBarStyle.light(navigation, navigation),
+                    )
+                }
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     contentWindowInsets = WindowInsets.safeDrawing,

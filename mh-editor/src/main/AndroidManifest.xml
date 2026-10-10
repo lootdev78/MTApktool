@@ -3,6 +3,7 @@
     <application>
         <activity
             android:name="modder.hub.editor.MainActivity"
+            android:launchMode="singleTop"
             android:label="Text Editor"
             android:theme="@style/MTApktoolEditorTheme.Dark"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"

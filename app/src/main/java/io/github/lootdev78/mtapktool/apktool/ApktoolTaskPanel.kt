@@ -62,12 +62,16 @@ import io.github.lootdev78.mtapktool.R
 import io.github.lootdev78.mtapktool.archive.ArchiveTaskInfo
 import io.github.lootdev78.mtapktool.archive.ArchiveTaskStatus
 import kotlin.math.abs
+import io.github.lootdev78.mtapktool.tasks.ToolTaskInfo
+import io.github.lootdev78.mtapktool.tasks.ToolTaskRegistry
 
 @Composable
 fun ApktoolTaskPanel(
     visible: Boolean,
     jobs: List<ApktoolJobInfo>,
     archiveTasks: List<ArchiveTaskInfo> = emptyList(),
+    toolTasks: List<ToolTaskInfo> = emptyList(),
+    onOpenToolTask: (String) -> Unit = {},
     onOpenJob: (String) -> Unit,
     onCancel: (String) -> Unit,
     onCancelAll: () -> Unit,
@@ -102,7 +106,7 @@ fun ApktoolTaskPanel(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(0.72f),
-                color = MaterialTheme.colorScheme.background,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shadowElevation = 10.dp,
             ) {
                 Column(Modifier.fillMaxSize()) {
@@ -113,20 +117,20 @@ fun ApktoolTaskPanel(
                         IconButton(onClick = onDismiss) { Icon(painterResource(R.drawable.mt_ic_check), contentDescription = "Schliessen") }
                         Column(Modifier.weight(1f)) {
                             Text("Tasks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Normal)
-                            val active = jobs.count { !it.isTerminal } + archiveTasks.count { !it.isTerminal }
+                            val active = jobs.count { !it.isTerminal } + archiveTasks.count { !it.isTerminal } + toolTasks.count { !it.isTerminal }
                             if (active > 0) Text("$active aktiv", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (jobs.any { it.isTerminal }) {
-                            IconButton(onClick = onClearFinished) {
+                        if (jobs.any { it.isTerminal } || toolTasks.any { it.isTerminal }) {
+                            IconButton(onClick = { onClearFinished(); ToolTaskRegistry.clearFinished() }) {
                                 Icon(painterResource(R.drawable.mt_ic_delete), contentDescription = "Fertige Tasks leeren")
                             }
                         }
-                        if (jobs.any { !it.isTerminal } || archiveTasks.any { !it.isTerminal }) {
-                            TextButton(onClick = { onCancelAll(); onCancelAllArchive() }) { Text("ALLE STOPPEN") }
+                        if (jobs.any { !it.isTerminal } || archiveTasks.any { !it.isTerminal } || toolTasks.any { !it.isTerminal && it.canCancel }) {
+                            TextButton(onClick = { onCancelAll(); onCancelAllArchive(); ToolTaskRegistry.cancelAll() }) { Text("ALLE STOPPEN") }
                         }
                     }
 
-                    if (jobs.isEmpty() && archiveTasks.isEmpty()) {
+                    if (jobs.isEmpty() && archiveTasks.isEmpty() && toolTasks.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
                                 "Noch keine Task-Informationen",
@@ -139,6 +143,27 @@ fun ApktoolTaskPanel(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
+                            items(toolTasks, key = { "tool-${it.id}" }) { task ->
+                                Column(Modifier.fillMaxWidth().clickable { onOpenToolTask(task.id) }.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(task.title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                        Text(when(task.status) {
+                                            io.github.lootdev78.mtapktool.tasks.ToolTaskStatus.RUNNING -> "LÄUFT"
+                                            io.github.lootdev78.mtapktool.tasks.ToolTaskStatus.SUCCEEDED -> "FERTIG"
+                                            io.github.lootdev78.mtapktool.tasks.ToolTaskStatus.FAILED -> "FEHLER"
+                                            io.github.lootdev78.mtapktool.tasks.ToolTaskStatus.CANCELLED -> "ABGEBROCHEN"
+                                        }, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Text(task.message, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                                    if (!task.isTerminal) {
+                                        val progress = task.progress
+                                        if (progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+                                        else LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                                        if (task.canCancel) TextButton(onClick = { ToolTaskRegistry.cancel(task.id) }) { Text("STOPPEN") }
+                                    }
+                                }
+                                HorizontalDivider()
+                            }
                             items(archiveTasks, key = { "archive-${it.id}" }) { task ->
                                 ArchiveTaskCard(task = task, onCancel = onCancelArchive)
                             }
@@ -364,6 +389,7 @@ private fun ApktoolJobInfo.workflowLabel(): String = if (status == "RUNNING") wh
     ApktoolWorkflowStage.DECODING.name -> "DEKOMPILIEREN"
     ApktoolWorkflowStage.POST_DECODE.name -> "NACHBEARBEITUNG"
     ApktoolWorkflowStage.BUILDING.name -> "ERSTELLEN"
+    ApktoolWorkflowStage.EDITING.name -> "APK BEARBEITEN"
     ApktoolWorkflowStage.POST_PROCESSING.name -> "ALIGN/SIGN"
     ApktoolWorkflowStage.VERIFYING.name -> "PRÜFUNG"
     else -> "LÄUFT"

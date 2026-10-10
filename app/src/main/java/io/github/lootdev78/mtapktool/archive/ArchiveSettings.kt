@@ -9,6 +9,9 @@ data class ArchiveDefaults(
     val compressEachIndependently: Boolean = false,
     val deleteSourcesAfterCompression: Boolean = false,
     val compressToOtherPane: Boolean = false,
+    val extractToSubdirectory: Boolean = true,
+    val extractToOtherPane: Boolean = false,
+    val deleteSourceAfterExtraction: Boolean = false,
 )
 
 object ArchiveSettings {
@@ -23,6 +26,9 @@ object ArchiveSettings {
             compressEachIndependently = p.getBoolean("each", false),
             deleteSourcesAfterCompression = p.getBoolean("delete", false),
             compressToOtherPane = p.getBoolean("other_pane", false),
+            extractToSubdirectory = p.getBoolean("extract_subdirectory", true),
+            extractToOtherPane = p.getBoolean("extract_other_pane", false),
+            deleteSourceAfterExtraction = p.getBoolean("extract_delete", false),
         )
     }
 
@@ -34,6 +40,9 @@ object ArchiveSettings {
             .putBoolean("each", value.compressEachIndependently)
             .putBoolean("delete", value.deleteSourcesAfterCompression)
             .putBoolean("other_pane", value.compressToOtherPane)
+            .putBoolean("extract_subdirectory", value.extractToSubdirectory)
+            .putBoolean("extract_other_pane", value.extractToOtherPane)
+            .putBoolean("extract_delete", value.deleteSourceAfterExtraction)
             .apply()
     }
 }

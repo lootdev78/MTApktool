@@ -26,4 +26,22 @@
         <item name="android:colorPrimaryDark">#000000</item>
     </style>
     <style name="MTApktoolEditorTheme" parent="MTApktoolEditorTheme.Dark" />
+    <style name="MTApktoolEditorPopup.Light" parent="@android:style/ThemeOverlay.Material.Light">
+        <item name="android:textColorPrimary">#1D1B20</item>
+        <item name="android:textColorSecondary">#49454F</item>
+        <item name="android:colorControlNormal">#49454F</item>
+        <item name="android:popupMenuStyle">@style/MTApktoolEditorPopupWidget.Light</item>
+    </style>
+    <style name="MTApktoolEditorPopup.Dark" parent="@android:style/ThemeOverlay.Material.Dark">
+        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:textColorSecondary">#E0E0E0</item>
+        <item name="android:colorControlNormal">#E0E0E0</item>
+        <item name="android:popupMenuStyle">@style/MTApktoolEditorPopupWidget.Dark</item>
+    </style>
+    <style name="MTApktoolEditorPopupWidget.Light" parent="@android:style/Widget.Material.PopupMenu">
+        <item name="android:popupBackground">#FFFFFF</item>
+    </style>
+    <style name="MTApktoolEditorPopupWidget.Dark" parent="@android:style/Widget.Material.PopupMenu">
+        <item name="android:popupBackground">#303030</item>
+    </style>
 </resources>

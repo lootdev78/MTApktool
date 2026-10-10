@@ -66,7 +66,7 @@ private enum class SettingsOverlay { NONE, FRAMEWORKS, AAPT2, SIGNATURE, PATHS, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
+fun ApktoolSettingsDialog(onDismiss: () -> Unit, embedded: Boolean = false) {
     val context = LocalContext.current
     var general by remember { mutableStateOf(ApktoolSettings.generalDefaults(context)) }
     var decode by remember { mutableStateOf(ApktoolSettings.decodeDefaults(context)) }
@@ -82,15 +82,12 @@ fun ApktoolSettingsDialog(onDismiss: () -> Unit) {
     fun saveDecode(value: ApktoolDecodeDefaults) { decode = value; ApktoolSettings.saveDecodeDefaults(context, value) }
     fun saveBuild(value: ApktoolBuildDefaults) { build = value; ApktoolSettings.saveBuildDefaults(context, value) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true),
-    ) {
+    io.github.lootdev78.mtapktool.settings.SettingsPageContainer(asDialog = !embedded, onDismiss = onDismiss) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
                     MtClassicTopBar(
-                        title = { Text("Erstellen & Dekodieren") },
+                        title = { Text("Apktool") },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                         },
@@ -333,53 +330,7 @@ private fun Aapt2ManagerDialog(onBack: () -> Unit) {
 
 @Composable
 fun SignatureManagerDialog(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val current = remember { ApktoolSettings.signatureDefaults(context) }
-    var profile by remember { mutableStateOf(current.profile) }
-    var path by remember { mutableStateOf(current.customKeystorePath) }
-    var password by remember { mutableStateOf(current.customKeystorePassword) }
-    var v1 by remember { mutableStateOf(current.v1) }
-    var v2 by remember { mutableStateOf(current.v2) }
-    var v3 by remember { mutableStateOf(current.v3) }
-    var v4 by remember { mutableStateOf(current.v4) }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { Toolchain(context).copyIntoInput(it, "signature.jks").absolutePath }
-                        ?: error("Signaturdatei kann nicht geöffnet werden")
-                }
-            }
-            result.onSuccess { path = it; profile = "custom" }
-        }
-    }
-
-    MtClassicAlertDialog(
-        onDismissRequest = onBack,
-        title = { Text("Schlüssel & Zertifikate") },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                CompactPicker(profile, ApktoolSettings.signatureProfiles, { if (it == "testkey") "Vorgabesignatur (testkey)" else "Benutzerdefinierte Signatur" }) { profile = it }
-                if (profile == "custom") {
-                    OutlinedTextField(path, { path = it }, label = { Text("Keystore") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    TextButton(onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-pkcs12", "*/*")) }) { Text("DATEI AUSWÄHLEN") }
-                    OutlinedTextField(password, { password = it }, label = { Text("Keystore-Passwort") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                }
-                SettingCheck("Signatur v1", v1) { v1 = it }
-                SettingCheck("Signatur v2", v2) { v2 = it }
-                SettingCheck("Signatur v3", v3) { v3 = it }
-                SettingCheck("Signatur v4", v4) { v4 = it }
-            }
-        },
-        dismissButton = { TextButton(onClick = onBack) { Text("ABBRECHEN") } },
-        confirmButton = {
-            Button(enabled = (v1 || v2 || v3 || v4) && (profile != "custom" || path.isNotBlank()), onClick = {
-                ApktoolSettings.saveSignatureDefaults(context, ApktoolSignatureDefaults(profile, path, password, v1, v2, v3, v4)); onBack()
-            }) { Text("SPEICHERN") }
-        },
-    )
+    io.github.lootdev78.mtapktool.feature.keys.KeyManagerDialog(onBack)
 }
 
 @Composable

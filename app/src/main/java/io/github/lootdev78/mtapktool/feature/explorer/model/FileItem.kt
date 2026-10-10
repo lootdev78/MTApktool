@@ -12,19 +12,22 @@ import java.util.Locale
 data class FileItem(
     val file: File,
     val safUri: String? = null,
+    val remoteUri: String? = null,
     val displayName: String? = null,
     val directoryOverride: Boolean? = null,
     val sizeOverride: Long? = null,
     val modifiedOverride: Long? = null,
     val mimeType: String? = null,
 ) {
+    val isFtp: Boolean get() = remoteUri != null
     val isSaf: Boolean get() = safUri != null
     val name: String = displayName ?: file.name
-    val path: String = safUri ?: file.path
+    val path: String = remoteUri ?: safUri ?: file.path
     val isDirectory: Boolean = directoryOverride ?: file.isDirectory
     val modifiedAt: Long = modifiedOverride ?: file.lastModified()
     val fileSize: Long = sizeOverride ?: if (isDirectory) 0L else file.length()
     val extensionName: String = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    val unixMode: Int? = if (isSaf || isFtp) null else runCatching { android.system.Os.lstat(file.absolutePath).st_mode and 0xFFF }.getOrNull()
 
     val formattedDate: String by lazy {
         val sdf = SimpleDateFormat("yy-MM-dd HH:mm", Locale.getDefault())

@@ -47,6 +47,7 @@ data class FileDetailsState(
 @Composable
 fun FileInfoDialog(
     file: File,
+    onPermissions: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -55,18 +56,14 @@ fun FileInfoDialog(
     // Calculate background statistics on IO thread
     LaunchedEffect(file) {
         withContext(Dispatchers.IO) {
-            val permissions = buildString {
-                append(if (file.canRead()) "r" else "-")
-                append(if (file.canWrite()) "w" else "-")
-                append(if (file.canExecute()) "x" else "-")
-            }
+            val permissions = runCatching { io.github.lootdev78.mtapktool.feature.explorer.util.FilePermissions.read(file).let { "${it.symbolic} (${it.octal}) · UID ${it.uid} / GID ${it.gid}" } }.getOrDefault("Nicht lesbar")
 
             if (file.isDirectory) {
                 var totalBytes = 0L
                 var filesNum = 0
                 var dirsNum = 0
 
-                file.walkTopDown().forEach { item ->
+                file.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.forEach { item ->
                     if (item != file) {
                         if (item.isDirectory) dirsNum++ else if (item.isFile) {
                             filesNum++
@@ -167,6 +164,7 @@ fun FileInfoDialog(
                     }
                     TwoColumnInfoRow(context, label = "Modified", value = formattedDate)
                     TwoColumnInfoRow(context, label = "Permissions", value = detailsState.permissions)
+                    TextButton(onClick = onPermissions) { Text("BERECHTIGUNGEN ÄNDERN") }
 
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = 8.dp),

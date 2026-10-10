@@ -41,6 +41,8 @@ dependencyResolutionManagement {
 rootProject.name = "MTApktool"
 include(
     ":app",
+    ":mt-ftp",
+    ":mt-crypto",
     ":apktool-android",
     ":apksig-android",
     ":zipalign-android",

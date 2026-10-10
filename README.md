@@ -55,7 +55,7 @@ The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and its fram
 
 ## File manager fixes included
 
-- Settings in the navigation drawer now opens the Apktool settings UI.
+- The dual-pane overflow menu opens the themed SettingsActivity. The Apktool settings entry retains the existing apktool-a decode/build configuration; the CLI menu entry has been removed. Archive settings use a full page with packing/extraction options in dialogs.
 - Share uses `FileProvider` content URIs instead of `file://` URIs.
 - Open-with, ZIP compression, symbolic-link creation and persistent bookmarks are wired into the context menu.
 - Cross-filesystem moves fall back to copy/delete, and copy/move guards against recursively transferring a directory into itself.
@@ -67,4 +67,14 @@ The original Apktool-A helper modules (`brut.j.*`, `smali-android`) and its fram
 Heavy Apktool operations are executed by the foreground `ApktoolJobService` in the dedicated `:apktool` process. Live output can be hidden without cancelling a task and reopened from the right-side Task panel. A plain APK click offers both decode and framework installation.
 
 ### Archive browsing and editing
-Supported archives can be opened directly in either explorer pane. MTApktool extracts the archive into a private temporary workspace, lets the normal dual-pane operations and text editor work on those files, then rebuilds the original archive when changes are detected. Use `..` at the archive root to save and leave the archive. The Extract dialog supports the current pane, the opposite pane, a relative destination folder, optional source deletion, and passwords for ZIP/7z.
+Supported archives can be opened directly in either explorer pane. MTApktool extracts the archive into a private temporary workspace, lets the normal dual-pane operations and text editor work on those files, then offers an explicit archive update or a save/discard/cancel decision when leaving. Use the archive update button to save while staying inside, or `..` at the archive root to leave through the decision dialog. The Extract dialog supports the current pane, the opposite pane, a relative destination folder, optional source deletion, and passwords for ZIP/7z.
+
+## Extended file/tool workflows
+
+See [MP_WORKFLOW_INTEGRATION.md](MP_WORKFLOW_INTEGRATION.md) for the new FTP, inspector, color picker, editor navigation, key manager, permissions, advanced search, bulk rename, panel/open-with menus, task integration, verification results and remaining Android device checks. APK decoding and building continue to use the existing Apktool-A port. Additional licenses are listed in [THIRD_PARTY_INTEGRATION_NOTICES.md](THIRD_PARTY_INTEGRATION_NOTICES.md).
+
+The APK functions menu also offers signature-verification patching, resource-name refactoring, APK optimization and REAndroid APKEditor protection. These operations use the existing foreground task service alongside apktool-a, with staged output, optional signing and panel navigation. APK decompilation and the existing APK cloner remain unchanged. See MP_WORKFLOW_INTEGRATION.md for implemented options and JVM/device-test limits.
+
+The MH text editor has a visible themed file-navigation button, open/recent-file drawer, save button and complete toolbar menu with explicit light/dark popup colors. Navigation and folder-icon containers follow the chosen MT theme color; other file-icon backgrounds retain their category colors. Dual-pane backgrounds depend on light/dark/system brightness independently of the accent palette.
+
+The fourth bottom-navigation button swaps the panels. Bookmarks support names and paths, editing, left-swipe/long-press actions and migration of existing entries. Open archives expose a complete stream integrity test and ZIP/TAR filename charset selection through the overflow menu, with task progress, cancellation, result dialogs and shared-panel refresh. See MP_WORKFLOW_INTEGRATION.md for validation scope and Android device checks.

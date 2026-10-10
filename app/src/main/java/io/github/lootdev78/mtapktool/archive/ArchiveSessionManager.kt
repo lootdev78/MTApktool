@@ -1,5 +1,7 @@
 package io.github.lootdev78.mtapktool.archive
 
+import io.github.lootdev78.mtapktool.feature.explorer.util.deleteTreeSafely
+
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -14,6 +16,7 @@ data class ArchiveEntryStamp(
     val size: Long,
     val modifiedAt: Long,
     val digestHint: String,
+    val mode: Int?,
 )
 
 data class ArchiveSessionSnapshot(
@@ -26,6 +29,7 @@ data class ArchiveSessionSnapshot(
     val depth: Int,
     val dirtyEntries: Set<String>,
     val lastError: String?,
+    val charset: String = "",
 )
 
 class ArchiveSessionManager(private val cacheRoot: File) {
@@ -35,27 +39,34 @@ class ArchiveSessionManager(private val cacheRoot: File) {
         val workspaceRoot: File,
         val returnDirectory: String,
         val password: String,
+        var charset: String,
         val parentId: String?,
         val depth: Int,
         var baseline: Map<String, ArchiveEntryStamp>,
-        var state: ArchiveSessionState,
+        @Volatile var state: ArchiveSessionState,
+        var sourceDigest: String,
         var dirtyEntries: Set<String> = emptySet(),
         var lastError: String? = null,
     )
 
     private val sessions = ConcurrentHashMap<String, MutableSession>()
     private val passwordVault = ConcurrentHashMap<String, String>()
+    private val charsetVault = ConcurrentHashMap<String, String>()
 
     fun cachedPassword(archive: File): String? = runCatching { passwordVault[archive.canonicalPath] }.getOrNull()
 
-    fun open(
+    @Synchronized fun open(
         archive: File,
         returnDirectory: String,
         password: String = "",
         parentId: String? = null,
+        charset: String? = null,
         onProgress: (Int) -> Unit = {},
     ): ArchiveSessionSnapshot {
         if (!ArchiveEngine.supports(archive)) throw IOException("Unsupported archive: ${archive.name}")
+        sessions.values.firstOrNull {
+            it.archive == archive.canonicalFile && it.parentId == parentId && it.state != ArchiveSessionState.CLOSED
+        }?.let { refreshState(it); return it.toSnapshot() }
         if (!cacheRoot.exists() && !cacheRoot.mkdirs()) throw IOException("Cannot create archive workspace root")
         val parent = parentId?.let(sessions::get)
         val effectivePassword = password.ifBlank { cachedPassword(archive).orEmpty() }
@@ -68,14 +79,16 @@ class ArchiveSessionManager(private val cacheRoot: File) {
             workspaceRoot = workspace,
             returnDirectory = returnDirectory,
             password = effectivePassword,
+            charset = charset ?: charsetVault[archive.canonicalPath].orEmpty(),
             parentId = parentId,
             depth = (parent?.depth ?: -1) + 1,
             baseline = emptyMap(),
             state = ArchiveSessionState.OPENING,
+            sourceDigest = digestHint(archive),
         )
         sessions[id] = session
         try {
-            ArchiveEngine.extractToDirectory(session.archive, workspace, effectivePassword, onProgress)
+            ArchiveEngine.extractToDirectory(session.archive, workspace, effectivePassword, onProgress, charset = session.charset)
             session.baseline = snapshot(workspace)
             session.state = ArchiveSessionState.CLEAN
             session.lastError = null
@@ -85,16 +98,17 @@ class ArchiveSessionManager(private val cacheRoot: File) {
             session.state = ArchiveSessionState.FAILED
             session.lastError = t.message ?: t.javaClass.simpleName
             if (effectivePassword.isNotBlank()) passwordVault.remove(session.archive.canonicalPath)
-            workspace.deleteRecursively()
+            workspace.deleteTreeSafely()
             sessions.remove(id)
             throw t
         }
     }
 
-    fun get(id: String): ArchiveSessionSnapshot? = sessions[id]?.also(::refreshState)?.toSnapshot()
+    fun peek(id: String): ArchiveSessionSnapshot? = sessions[id]?.toSnapshot()
+    @Synchronized fun get(id: String): ArchiveSessionSnapshot? = sessions[id]?.also(::refreshState)?.toSnapshot()
     fun refresh(id: String): ArchiveSessionSnapshot? = get(id)
 
-    fun markDirty(id: String, relativePath: String? = null): ArchiveSessionSnapshot? {
+    @Synchronized fun markDirty(id: String, relativePath: String? = null): ArchiveSessionSnapshot? {
         val session = sessions[id] ?: return null
         if (session.state != ArchiveSessionState.CLOSED && session.state != ArchiveSessionState.UPDATING) {
             session.state = ArchiveSessionState.DIRTY
@@ -103,7 +117,7 @@ class ArchiveSessionManager(private val cacheRoot: File) {
         return session.toSnapshot()
     }
 
-    fun commit(id: String, level: ArchiveLevel = ArchiveLevel.NORMAL, onProgress: (Int) -> Unit = {}): ArchiveSessionSnapshot {
+    @Synchronized fun commit(id: String, level: ArchiveLevel = ArchiveLevel.NORMAL, onProgress: (Int) -> Unit = {}): ArchiveSessionSnapshot {
         val session = sessions[id] ?: throw IOException("Archive session no longer exists")
         refreshState(session)
         if (session.state == ArchiveSessionState.CLEAN) return session.toSnapshot()
@@ -112,9 +126,11 @@ class ArchiveSessionManager(private val cacheRoot: File) {
         session.lastError = null
         return try {
             onProgress(0)
-            ArchiveEngine.replaceFromDirectory(session.archive, session.workspaceRoot, session.password, level)
+            if (digestHint(session.archive) != session.sourceDigest) throw IOException("Das Originalarchiv wurde extern geändert. Änderungen zuerst sichern und das Archiv neu öffnen.")
+            ArchiveEngine.replaceFromDirectory(session.archive, session.workspaceRoot, session.password, level, session.charset) { onProgress(95) }
             onProgress(100)
             session.baseline = snapshot(session.workspaceRoot)
+            session.sourceDigest = digestHint(session.archive)
             session.dirtyEntries = emptySet()
             session.state = ArchiveSessionState.CLEAN
             session.parentId?.let { parentId ->
@@ -133,26 +149,89 @@ class ArchiveSessionManager(private val cacheRoot: File) {
         }
     }
 
-    fun discard(id: String): ArchiveSessionSnapshot? {
+    fun test(id: String, onProgress: (Int, String) -> Unit, checkCancelled: () -> Unit): ArchiveTestResult {
+        val session = sessions[id] ?: throw IOException("Archiv ist nicht mehr geöffnet")
+        checkCancelled()
+        val before = digestHint(session.archive, checkCancelled)
+        val result = ArchiveEngine.test(session.archive, session.password, session.charset, onProgress, checkCancelled)
+        checkCancelled()
+        if (digestHint(session.archive, checkCancelled) != before) throw IOException("Das Archiv wurde während des Tests geändert")
+        checkCancelled()
+        return result
+    }
+
+    /** Stages a fresh decoding and keeps the old workspace intact on failure/cancellation. */
+    @Synchronized fun reloadCharset(id: String, charset: String, checkCancelled: () -> Unit = {}, onProgress: (Int) -> Unit): ArchiveSessionSnapshot {
+        val session = sessions[id] ?: throw IOException("Archiv ist nicht mehr geöffnet")
+        if (!ArchiveCharsets.supports(ArchiveFormat.fromFile(session.archive))) throw IOException("Dieses Format verwendet einen festen Zeichensatz")
+        ArchiveCharsets.charset(charset)
+        refreshState(session)
+        if (session.dirtyEntries.isNotEmpty() || session.state == ArchiveSessionState.DIRTY) {
+            throw IOException("Archivänderungen zuerst über Aktualisieren speichern")
+        }
+        if (session.state == ArchiveSessionState.OPENING || session.state == ArchiveSessionState.UPDATING || session.state == ArchiveSessionState.CLOSED) {
+            throw IOException("Laufende Archiv-Aktion zuerst beenden")
+        }
+        if (sessions.values.any { it.parentId == id && it.state != ArchiveSessionState.CLOSED }) {
+            throw IOException("Offene Unterarchive zuerst schließen")
+        }
+        val previousState = session.state
+        val sourceDigest = digestHint(session.archive)
+        val parent = session.workspaceRoot.parentFile ?: throw IOException("Arbeitsordner fehlt")
+        val stage = File(parent, ".charset-" + UUID.randomUUID())
+        val backup = File(parent, ".previous-" + UUID.randomUUID())
+        if (!stage.mkdirs()) throw IOException("Arbeitsordner kann nicht erstellt werden")
+        session.state = ArchiveSessionState.OPENING
+        var movedOld = false
+        try {
+            ArchiveEngine.extractToDirectory(session.archive, stage, session.password, onProgress, charset = charset, checkCancelled = checkCancelled)
+            val baseline = snapshot(stage)
+            if (digestHint(session.archive, checkCancelled) != sourceDigest) throw IOException("Das Archiv wurde während des Neuladens geändert")
+            if (snapshot(session.workspaceRoot) != session.baseline) throw IOException("Dateien im Archiv wurden während des Neuladens geändert")
+            onProgress(99)
+            Files.move(session.workspaceRoot.toPath(), backup.toPath())
+            movedOld = true
+            Files.move(stage.toPath(), session.workspaceRoot.toPath())
+            session.baseline = baseline
+            session.sourceDigest = sourceDigest
+            session.charset = charset
+            charsetVault[session.archive.canonicalPath] = charset
+            session.dirtyEntries = emptySet()
+            session.lastError = null
+            session.state = ArchiveSessionState.CLEAN
+            runCatching { backup.deleteTreeSafely() }
+            return session.toSnapshot()
+        } catch (error: Throwable) {
+            if (movedOld && !session.workspaceRoot.exists()) Files.move(backup.toPath(), session.workspaceRoot.toPath())
+            session.state = previousState
+            refreshState(session)
+            throw error
+        } finally {
+            runCatching { stage.deleteTreeSafely() }
+        }
+    }
+
+    @Synchronized fun discard(id: String): ArchiveSessionSnapshot? {
         val session = sessions.remove(id) ?: return null
         session.state = ArchiveSessionState.CLOSED
-        session.workspaceRoot.deleteRecursively()
+        session.workspaceRoot.deleteTreeSafely()
         return session.toSnapshot()
     }
 
-    fun closeAfterCommit(id: String): ArchiveSessionSnapshot? {
+    @Synchronized fun closeAfterCommit(id: String): ArchiveSessionSnapshot? {
         val session = sessions.remove(id) ?: return null
         session.state = ArchiveSessionState.CLOSED
-        session.workspaceRoot.deleteRecursively()
+        session.workspaceRoot.deleteTreeSafely()
         return session.toSnapshot()
     }
 
     fun clearPassword(archive: File) { runCatching { passwordVault.remove(archive.canonicalPath) } }
 
     fun discardAll() {
-        sessions.values.toList().forEach { it.workspaceRoot.deleteRecursively() }
+        sessions.values.toList().forEach { it.workspaceRoot.deleteTreeSafely() }
         sessions.clear()
         passwordVault.clear()
+        charsetVault.clear()
     }
 
     private fun refreshState(session: MutableSession) {
@@ -175,28 +254,29 @@ class ArchiveSessionManager(private val cacheRoot: File) {
             .filter { it != root }
             .associate { file ->
                 val relative = file.relativeTo(root).invariantSeparatorsPath
+                val symbolic = Files.isSymbolicLink(file.toPath())
                 relative to ArchiveEntryStamp(
-                    directory = file.isDirectory,
-                    size = if (file.isFile) file.length() else 0L,
+                    directory = !symbolic && file.isDirectory,
+                    size = if (!symbolic && file.isFile) file.length() else 0L,
                     modifiedAt = file.lastModified(),
-                    digestHint = if (file.isFile) digestHint(file) else "dir",
+                    digestHint = if (symbolic) "link:" + Files.readSymbolicLink(file.toPath()).toString() else if (file.isFile) digestHint(file) else "dir",
+                    mode = runCatching { android.system.Os.lstat(file.absolutePath).st_mode and 0xFFF }.getOrNull(),
                 )
             }
     }
 
-    private fun digestHint(file: File): String {
+    private fun digestHint(file: File, checkCancelled: () -> Unit = {}): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(16 * 1024)
-            var remaining = 64 * 1024
-            while (remaining > 0) {
-                val read = input.read(buffer, 0, minOf(buffer.size, remaining))
+            while (true) {
+                checkCancelled()
+                val read = input.read(buffer)
                 if (read <= 0) break
                 digest.update(buffer, 0, read)
-                remaining -= read
             }
         }
-        return digest.digest().take(8).joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun MutableSession.toSnapshot() = ArchiveSessionSnapshot(
@@ -209,5 +289,6 @@ class ArchiveSessionManager(private val cacheRoot: File) {
         depth = depth,
         dirtyEntries = dirtyEntries,
         lastError = lastError,
+        charset = charset,
     )
 }

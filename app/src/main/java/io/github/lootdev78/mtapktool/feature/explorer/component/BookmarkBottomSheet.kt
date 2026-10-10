@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.Bookmark as BookmarkIcon
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,18 +18,21 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.github.lootdev78.mtapktool.core.theme.MtClassicMetrics
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
-import java.io.File
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import io.github.lootdev78.mtapktool.feature.explorer.state.Bookmark
 
 /** Bottom bookmark panel opened by an upward gesture from the explorer action bar. */
 @Composable
 fun BookmarkBottomSheet(
-    bookmarks: List<String>,
+    bookmarks: List<Bookmark>,
     currentPath: String,
     activePane: ActivePane,
     onDismiss: () -> Unit,
     onOpen: (ActivePane, String) -> Unit,
     onAddCurrent: () -> Unit,
-    onRemove: (String) -> Unit,
+    onEdit: (Bookmark) -> Unit,
+    onRemove: (Bookmark) -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -49,7 +50,7 @@ fun BookmarkBottomSheet(
                         modifier = Modifier.fillMaxWidth().height(MtClassicMetrics.toolbarHeight).padding(start = 16.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Bookmark, contentDescription = null)
+                        Icon(Icons.Outlined.BookmarkIcon, contentDescription = null)
                         Spacer(Modifier.width(10.dp))
                         Text("Lesezeichen", fontSize = MtClassicMetrics.title, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                         IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Schließen") }
@@ -72,47 +73,20 @@ fun BookmarkBottomSheet(
                             Text("Keine Lesezeichen", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
-                        bookmarks.forEach { path ->
-                            BookmarkRow(
-                                path = path,
-                                activePane = activePane,
-                                onOpen = { pane -> onOpen(pane, path) },
-                                onRemove = { onRemove(path) },
-                            )
+                        Text("Nach links wischen oder lange drücken für Optionen", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                            items(bookmarks, key = { it.path }) { bookmark ->
+                                BookmarkRow(
+                                    bookmark = bookmark,
+                                    activePane = activePane,
+                                    onOpen = { pane -> onOpen(pane, bookmark.path) },
+                                    onEdit = { onEdit(bookmark) },
+                                    onRemove = { onRemove(bookmark) },
+                                )
+                            }
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BookmarkRow(
-    path: String,
-    activePane: ActivePane,
-    onOpen: (ActivePane) -> Unit,
-    onRemove: () -> Unit,
-) {
-    var menu by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier.fillMaxWidth().height(MtClassicMetrics.drawerRowHeight).clickable { onOpen(activePane) }.padding(start = 16.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(File(path).name.ifBlank { path }, fontSize = MtClassicMetrics.drawerText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(path, fontSize = MtClassicMetrics.drawerMeta, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Lesezeichenoptionen") }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Links öffnen") }, onClick = { menu = false; onOpen(ActivePane.LEFT) })
-                DropdownMenuItem(text = { Text("Rechts öffnen") }, onClick = { menu = false; onOpen(ActivePane.RIGHT) })
-                DropdownMenuItem(
-                    text = { Text("Entfernen") },
-                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null) },
-                    onClick = { menu = false; onRemove() },
-                )
             }
         }
     }

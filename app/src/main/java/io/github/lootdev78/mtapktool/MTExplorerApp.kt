@@ -1,6 +1,9 @@
 package io.github.lootdev78.mtapktool
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -14,6 +17,12 @@ import io.github.lootdev78.mtapktool.feature.explorer.screen.Screen
 
 @Composable
 fun MTExplorerApp(navController: NavHostController) {
+    val external by ExternalOpenBridge.request.collectAsState()
+    LaunchedEffect(external) {
+        if (external != null && navController.currentDestination?.route != Screen.Explorer.route) {
+            navController.navigate(Screen.Explorer.route) { popUpTo(Screen.Explorer.route); launchSingleTop = true }
+        }
+    }
     NavHost(
         navController = navController,
         startDestination = Screen.Explorer.route

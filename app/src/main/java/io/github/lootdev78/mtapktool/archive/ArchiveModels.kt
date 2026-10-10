@@ -66,4 +66,9 @@ data class ArchiveExtractRequest(
     val outputDirectory: File,
     val password: String = "",
     val deleteSourceAfterExtraction: Boolean = false,
+    val charset: String = "",
 )
+
+data class ArchiveTestResult(val entries: Int, val bytesRead: Long, val checks: String)
+
+data class ArchiveTestReport(val archiveName: String, val result: ArchiveTestResult? = null, val error: String? = null)

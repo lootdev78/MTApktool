@@ -1,5 +1,8 @@
 package io.github.lootdev78.mtapktool.feature.explorer.screen
 
+import io.github.lootdev78.mtapktool.feature.ftp.*
+import io.github.lootdev78.mtapktool.feature.tools.ToolsActivity
+import androidx.compose.material3.LinearProgressIndicator
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -92,12 +95,17 @@ import androidx.navigation.NavHostController
 import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import io.github.lootdev78.mtapktool.core.storage.SharedStorage
 import io.github.lootdev78.mtapktool.ExternalOpenBridge
+import io.github.lootdev78.mtapktool.feature.explorer.component.FilePermissionsDialog
+import io.github.lootdev78.mtapktool.feature.explorer.component.AdvancedSearchDialog
+import io.github.lootdev78.mtapktool.feature.explorer.component.MultiRenameDialog
+import io.github.lootdev78.mtapktool.tasks.ToolTaskRegistry
 import io.github.lootdev78.mtapktool.ExplorerOutputBridge
 import io.github.lootdev78.mtapktool.apktool.ApkFunctionsDialog
+import io.github.lootdev78.mtapktool.apktool.ApkEditorAction
+import io.github.lootdev78.mtapktool.apktool.ApkEditorDialog
 import io.github.lootdev78.mtapktool.apktool.ApkInfoDialog
 import io.github.lootdev78.mtapktool.apktool.ApkCloneDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolBuildDialog
-import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolDecodeDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolFrameworkImportDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolJobOutputDialog
@@ -112,6 +120,10 @@ import io.github.lootdev78.mtapktool.archive.ArchiveActionDialog
 import io.github.lootdev78.mtapktool.archive.ArchiveCreateDialog
 import io.github.lootdev78.mtapktool.archive.ArchiveEngine
 import io.github.lootdev78.mtapktool.archive.ArchiveExtractDialog
+import io.github.lootdev78.mtapktool.archive.ArchiveCharsetDialog
+import io.github.lootdev78.mtapktool.archive.ArchiveTestResultDialog
+import io.github.lootdev78.mtapktool.archive.ArchiveCharsets
+import io.github.lootdev78.mtapktool.archive.ArchiveFormat
 import io.github.lootdev78.mtapktool.feature.editor.FileInfoDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.ClassicFilePane
 import io.github.lootdev78.mtapktool.feature.explorer.component.EditHiddenFilesDialog
@@ -128,6 +140,10 @@ import io.github.lootdev78.mtapktool.feature.explorer.component.RenameDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.GoToPathDialog
 import io.github.lootdev78.mtapktool.feature.explorer.component.SelectionBottomBar
 import io.github.lootdev78.mtapktool.feature.explorer.component.BookmarkBottomSheet
+import io.github.lootdev78.mtapktool.feature.explorer.component.BookmarkEditorDialog
+import io.github.lootdev78.mtapktool.feature.explorer.component.BookmarkDeleteDialog
+import io.github.lootdev78.mtapktool.feature.explorer.state.Bookmark
+import io.github.lootdev78.mtapktool.feature.explorer.state.BookmarkStore
 import io.github.lootdev78.mtapktool.feature.explorer.component.SideBar
 import io.github.lootdev78.mtapktool.feature.explorer.model.FileItem
 import io.github.lootdev78.mtapktool.feature.explorer.saf.CustomLocation
@@ -144,7 +160,7 @@ import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ArchiveUpdateDec
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.FileConflictAction
 import io.github.lootdev78.mtapktool.feature.explorer.util.FileOpener
-import io.github.lootdev78.mtapktool.settings.AppSettingsDialog
+import io.github.lootdev78.mtapktool.settings.SettingsActivity
 import io.github.lootdev78.mtapktool.settings.SettingsPage
 import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import kotlinx.coroutines.CoroutineScope
@@ -168,6 +184,14 @@ fun ExplorerScreen(
     val apktoolJobsViewModel: ApktoolJobsViewModel = composeViewModel()
     val apktoolJobs by apktoolJobsViewModel.jobs.collectAsState()
     val archiveTasks by viewModel.archiveTasks.collectAsState()
+    val toolTasks by ToolTaskRegistry.tasks.collectAsState()
+    var selectedToolTaskId by remember { mutableStateOf<String?>(null) }
+    var permissionsItem by remember { mutableStateOf<FileItem?>(null) }
+    val fileTransfer by viewModel.fileTransfer.collectAsState()
+    val remoteEditRequest by viewModel.remoteEditRequest.collectAsState()
+    var showFtpClient by remember { mutableStateOf(false) }
+    var showFtpServer by remember { mutableStateOf(false) }
+    var transferRequest by remember { mutableStateOf<Pair<ActivePane, Boolean>?>(null) }
     var observedSuccessfulJobs by remember { mutableStateOf<Set<String>>(emptySet()) }
     var jobPaneById by remember { mutableStateOf<Map<String, ActivePane>>(emptyMap()) }
 
@@ -183,6 +207,8 @@ fun ExplorerScreen(
     val fileConflict by viewModel.fileConflict.collectAsState()
     val archiveUpdateRequest by viewModel.archiveUpdateRequest.collectAsState()
     val archivePasswordRequest by viewModel.archivePasswordRequest.collectAsState()
+    val archiveTestReport by viewModel.archiveTestReport.collectAsState()
+    var archiveCharsetPane by remember { mutableStateOf<ActivePane?>(null) }
 
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
@@ -191,12 +217,10 @@ fun ExplorerScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val bookmarkPreferences = remember(context) {
-        context.getSharedPreferences("explorer_bookmarks", Context.MODE_PRIVATE)
-    }
-    var bookmarks by remember(bookmarkPreferences) {
-        mutableStateOf(bookmarkPreferences.getStringSet("paths", emptySet()).orEmpty().toList().sorted())
-    }
+    var bookmarks by remember(context) { mutableStateOf(BookmarkStore.load(context)) }
+    var bookmarkEditor by remember { mutableStateOf<Bookmark?>(null) }
+    var bookmarkEditingPath by remember { mutableStateOf<String?>(null) }
+    var bookmarkToDelete by remember { mutableStateOf<Bookmark?>(null) }
     var showBookmarkSheet by remember { mutableStateOf(false) }
     var showSelectionMore by remember { mutableStateOf(false) }
     var customLocations by remember(context) { mutableStateOf(CustomLocationStore.load(context)) }
@@ -245,6 +269,13 @@ fun ExplorerScreen(
     var goToPane by remember { mutableStateOf<ActivePane?>(null) }
     var showPropertyDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showAdvancedSearch by remember { mutableStateOf(false) }
+    var searchPane by remember { mutableStateOf(ActivePane.LEFT) }
+    var renamePane by remember { mutableStateOf(ActivePane.LEFT) }
+    var renameItems by remember { mutableStateOf<List<FileItem>>(emptyList()) }
+    var showMultiRename by remember { mutableStateOf(false) }
+    var keyImportPath by remember { mutableStateOf<String?>(null) }
+    var searchHistory by remember { mutableStateOf(viewModel.searchHistory()) }
     var targetItem by remember { mutableStateOf<FileItem?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var showApkInfo by remember { mutableStateOf(false) }
@@ -252,6 +283,7 @@ fun ExplorerScreen(
     var showSplitPackage by remember { mutableStateOf(false) }
     var splitPackagePane by remember { mutableStateOf(ActivePane.LEFT) }
     var showApkFunctions by remember { mutableStateOf(false) }
+    var apkEditorAction by remember { mutableStateOf<ApkEditorAction?>(null) }
     var showApkClone by remember { mutableStateOf(false) }
     var showApktoolDecode by remember { mutableStateOf(false) }
     var showFrameworkImport by remember { mutableStateOf(false) }
@@ -261,7 +293,6 @@ fun ExplorerScreen(
     var appSettingsInitialPage by remember { mutableStateOf(SettingsPage.ROOT) }
     var showTaskPanel by remember { mutableStateOf(false) }
     var selectedJobId by remember { mutableStateOf<String?>(null) }
-    var showApktoolCli by remember { mutableStateOf(false) }
     var showApktoolOptions by remember { mutableStateOf(false) }
     var apktoolTarget by remember { mutableStateOf<File?>(null) }
     var showArchiveDialog by remember { mutableStateOf(false) }
@@ -287,10 +318,34 @@ fun ExplorerScreen(
         showDeleteConfirm = true
     }
 
-    val hasSelectedItems = activeState.selectedPaths.isNotEmpty()
+    val hasSelectedItems = leftState.selectedPaths.isNotEmpty() || rightState.selectedPaths.isNotEmpty()
+    val selectionPane = if (activeState.selectedPaths.isNotEmpty()) activePane else if (activePane == ActivePane.LEFT) ActivePane.RIGHT else ActivePane.LEFT
+    val selectionState = if (selectionPane == ActivePane.LEFT) leftState else rightState
+    fun persistBookmarks(entries: List<Bookmark>) {
+        bookmarks = entries
+        BookmarkStore.save(context, entries)
+    }
+    fun requestAddBookmark(path: String, name: String = BookmarkStore.defaultName(path)) {
+        if (activeState.isArchiveView || path.startsWith("mtftp://")) {
+            Toast.makeText(context, "Archiv-Arbeitsordner sind temporär; FTP-Orte über das Verbindungsprofil speichern", Toast.LENGTH_LONG).show()
+            return
+        }
+        val existing = bookmarks.firstOrNull { it.path == path }
+        bookmarkEditingPath = existing?.path
+        bookmarkEditor = existing ?: Bookmark(path, name)
+    }
     val canNavigateBack = viewModel.canNavigateUp(activePane)
 
     fun openInTextEditor(item: FileItem) {
+        if (item.isFtp) {
+            scope.launch {
+                val result = runCatching { viewModel.materializeFtpItem(item) }
+                result.onSuccess { file ->
+                    context.startActivity(Intent(context, MhTextEditorActivity::class.java).putExtra("path", file.absolutePath).putExtra("name", item.name))
+                }.onFailure { Toast.makeText(context, it.message, Toast.LENGTH_LONG).show() }
+            }
+            return
+        }
         val intent = Intent(context, MhTextEditorActivity::class.java).apply {
             if (item.isSaf) {
                 putExtra("uri", item.path)
@@ -306,15 +361,31 @@ fun ExplorerScreen(
     }
 
     fun materializeForTool(item: FileItem, pane: ActivePane, onReady: (File) -> Unit) {
+        if (item.isDirectory && (item.isFtp || item.isSaf)) {
+            scope.launch {
+                viewModel.setPaneBusy(pane, true, "Bereite ${item.name} vor")
+                val result = runCatching { viewModel.materializeForArchive(item) }
+                viewModel.setPaneBusy(pane, false)
+                result.onSuccess(onReady).onFailure { Toast.makeText(context, it.message, Toast.LENGTH_LONG).show() }
+            }
+            return
+        }
+        if (item.isFtp) {
+            scope.launch {
+                viewModel.setPaneBusy(pane, true, "Lade ${item.name}")
+                val result = runCatching { viewModel.materializeFtpItem(item) }
+                viewModel.setPaneBusy(pane, false)
+                result.onSuccess(onReady).onFailure { Toast.makeText(context, it.message, Toast.LENGTH_LONG).show() }
+            }
+            return
+        }
         if (!item.isSaf) {
             onReady(File(item.path))
             return
         }
         scope.launch {
             viewModel.setPaneBusy(pane, true, "Bereite ${item.name} vor")
-            val result = withContext(Dispatchers.IO) {
-                runCatching { SafFileSystem.materializeToCache(context, Uri.parse(item.path), item.name) }
-            }
+            val result = runCatching { viewModel.materializeDocumentItem(item, pane) }
             viewModel.setPaneBusy(pane, false)
             result.onSuccess(onReady)
                 .onFailure { Toast.makeText(context, it.message ?: "Datei konnte nicht geöffnet werden", Toast.LENGTH_SHORT).show() }
@@ -322,24 +393,19 @@ fun ExplorerScreen(
     }
 
     fun revealIncomingInLastPane(item: FileItem) {
+        if (item.isFtp) { viewModel.highlightDocument(activePane, FtpLocation.parent(item.path), item.name); return }
         if (!item.isSaf) {
             viewModel.revealOutput(activePane, item.path)
             return
         }
-        val uri = Uri.parse(item.path)
-        val local = runCatching {
-            if (uri.authority == "com.android.externalstorage.documents") {
-                val id = DocumentsContract.getDocumentId(uri)
-                val parts = id.split(':', limit = 2)
-                if (parts.firstOrNull().equals("primary", ignoreCase = true)) {
-                    File(SharedStorage.primaryRoot(), parts.getOrElse(1) { "" })
-                } else null
-            } else null
-        }.getOrNull()
-        if (local != null && local.exists()) {
-            viewModel.revealOutput(activePane, local.absolutePath)
-        } else {
-            Toast.makeText(context, "Der Original-Speicherort dieser URI ist für Android nicht direkt auflösbar.", Toast.LENGTH_LONG).show()
+        val pane = activePane
+        scope.launch {
+            val location = withContext(Dispatchers.IO) { runCatching { io.github.lootdev78.mtapktool.feature.explorer.util.ExternalUriLocator.locate(context, Uri.parse(item.path)) }.getOrNull() }
+            when {
+                location?.localFile != null -> viewModel.revealOutput(pane, location.localFile.absolutePath)
+                location?.parentDocumentUri != null -> viewModel.highlightDocument(pane, location.parentDocumentUri, item.name)
+                else -> Toast.makeText(context, "Der Dokumentanbieter gibt den Originalordner nicht frei. Über Speicher hinzufügen kann Ordnerzugriff erlaubt werden.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -434,6 +500,39 @@ fun ExplorerScreen(
         }
     }
 
+    fun openRemoteItem(pane: ActivePane, item: FileItem) {
+        if (item.isDirectory) { viewModel.loadDirectory(pane, item.path); return }
+        if (item.isEditableTextFile()) { openInTextEditor(item); return }
+        materializeForTool(item, pane) { local ->
+            when {
+                item.isArchiveFile() && ArchiveEngine.supports(local) -> viewModel.openArchive(pane, local)
+                isApkLike(local) -> { apktoolTarget = local; targetItem = FileItem(local); apkInfoPane = pane; showApkInfo = true }
+                item.isImageFile() -> navController.navigate(Screen.ImageViewer.createRoute(local.absolutePath, item.name))
+                item.isAudioFile() || item.isVideoFile() -> navController.navigate(Screen.MediaPlayer.createRoute(local.absolutePath, item.name, item.isVideoFile()))
+                else -> FileOpener.openFile(context, local)
+            }
+        }
+    }
+
+    if (showFtpClient) FtpClientDialog(activePane, { showFtpClient = false }, viewModel::connectFtp)
+    if (showFtpServer) FtpServerDialog(if (activeState.isFtpView || viewModel.isSafPane(activePane) || activeState.isArchiveView) rootPath else activeState.currentPath) { showFtpServer = false }
+    transferRequest?.let { (sourcePane, move) ->
+        val source = if (sourcePane == ActivePane.LEFT) leftState else rightState
+        val target = if (sourcePane == ActivePane.LEFT) rightState else leftState
+        MtClassicAlertDialog(onDismissRequest = { transferRequest = null }, title = { Text(if (move) "Auswahl verschieben" else "Auswahl kopieren") }, text = {
+            Column {
+                Text("${source.selectedPaths.size} Element(e)")
+                Text("Quelle: ${source.displayPath}", style = MaterialTheme.typography.bodySmall)
+                Text("Ziel: ${target.displayPath}", style = MaterialTheme.typography.bodySmall)
+            }
+        }, dismissButton = { TextButton(onClick = { transferRequest = null }) { Text("ABBRECHEN") } }, confirmButton = {
+            TextButton(enabled = !fileTransfer.running, onClick = {
+                transferRequest = null
+                if (move) viewModel.moveSelectedToOppositePane(sourcePane) else viewModel.copySelectedToOppositePane(sourcePane)
+            }) { Text(if (move) "VERSCHIEBEN" else "KOPIEREN") }
+        })
+    }
+
     // Dialogs
     if (showContextMenu && targetItem != null) {
         FileContextMenuDialog(
@@ -443,19 +542,22 @@ fun ExplorerScreen(
             onCopy = {
                 targetItem?.let { item ->
                     viewModel.ensureSelected(activePane, item.path)
-                    viewModel.copySelectedToOppositePane(activePane)
+                    transferRequest = activePane to false
                 }
                 showContextMenu = false
             },
             onMove = {
                 targetItem?.let { item ->
                     viewModel.ensureSelected(activePane, item.path)
-                    viewModel.moveSelectedToOppositePane(activePane)
+                    transferRequest = activePane to true
                 }
                 showContextMenu = false
             },
             onRename = {
-                showRenameDialog = true
+                val selected = activeState.filteredItems.filter { it.path in activeState.selectedPaths }
+                if (selected.size > 1 && targetItem?.path in activeState.selectedPaths) {
+                    renamePane = activePane; renameItems = selected; showMultiRename = true
+                } else showRenameDialog = true
                 showContextMenu = false
             },
             onDelete = {
@@ -485,8 +587,8 @@ fun ExplorerScreen(
             },
             onShare = {
                 targetItem?.let { item ->
-                    runCatching {
-                        val uri = if (item.isSaf) Uri.parse(item.path) else FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(item.path))
+                    materializeForTool(item, activePane) { file -> runCatching {
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                         val mimeType = item.mimeType ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(item.extensionName) ?: "*/*"
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = mimeType
@@ -495,7 +597,7 @@ fun ExplorerScreen(
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         context.startActivity(Intent.createChooser(intent, "Datei teilen"))
-                    }.onFailure { error -> Toast.makeText(context, "Teilen fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show() }
+                    }.onFailure { error -> Toast.makeText(context, "Teilen fehlgeschlagen: ${error.message}", Toast.LENGTH_SHORT).show() } }
                 }
                 showContextMenu = false
             },
@@ -505,10 +607,7 @@ fun ExplorerScreen(
             },
             onAddBookmark = {
                 targetItem?.let { item ->
-                    val updated = (bookmarks + item.path).distinct().sorted()
-                    bookmarks = updated
-                    bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
-                    Toast.makeText(context, "Lesezeichen hinzugefügt", Toast.LENGTH_SHORT).show()
+                    requestAddBookmark(item.path, item.name)
                 }
                 showContextMenu = false
             },
@@ -558,10 +657,34 @@ fun ExplorerScreen(
                 showBuiltInOpen = false
                 revealIncomingInLastPane(item)
             },
-            onExternalApp = {
+            onImageViewer = {
                 showBuiltInOpen = false
-                if (item.isSaf) FileOpener.openUri(context, Uri.parse(item.path), item.name, item.mimeType)
-                else FileOpener.openFile(context, File(item.path))
+                materializeForTool(item, activePane) { file -> navController.navigate(Screen.ImageViewer.createRoute(file.absolutePath, item.name)) }
+            },
+            onMediaPlayer = {
+                showBuiltInOpen = false
+                materializeForTool(item, activePane) { file -> navController.navigate(Screen.MediaPlayer.createRoute(file.absolutePath, item.name, item.isVideoFile())) }
+            },
+            onKeyImport = {
+                showBuiltInOpen = false
+                materializeForTool(item, activePane) { file ->
+                    scope.launch {
+                        val result = runCatching { ToolTaskRegistry.run("Keystore importieren", item.name) {
+                            withContext(Dispatchers.IO) {
+                                if (file.length() > 16 * 1024 * 1024) throw java.io.IOException("Keystore größer als 16 MiB")
+                                val directory = File(context.filesDir, "signing-keys").apply { mkdirs() }
+                                val output = File(directory, "import-${java.util.UUID.randomUUID()}.${file.extension.ifEmpty { "keystore" }}")
+                                try { file.copyTo(output); output.absolutePath } catch (error: Exception) { output.delete(); throw error }
+                            }
+                        } }
+                        result.onSuccess { keyImportPath = it }.onFailure { Toast.makeText(context, it.message, Toast.LENGTH_LONG).show() }
+                    }
+                }
+            },
+            onExternalApp = { mime ->
+                showBuiltInOpen = false
+                if (item.isSaf) FileOpener.openUri(context, Uri.parse(item.path), item.name, mime)
+                else materializeForTool(item, activePane) { file -> FileOpener.openFile(context, file, mime) }
             },
         )
     }
@@ -620,7 +743,7 @@ fun ExplorerScreen(
 
     if (showPropertyDialog && targetItem != null) {
         val item = targetItem!!
-        if (item.isSaf) {
+        if (item.isSaf || item.isFtp) {
             MtClassicAlertDialog(
                 onDismissRequest = { showPropertyDialog = false },
                 title = { Text(item.name) },
@@ -628,7 +751,8 @@ fun ExplorerScreen(
                     Column {
                         Text(if (item.isDirectory) "Folder" else "File")
                         if (!item.isDirectory) Text("Size: ${item.sizeText}")
-                        Text("Storage: Android document tree (read/write)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (item.isFtp) "Storage: FTP" else "Storage: Android document tree", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { showPropertyDialog = false; permissionsItem = item }) { Text("BERECHTIGUNGEN") }
                     }
                 },
                 confirmButton = { TextButton(onClick = { showPropertyDialog = false }) { Text("OK") } },
@@ -636,11 +760,49 @@ fun ExplorerScreen(
         } else {
             FileInfoDialog(
                 file = File(item.path),
+                onPermissions = { showPropertyDialog = false; permissionsItem = item },
                 onDismiss = { showPropertyDialog = false }
             )
         }
     }
+    permissionsItem?.let { item ->
+        FilePermissionsDialog(item,
+            onDismiss = { permissionsItem = null },
+            onChanged = { viewModel.refreshMountedArchiveStates() },
+            onDocumentGrant = { permissionsItem = null; addLocationLauncher.launch(null) },
+            readRemote = { viewModel.ftpPermissions(item.path) },
+            writeRemote = { mode -> viewModel.setFtpPermissions(item.path, mode) },
+        )
+    }
 
+    remoteEditRequest?.let { edit ->
+        MtClassicAlertDialog(
+            onDismissRequest = { viewModel.resolveRemoteEdit(false) },
+            title = { Text(if (edit.item.isSaf) "Dokument geändert" else "FTP-Datei geändert") },
+            text = { Text("${edit.item.name}\nDie lokale Arbeitskopie wurde geändert. " + (if (edit.item.isSaf) "Zum Originaldokument zurückschreiben?" else "Auf den FTP-Server hochladen?") + "\n\nLokale Kopie: ${edit.file.absolutePath}") },
+            confirmButton = { TextButton(onClick = { viewModel.resolveRemoteEdit(true) }) { Text(if (edit.item.isSaf) "ZURÜCKSCHREIBEN" else "HOCHLADEN") } },
+            dismissButton = { TextButton(onClick = { viewModel.resolveRemoteEdit(false) }) { Text("LOKAL BEHALTEN") } },
+        )
+    }
+
+    if (keyImportPath != null) io.github.lootdev78.mtapktool.feature.keys.KeyManagerDialog(onBack = { keyImportPath = null }, initialPath = keyImportPath)
+    if (showAdvancedSearch) {
+        AdvancedSearchDialog(
+            directory = (if (searchPane == ActivePane.LEFT) leftState else rightState).displayPath,
+            history = searchHistory,
+            onClearHistory = { viewModel.clearSearchHistory(); searchHistory = emptyList() },
+            onSearch = { viewModel.advancedSearch(searchPane, it); searchHistory = viewModel.searchHistory() },
+            onDismiss = { showAdvancedSearch = false },
+        )
+    }
+    if (showMultiRename) {
+        MultiRenameDialog(
+            count = renameItems.size,
+            onPreview = { viewModel.previewRename(renamePane, renameItems, it) },
+            onRename = viewModel::renameMultiple,
+            onDismiss = { showMultiRename = false },
+        )
+    }
     if (showRenameDialog && targetItem != null) {
         RenameDialog(
             initialName = targetItem!!.name,
@@ -866,8 +1028,17 @@ fun ExplorerScreen(
                     showApkFunctions = false
                     shareFile(context, file)
                 },
+                onEditorAction = { action -> showApkFunctions = false; apkEditorAction = action },
             )
         } ?: run { showApkFunctions = false }
+    }
+
+    apkEditorAction?.let { action ->
+        apktoolTarget?.takeIf { it.isFile && it.extension.equals("apk", true) }?.let { file ->
+            ApkEditorDialog(file, action, onDismiss = { apkEditorAction = null }, onJobQueued = { id ->
+                jobPaneById = jobPaneById + (id to apkInfoPane); selectedJobId = id
+            })
+        }
     }
 
     if (showApkClone) {
@@ -911,17 +1082,13 @@ fun ExplorerScreen(
         ApktoolSettingsDialog(onDismiss = { showApktoolSettings = false })
     }
 
-    if (showAppSettings) {
-        AppSettingsDialog(
-            onDismiss = { showAppSettings = false },
-            initialPage = appSettingsInitialPage,
-            onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId },
-        )
+    LaunchedEffect(showAppSettings) {
+        if (showAppSettings) {
+            context.startActivity(SettingsActivity.intent(context, appSettingsInitialPage))
+            showAppSettings = false
+        }
     }
 
-    if (showApktoolCli) {
-        ApktoolCliDialog(onDismiss = { showApktoolCli = false }, onJobQueued = { jobId -> jobPaneById = jobPaneById + (jobId to activePane); selectedJobId = jobId })
-    }
 
     selectedJobId?.let { jobId ->
         ApktoolJobOutputDialog(
@@ -1043,6 +1210,18 @@ fun ExplorerScreen(
         )
     }
 
+    archiveTestReport?.let { report ->
+        ArchiveTestResultDialog(report, onDismiss = viewModel::dismissArchiveTestReport)
+    }
+    archiveCharsetPane?.let { pane ->
+        val state = if (pane == ActivePane.LEFT) leftState else rightState
+        val path = state.archiveFilePath
+        if (path != null) ArchiveCharsetDialog(File(path).name, state.archiveCharset,
+            onDismiss = { archiveCharsetPane = null },
+            onConfirm = { charset -> archiveCharsetPane = null; viewModel.reloadArchiveCharset(pane, charset) })
+        else LaunchedEffect(pane) { archiveCharsetPane = null }
+    }
+
     if (showDeleteConfirm) {
         val state = if (deletePane == ActivePane.LEFT) leftState else rightState
         val count = state.selectedPaths.size
@@ -1104,7 +1283,8 @@ fun ExplorerScreen(
                         viewModel = viewModel,
                         bookmarks = bookmarks,
                         customLocations = customLocations,
-                        onBookmarkClick = { path -> viewModel.navigateToDirectPath(activePane, path) },
+                        onBookmarkClick = { pane, path -> viewModel.setActive(pane); viewModel.navigateToDirectPath(pane, path) },
+                        onEditBookmark = { bookmark -> bookmarkEditingPath = bookmark.path; bookmarkEditor = bookmark },
                         onCustomLocationClick = { location ->
                             viewModel.openCustomLocation(activePane, CustomLocationStore.rootDocumentUri(location).toString(), location.name)
                         },
@@ -1129,17 +1309,19 @@ fun ExplorerScreen(
                         },
                         onAddLocation = { addLocationLauncher.launch(null) },
                         onOpenApkExtractor = { navController.navigate(Screen.ApkExtractor.route) },
+                        onOpenTasks = { showTaskPanel = true },
+                        onOpenFtpClient = { showFtpClient = true },
+                        onOpenFtpServer = { showFtpServer = true },
+                        onOpenInspector = { context.startActivity(ToolsActivity.intent(context, "inspector")) },
+                        onOpenColorPicker = { context.startActivity(ToolsActivity.intent(context, "color")) },
+                        onDisconnectFtp = { viewModel.disconnectFtp(activePane) },
                         onOpenTextEditor = { runCatching { context.startActivity(Intent(context, MhTextEditorActivity::class.java)) } },
                         onOpenRecycleBin = { viewModel.openRecycleBin(activePane) },
                         onOpenKeyManager = {
                             appSettingsInitialPage = SettingsPage.SIGNATURE
                             showAppSettings = true
                         },
-                        onRemoveBookmark = { path ->
-                            val updated = bookmarks.filterNot { it == path }
-                            bookmarks = updated
-                            bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
-                        },
+                        onRemoveBookmark = { bookmark -> bookmarkToDelete = bookmark },
                         onOpenSettings = {
                             appSettingsInitialPage = SettingsPage.ROOT
                             showAppSettings = true
@@ -1224,7 +1406,7 @@ fun ExplorerScreen(
                             }
 
                             IconButton(
-                                onClick = { isSearching = true },
+                                onClick = { searchPane = activePane; searchHistory = viewModel.searchHistory(); showAdvancedSearch = true },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
@@ -1250,37 +1432,82 @@ fun ExplorerScreen(
                                     onDismissRequest = { showApktoolOptions = false }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Versteckte Dateien") },
-                                        leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null) },
-                                        onClick = { showApktoolOptions = false; showHiddenFiles = true },
+                                        text = { Text("Aktualisieren") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_refresh), null) },
+                                        onClick = { showApktoolOptions = false; viewModel.refreshDirectory(activePane) },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Filter") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_filter), null) },
+                                        onClick = { showApktoolOptions = false; isSearching = !isSearching; if (!isSearching) viewModel.clearSearch(activePane) },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Suchen") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_search), null) },
+                                        onClick = { showApktoolOptions = false; searchPane = activePane; searchHistory = viewModel.searchHistory(); showAdvancedSearch = true },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Alles auswählen") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_select_all), null) },
+                                        onClick = { showApktoolOptions = false; viewModel.selectAll(activePane) },
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Sortieren") },
-                                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null) },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_sort), null) },
                                         onClick = { showApktoolOptions = false; showSortFiles = true },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text(if (activeState.filter == FileFilter.ALL) "Filter" else "Filter: ${fileFilterLabel(activeState.filter)}") },
-                                        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
-                                        onClick = { showApktoolOptions = false; showFilterFiles = true },
+                                        text = { Text("Versteckte Dateien  ›") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_hidden), null) },
+                                        onClick = { showApktoolOptions = false; showHiddenFiles = true },
                                     )
-                                    if (activeState.currentPath == viewModel.recycleBinPath()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Zu Lesezeichen hinzufügen") },
+                                        enabled = !activeState.isArchiveView && !activeState.isFtpView,
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_bookmark), null) },
+                                        onClick = {
+                                            showApktoolOptions = false
+                                            requestAddBookmark(activeState.currentPath)
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Als Home festlegen") },
+                                        enabled = !activeState.isArchiveView && !activeState.isFtpView,
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_home), null) },
+                                        onClick = { showApktoolOptions = false; viewModel.setAsHome(activePane) },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Panels tauschen") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_swap), null) },
+                                        onClick = { showApktoolOptions = false; viewModel.swapPanes() },
+                                    )
+                                    if (activeState.isArchiveView) {
+                                        HorizontalDivider()
                                         DropdownMenuItem(
-                                            text = { Text("Papierkorb leeren") },
-                                            onClick = { showApktoolOptions = false; viewModel.emptyRecycleBin(activePane) },
+                                            text = { Text("Archiv testen") },
+                                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_selection_info), null) },
+                                            enabled = !activeState.isLoading,
+                                            onClick = { showApktoolOptions = false; viewModel.testOpenArchive(activePane) },
                                         )
+                                        val format = activeState.archiveFilePath?.let { ArchiveFormat.fromFile(File(it)) }
+                                        val canChooseCharset = ArchiveCharsets.supports(format)
+                                        DropdownMenuItem(
+                                            text = { Text(if (canChooseCharset) "Zeichensatz…" else "Zeichensatz (vom Format festgelegt)") },
+                                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_text_snippet), null) },
+                                            enabled = canChooseCharset && !activeState.isLoading,
+                                            onClick = { showApktoolOptions = false; archiveCharsetPane = activePane },
+                                        )
+                                        HorizontalDivider()
                                     }
                                     DropdownMenuItem(
-                                        text = { Text("Erstellen & Dekodieren") },
-                                        onClick = { showApktoolOptions = false; showApktoolSettings = true }
+                                        text = { Text("Einstellungen") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_settings), null) },
+                                        onClick = { showApktoolOptions = false; appSettingsInitialPage = SettingsPage.ROOT; showAppSettings = true },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Apktool Jobs (${apktoolJobs.count { !it.isTerminal }})") },
-                                        onClick = { showApktoolOptions = false; showTaskPanel = true }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Apktool CLI") },
-                                        onClick = { showApktoolOptions = false; showApktoolCli = true }
+                                        text = { Text("Beenden") },
+                                        leadingIcon = { Icon(painterResource(R.drawable.mt_ic_exit), null) },
+                                        onClick = { showApktoolOptions = false; viewModel.requestExit { (context as? android.app.Activity)?.finishAffinity() } },
                                     )
                                 }
                             }
@@ -1288,7 +1515,41 @@ fun ExplorerScreen(
                     }
                 }
 
+                if (leftState.searchResultsLabel != null || rightState.searchResultsLabel != null) {
+                    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant)) {
+                        ActivePane.entries.forEach { pane ->
+                            val resultState = if (pane == ActivePane.LEFT) leftState else rightState
+                            Row(Modifier.weight(1f).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                resultState.searchResultsLabel?.let { label ->
+                                    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                    IconButton(onClick = { viewModel.clearAdvancedSearch(pane) }, modifier = Modifier.size(30.dp)) {
+                                        Icon(painterResource(R.drawable.mt_ic_close), contentDescription = "Suchergebnisse schließen")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 // Dual Pane File List
+                if (leftState.isArchiveView || rightState.isArchiveView) {
+                    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant)) {
+                        ActivePane.entries.forEach { pane ->
+                            val state = if (pane == ActivePane.LEFT) leftState else rightState
+                            Column(Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                if (state.isArchiveView) {
+                                    val status = when (state.archiveStatus) {
+                                        io.github.lootdev78.mtapktool.archive.ArchiveSessionState.DIRTY -> "Geändert: ${state.archiveChanges}"
+                                        io.github.lootdev78.mtapktool.archive.ArchiveSessionState.UPDATING -> "Wird aktualisiert …"
+                                        io.github.lootdev78.mtapktool.archive.ArchiveSessionState.FAILED -> "Aktualisierung fehlgeschlagen"
+                                        else -> "Archiv geöffnet"
+                                    }
+                                    Text(status, fontSize = 11.sp, color = if (state.archiveChanges > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (state.archiveChanges > 0 || state.archiveStatus == io.github.lootdev78.mtapktool.archive.ArchiveSessionState.FAILED) TextButton(onClick = { viewModel.updateArchive(pane) }, enabled = !state.isLoading) { Text("AKTUALISIEREN", fontSize = 10.sp) }
+                                }
+                            }
+                        }
+                    }
+                }
                 Row(
                     modifier = Modifier
                         .weight(1f)
@@ -1308,6 +1569,8 @@ fun ExplorerScreen(
                                 viewModel.toggleSelection(ActivePane.LEFT, item.path, false)
                             } else {
                                 when {
+                                    item.isFtp -> openRemoteItem(ActivePane.LEFT, item)
+
                                     item.isSaf -> openSafItem(ActivePane.LEFT, item)
 
                                     isApkLike(File(item.path)) -> {
@@ -1385,6 +1648,8 @@ fun ExplorerScreen(
                                 viewModel.toggleSelection(ActivePane.RIGHT, item.path, false)
                             } else {
                                 when {
+                                    item.isFtp -> openRemoteItem(ActivePane.RIGHT, item)
+
                                     item.isSaf -> openSafItem(ActivePane.RIGHT, item)
 
                                     isApkLike(File(item.path)) -> {
@@ -1444,15 +1709,29 @@ fun ExplorerScreen(
                     )
                 }
 
+                if (fileTransfer.running) {
+                    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${fileTransfer.label} • ${fileTransfer.completed}/${fileTransfer.total} • ${io.github.lootdev78.mtapktool.feature.explorer.model.formatSize(fileTransfer.bytes)}", Modifier.weight(1f), fontSize = 11.sp, maxLines = 1)
+                            TextButton(onClick = viewModel::cancelFileTransfer) { Text("ABBRECHEN") }
+                        }
+                        LinearProgressIndicator(progress = { if (fileTransfer.total == 0) 0f else fileTransfer.completed.toFloat() / fileTransfer.total }, modifier = Modifier.fillMaxWidth())
+                    }
+                }
                 // Bottom Navigation Bar
                 if (hasSelectedItems) {
                     SelectionBottomBar(
-                        selectedCount = activeState.selectedPaths.size,
-                        onSelectAll = { viewModel.selectAll(activePane) },
-                        onCopySelected = { viewModel.copySelectedToOppositePane(activePane) },
-                        onMoveSelected = { viewModel.moveSelectedToOppositePane(activePane) },
-                        onDeleteSelected = { requestDelete(activePane) },
-                        onMoreOptions = { showSelectionMore = true },
+                        selectedCount = selectionState.selectedPaths.size,
+                        onSelectAll = { ActivePane.entries.filter { (if (it == ActivePane.LEFT) leftState else rightState).selectedPaths.isNotEmpty() }.forEach(viewModel::selectAll) },
+                        onInvertSelection = { ActivePane.entries.filter { (if (it == ActivePane.LEFT) leftState else rightState).selectedPaths.isNotEmpty() }.forEach(viewModel::invertSelection) },
+                        onSelectSameType = { ActivePane.entries.filter { (if (it == ActivePane.LEFT) leftState else rightState).selectedPaths.isNotEmpty() }.forEach(viewModel::selectSameType) },
+                        onExitSelection = { ActivePane.entries.forEach(viewModel::clearSelection) },
+                        destinationLabel = if (selectionPane == ActivePane.LEFT) "Rechtes Panel" else "Linkes Panel",
+                        enabled = !fileTransfer.running,
+                        onCopySelected = { transferRequest = selectionPane to false },
+                        onMoveSelected = { transferRequest = selectionPane to true },
+                        onDeleteSelected = { requestDelete(selectionPane) },
+                        onMoreOptions = { viewModel.setActive(selectionPane); showSelectionMore = true },
                         modifier = Modifier
                             .bookmarkSwipeUp { showBookmarkSheet = true }
                             .drawerSwipe(
@@ -1493,6 +1772,7 @@ fun ExplorerScreen(
                             )
                             BottomNavIconButton(
                                 icon = Icons.Default.SwapHoriz,
+                                description = "Panels tauschen",
                                 onClick = { viewModel.swapPanes() }
                             )
                             BottomNavIconButton(
@@ -1519,18 +1799,27 @@ fun ExplorerScreen(
             },
             onAddCurrent = {
                 val path = activeState.currentPath
-                if (path.isNotBlank()) {
-                    val updated = (bookmarks + path).distinct().sorted()
-                    bookmarks = updated
-                    bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
-                }
+                showBookmarkSheet = false
+                if (path.isNotBlank()) requestAddBookmark(path)
             },
-            onRemove = { path ->
-                val updated = bookmarks.filterNot { it == path }
-                bookmarks = updated
-                bookmarkPreferences.edit().putStringSet("paths", updated.toSet()).apply()
-            },
+            onEdit = { bookmark -> showBookmarkSheet = false; bookmarkEditingPath = bookmark.path; bookmarkEditor = bookmark },
+            onRemove = { bookmark -> showBookmarkSheet = false; bookmarkToDelete = bookmark },
         )
+    }
+
+    bookmarkEditor?.let { bookmark ->
+        BookmarkEditorDialog(bookmark, bookmarkEditingPath, bookmarks, onDismiss = { bookmarkEditor = null }, onSave = { updated ->
+            val entries = if (bookmarkEditingPath == null) bookmarks + updated
+                else bookmarks.map { if (it.path == bookmarkEditingPath) updated else it }
+            persistBookmarks(entries)
+            bookmarkEditor = null
+        })
+    }
+    bookmarkToDelete?.let { bookmark ->
+        BookmarkDeleteDialog(bookmark, onDismiss = { bookmarkToDelete = null }, onDelete = {
+            persistBookmarks(bookmarks.filterNot { it.path == bookmark.path })
+            bookmarkToDelete = null
+        })
     }
 
     if (showSelectionMore) {
@@ -1539,12 +1828,22 @@ fun ExplorerScreen(
             title = { Text("${activeState.selectedPaths.size} ausgewählt") },
             text = {
                 Column {
+                    TextButton(onClick = {
+                        showSelectionMore = false
+                        renamePane = activePane
+                        renameItems = activeState.filteredItems.filter { it.path in activeState.selectedPaths }
+                        showMultiRename = renameItems.isNotEmpty()
+                    }) { Text("UMBENENNEN") }
                     TextButton(onClick = { showSelectionMore = false; viewModel.invertSelection(activePane) }) { Text("AUSWAHL UMKEHREN") }
                     TextButton(onClick = {
                         showSelectionMore = false
                         archivePane = activePane
-                        archiveSources = activeState.selectedPaths.map(::File)
-                        showArchiveDialog = archiveSources.isNotEmpty()
+                        val selected = activeState.items.filter { it.path in activeState.selectedPaths }
+                        scope.launch {
+                            val result = runCatching { selected.map { viewModel.materializeForArchive(it) } }
+                            result.onSuccess { archiveSources = it; showArchiveDialog = it.isNotEmpty() }
+                                .onFailure { Toast.makeText(context, it.message, Toast.LENGTH_LONG).show() }
+                        }
                     }) { Text("KOMPRIMIEREN") }
                     TextButton(onClick = { showSelectionMore = false; viewModel.cancelSelection(activePane) }) { Text("AUSWAHL BEENDEN") }
                 }
@@ -1557,6 +1856,8 @@ fun ExplorerScreen(
         visible = showTaskPanel,
         jobs = apktoolJobs,
         archiveTasks = archiveTasks,
+        toolTasks = toolTasks,
+        onOpenToolTask = { selectedToolTaskId = it },
         onOpenJob = { jobId ->
             showTaskPanel = false
             selectedJobId = jobId
@@ -1569,6 +1870,18 @@ fun ExplorerScreen(
         onClearFinished = apktoolJobsViewModel::clearFinished,
         onDismiss = { showTaskPanel = false },
     )
+    toolTasks.firstOrNull { it.id == selectedToolTaskId }?.let { task ->
+        MtClassicAlertDialog(
+            onDismissRequest = { selectedToolTaskId = null },
+            title = { Text(task.title) },
+            text = { Text(task.log + "\n" + task.message) },
+            confirmButton = { TextButton(onClick = { selectedToolTaskId = null }) { Text("SCHLIESSEN") } },
+            dismissButton = {
+                if (!task.isTerminal && task.canCancel) TextButton(onClick = { ToolTaskRegistry.cancel(task.id) }) { Text("STOPPEN") }
+                task.outputPath?.let { output -> TextButton(onClick = { selectedToolTaskId = null; showTaskPanel = false; viewModel.revealOutput(activePane, output) }) { Text("DATEI ANZEIGEN") } }
+            },
+        )
+    }
 }
 
 private fun formatDiskG(bytes: Long): String = String.format(Locale.US, "%.2fG", bytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
@@ -1659,6 +1972,7 @@ fun SearchBar(
 @Composable
 private fun BottomNavIconButton(
     icon: ImageVector,
+    description: String? = null,
     onClick: () -> Unit
 ) {
     Box(
@@ -1678,7 +1992,7 @@ private fun BottomNavIconButton(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
+            contentDescription = description,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(22.dp)
         )

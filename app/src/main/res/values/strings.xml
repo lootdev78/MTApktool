@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">MTApktool</string>
+    <string name="mt_layout_inspector">MTApktool Layout Inspector</string>
+    <string name="mt_inspector_description">Liest auf Anforderung Ansichtshierarchie, Element-IDs, Positionen und Zustände für den Layout Inspector. Passworttexte werden ausgeblendet. Keine automatischen Eingaben und keine Übertragung.</string>
 </resources>

@@ -88,6 +88,22 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import io.github.lootdev78.mtapktool.core.theme.LocalExplorerColors
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+
+private fun readableChangedColor(background: Color): Color {
+    val luminance = background.luminance()
+    val target = if (luminance >= 0.179f) Color.Black else Color.White
+    val green = if (target == Color.Black) Color(0xFF157A2C) else Color(0xFF62D979)
+    for (step in 0..4) {
+        val candidate = lerp(green, target, step / 4f)
+        val foreground = candidate.luminance()
+        val contrast = (maxOf(foreground, luminance) + 0.05f) / (minOf(foreground, luminance) + 0.05f)
+        if (contrast >= 4.5f) return candidate
+    }
+    return target
+}
 
 @Composable
 fun ClassicFilePane(
@@ -113,13 +129,17 @@ fun ClassicFilePane(
 
 
     // Highlight border for active pane (optional visual clue)
-    val paneBgColor = if (isActive) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background
+    val explorerColors = LocalExplorerColors.current
+    val paneBgColor = explorerColors.panel
     val elevation = if (isActive) 2.dp else 0.dp
 
-    LaunchedEffect(paneState.highlightedItemName) {
-        val targetIndex = paneState.items.indexOfFirst { it.name == paneState.highlightedItemName }
-        if (targetIndex != -1) {
-            listState.animateScrollToItem(targetIndex)
+    val visibleItems = paneState.filteredItems
+    val hasProjectRow = paneState.searchResultsLabel == null && !paneState.isFtpView && !paneState.currentPath.startsWith("content://") && File(paneState.currentPath, "apktool.yml").isFile
+    LaunchedEffect(paneState.currentPath, paneState.highlightedItemName, paneState.highlightedItemPath, paneState.highlightEvent, visibleItems, paneState.isLoading) {
+        val targetIndex = visibleItems.indexOfFirst { if (paneState.highlightedItemPath != null) it.path == paneState.highlightedItemPath else it.name == paneState.highlightedItemName }
+        if (!paneState.isLoading && targetIndex >= 0) {
+            val headerRows = if (paneState.searchQuery.isEmpty()) 1 + (if (hasProjectRow) 1 else 0) else 0
+            listState.animateScrollToItem(targetIndex + headerRows)
         }
     }
 
@@ -144,14 +164,15 @@ fun ClassicFilePane(
                 indication = null,
                 onClick = onFocus
             ),
-        color = paneBgColor
+        color = paneBgColor,
+        contentColor = explorerColors.onPanel,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (paneState.isLoading) {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)),
+                        .background(paneBgColor.copy(alpha = 0.96f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -160,7 +181,7 @@ fun ClassicFilePane(
                         paneState.loadingLabel?.let { label ->
                             Text(
                                 label,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = explorerColors.onPanel,
                                 fontSize = 13.sp,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
@@ -194,8 +215,8 @@ fun ClassicFilePane(
                     ) {
                         // Project build action belongs at the very top and uses the same row metrics as files.
                         if (paneState.searchQuery.isEmpty()) {
-                            val currentProject = if (paneState.currentPath.startsWith("content://")) null else File(paneState.currentPath)
-                            if (currentProject != null && File(currentProject, "apktool.yml").isFile) {
+                            val currentProject = if (paneState.isFtpView || paneState.currentPath.startsWith("content://")) null else File(paneState.currentPath)
+                            if (paneState.searchResultsLabel == null && currentProject != null && File(currentProject, "apktool.yml").isFile) {
                                 item(key = "__mtapktool_build__${paneState.currentPath}") {
                                     ApktoolProjectBuildRow(
                                         project = currentProject,
@@ -322,13 +343,13 @@ private fun ParentDirectoryRow(prefs: ExplorerPrefs, onClick: () -> Unit) {
             modifier = Modifier
                 .size(metrics.iconSize)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF111111)),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector =  Icons.Default.Folder,
                 contentDescription = null,
-                tint = Color(0xFFD0D0D0),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(metrics.innerIconSize)
             )
         }
@@ -361,7 +382,7 @@ private fun ClassicFileRow(
         key1 = item.path,
         key2 = item.modifiedAt,
     ) {
-        value = if (!item.isSaf && !item.isDirectory && item.extensionName == "apk") {
+        value = if (!item.isSaf && !item.isFtp && !item.isDirectory && item.extensionName == "apk") {
             withContext(Dispatchers.IO) { ApkArchiveReader.icon(context, item.file) }
         } else {
             null
@@ -372,12 +393,18 @@ private fun ClassicFileRow(
     val offsetX = remember { Animatable(0f) }
     var hasTriggeredSwipe by remember { mutableStateOf(false) }
 
+    val explorerColors = LocalExplorerColors.current
+    val rowBackground = if (isSelected) MaterialTheme.colorScheme.primaryContainer else explorerColors.panel
+    val rowText = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else explorerColors.onPanel
+    val detailText = if (isSelected) rowText else explorerColors.secondaryText
+
     // Dynamic background color state
     val targetBackgroundColor = when {
-        isPressed -> Color(0xFF365F6E)
-        isSelected -> Color(0xFF2B5666)
+        isPressed -> lerp(rowBackground, MaterialTheme.colorScheme.primary, 0.14f)
+        isSelected -> rowBackground
         else -> Color.Transparent
     }
+    val changedText = readableChangedColor(if (targetBackgroundColor == Color.Transparent) rowBackground else targetBackgroundColor)
 
     val animatedBgColor by animateColorAsState(
         targetValue = targetBackgroundColor,
@@ -455,7 +482,7 @@ private fun ClassicFileRow(
         val isApktoolProject = item.isDirectory && File(item.path, "apktool.yml").isFile
         val (icon, iconColor) = when {
             isApktoolProject -> Icons.Default.Build to ColorApk
-            item.isDirectory -> Icons.Default.Folder to Color(0xFFD0D0D0)
+            item.isDirectory -> Icons.Default.Folder to MaterialTheme.colorScheme.onPrimaryContainer
 
             item.isApkFile() ->
                 Icons.Default.Android to ColorApk
@@ -486,10 +513,11 @@ private fun ClassicFileRow(
         Box(
             modifier = Modifier
                 .size(metrics.iconSize)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (item.isDirectory) MaterialTheme.colorScheme.primaryContainer else Color.Transparent),
             contentAlignment = Alignment.Center
         ) {
-            if (item.isImageFile() && (!item.isSaf || prefs.loadExternalThumbnails)) {
+            if (!item.isFtp && item.isImageFile() && (!item.isSaf || prefs.loadExternalThumbnails)) {
                 AsyncImage(
                     model = item.path,
                     contentDescription = null,
@@ -507,7 +535,7 @@ private fun ClassicFileRow(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(if (item.isDirectory) Color(0xFF111111) else iconColor.copy(alpha = 0.18f)),
+                        .background(if (item.isDirectory) MaterialTheme.colorScheme.primaryContainer else iconColor.copy(alpha = 0.18f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -534,12 +562,16 @@ private fun ClassicFileRow(
                 style = LocalTextStyle.current.copy(
                     platformStyle = PlatformTextStyle(includeFontPadding = false)
                 ),
-                color = if (isRecentlyChanged) Color(0xFF2CBF4A) else MaterialTheme.colorScheme.onSurface,
+                color = if (isRecentlyChanged) changedText else rowText,
                 maxLines = prefs.maxFileNameLines.coerceIn(1, 8),
                 overflow = TextOverflow.Ellipsis
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!prefs.disablePermissionInFileList && item.unixMode != null) {
+                    Text(item.unixMode.toString(8).padStart(4, '0'), fontSize = metrics.detailSize, color = detailText)
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(
                     text = formatItemDate(item.modifiedAt, prefs),
                     fontSize = metrics.detailSize,
@@ -547,7 +579,7 @@ private fun ClassicFileRow(
                     style = LocalTextStyle.current.copy(
                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = detailText
                 )
 
                 if (!item.isDirectory && item.sizeText.isNotEmpty()) {
@@ -559,7 +591,7 @@ private fun ClassicFileRow(
                         style = LocalTextStyle.current.copy(
                             platformStyle = PlatformTextStyle(includeFontPadding = false)
                         ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = detailText
                     )
                 }
             }

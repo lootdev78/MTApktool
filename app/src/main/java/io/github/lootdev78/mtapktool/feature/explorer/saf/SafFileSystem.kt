@@ -105,8 +105,8 @@ object SafFileSystem {
         return candidate
     }
 
-    fun create(context: Context, parentUri: Uri, name: String, directory: Boolean): Uri {
-        val mime = if (directory) DocumentsContract.Document.MIME_TYPE_DIR else guessMime(name)
+    fun create(context: Context, parentUri: Uri, name: String, directory: Boolean, mimeOverride: String? = null): Uri {
+        val mime = if (directory) DocumentsContract.Document.MIME_TYPE_DIR else mimeOverride ?: guessMime(name)
         return DocumentsContract.createDocument(context.contentResolver, parentUri, mime, name)
             ?: throw IOException("Could not create $name")
     }

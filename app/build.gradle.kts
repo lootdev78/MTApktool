@@ -103,6 +103,8 @@ configurations.configureEach {
 }
 
 dependencies {
+    implementation(project(":mt-ftp"))
+    implementation(project(":mt-crypto"))
     implementation(project(":apktool-android"))
     implementation(project(":apksig-android"))
     implementation(project(":antisplit-m"))

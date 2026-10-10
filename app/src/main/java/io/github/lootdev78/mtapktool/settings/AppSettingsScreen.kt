@@ -50,7 +50,6 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.lootdev78.mtapktool.core.theme.MtClassicTopBar
 import io.github.lootdev78.mtapktool.core.theme.MtClassicAlertDialog
 import io.github.lootdev78.mtapktool.BuildConfig
-import io.github.lootdev78.mtapktool.apktool.ApktoolCliDialog
 import io.github.lootdev78.mtapktool.apktool.ApktoolSettingsDialog
 import io.github.lootdev78.mtapktool.apktool.SignatureManagerDialog
 import io.github.lootdev78.mtapktool.archive.ArchiveFormat
@@ -60,7 +59,7 @@ import io.github.lootdev78.mtapktool.core.theme.ThemeManager
 import io.github.lootdev78.mtapktool.core.theme.ThemeMode
 import kotlinx.coroutines.launch
 
-enum class SettingsPage { ROOT, GENERAL, APKTOOL, SIGNATURE, ARCHIVE, CLI, FAQ, ABOUT }
+enum class SettingsPage { ROOT, GENERAL, APKTOOL, SIGNATURE, ARCHIVE, FAQ, ABOUT }
 
 private data class SettingsEntry(
     val title: String,
@@ -71,25 +70,21 @@ private data class SettingsEntry(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppSettingsDialog(
+fun AppSettingsScreen(
     onDismiss: () -> Unit,
-    onJobQueued: (String) -> Unit = {},
     initialPage: SettingsPage = SettingsPage.ROOT,
 ) {
-    var page by remember(initialPage) { mutableStateOf(initialPage) }
+    var page by androidx.compose.runtime.saveable.rememberSaveable(initialPage) { mutableStateOf(initialPage) }
+    androidx.activity.compose.BackHandler { if (page == SettingsPage.ROOT) onDismiss() else page = SettingsPage.ROOT }
     var searchMode by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
     if (page == SettingsPage.APKTOOL) {
-        ApktoolSettingsDialog(onDismiss = { page = SettingsPage.ROOT })
+        ApktoolSettingsDialog(onDismiss = { page = SettingsPage.ROOT }, embedded = true)
         return
     }
     if (page == SettingsPage.SIGNATURE) {
         SignatureManagerDialog(onBack = { page = SettingsPage.ROOT })
-        return
-    }
-    if (page == SettingsPage.CLI) {
-        ApktoolCliDialog(onDismiss = { page = SettingsPage.ROOT }, onJobQueued = onJobQueued)
         return
     }
     if (page == SettingsPage.GENERAL) {
@@ -97,7 +92,7 @@ fun AppSettingsDialog(
         return
     }
     if (page == SettingsPage.ARCHIVE) {
-        ArchiveDefaultsDialog(onBack = { page = SettingsPage.ROOT })
+        ArchiveSettingsScreen(onBack = { page = SettingsPage.ROOT })
         return
     }
     if (page == SettingsPage.FAQ) {
@@ -111,10 +106,9 @@ fun AppSettingsDialog(
 
     val entries = listOf(
         SettingsEntry("Anwendung", "Globale Anwendungseinstellungen konfigurieren.", Icons.Default.Settings, SettingsPage.GENERAL),
-        SettingsEntry("Erstellen & Dekodieren", "Apktool für Erstellen, Dekodieren, Frameworks und AAPT2 konfigurieren.", Icons.Default.Build, SettingsPage.APKTOOL),
+        SettingsEntry("Apktool", "Apktool für Erstellen, Dekodieren, Frameworks und AAPT2 konfigurieren.", Icons.Default.Build, SettingsPage.APKTOOL),
         SettingsEntry("Schlüssel & Zertifikate", "Keystore, Zertifikat und APK-Signaturschemata verwalten.", Icons.Default.VpnKey, SettingsPage.SIGNATURE),
         SettingsEntry("Archivierung", "Format, Kompressionsstufe und Standardoptionen festlegen.", Icons.Default.Archive, SettingsPage.ARCHIVE),
-        SettingsEntry("Apktool CLI", "Vollständige Apktool-Kommandos direkt als Job ausführen.", Icons.Default.Code, SettingsPage.CLI),
         SettingsEntry("FAQ", "Hilfe zur Benutzung des Programms", Icons.AutoMirrored.Filled.HelpOutline, SettingsPage.FAQ),
         SettingsEntry("Über", "Informationen über App, Runtime und integriertes Apktool", Icons.Default.Info, SettingsPage.ABOUT),
     )
@@ -122,10 +116,7 @@ fun AppSettingsDialog(
         query.isBlank() || it.title.contains(query, ignoreCase = true) || it.subtitle.contains(query, ignoreCase = true)
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true),
-    ) {
+    SettingsPageContainer(asDialog = false, onDismiss = onDismiss) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
@@ -180,11 +171,11 @@ private fun SettingsRow(entry: SettingsEntry, onClick: () -> Unit) {
 
 @Composable
 private fun GeneralSettingsDialog(onBack: () -> Unit) {
-    ExplorerPreferencesDialog(onBack = onBack)
+    ExplorerPreferencesDialog(onBack = onBack, embedded = true)
 }
 
 @Composable
-private fun ArchiveDefaultsDialog(onBack: () -> Unit) {
+internal fun ArchiveDefaultsDialog(onBack: () -> Unit) {
     val context = LocalContext.current
     var defaults by remember { mutableStateOf(ArchiveSettings.load(context)) }
     var formatMenu by remember { mutableStateOf(false) }
@@ -192,7 +183,7 @@ private fun ArchiveDefaultsDialog(onBack: () -> Unit) {
 
     MtClassicAlertDialog(
         onDismissRequest = onBack,
-        title = { Text("Archivierung") },
+        title = { Text("Verpacken – Vorgaben") },
         text = {
             Column {
                 Text("Format", style = MaterialTheme.typography.labelLarge)

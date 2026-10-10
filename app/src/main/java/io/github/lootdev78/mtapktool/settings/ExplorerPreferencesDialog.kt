@@ -120,7 +120,7 @@ private val builtInLabels = mapOf(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun ExplorerPreferencesDialog(onBack: () -> Unit) {
+fun ExplorerPreferencesDialog(onBack: () -> Unit, embedded: Boolean = false) {
     val context = LocalContext.current
     ExplorerPreferences.init(context)
     val prefs by ExplorerPreferences.state.collectAsState()
@@ -141,15 +141,12 @@ fun ExplorerPreferencesDialog(onBack: () -> Unit) {
     var startupRightDialog by remember { mutableStateOf(false) }
     var autoCleanDialog by remember { mutableStateOf(false) }
 
-    Dialog(
-        onDismissRequest = onBack,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true),
-    ) {
+    io.github.lootdev78.mtapktool.settings.SettingsPageContainer(asDialog = !embedded, onDismiss = onBack) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
                     MtClassicTopBar(
-                        title = { Text("Preferences") },
+                        title = { Text("Anwendung") },
                         navigationIcon = {
                             IconButton(onClick = onBack) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")

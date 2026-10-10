@@ -76,16 +76,20 @@ import io.github.lootdev78.mtapktool.feature.explorer.saf.CustomLocation
 import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ExplorerViewModel
 import io.github.lootdev78.mtapktool.settings.ExplorerPreferences
 import java.io.File
+import io.github.lootdev78.mtapktool.feature.explorer.state.Bookmark
+import io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane
+import androidx.compose.runtime.key
 import kotlin.math.abs
 
 @Composable
 fun SideBar(
     drawerWidth: Dp,
     viewModel: ExplorerViewModel = viewModel(),
-    bookmarks: List<String> = emptyList(),
+    bookmarks: List<Bookmark> = emptyList(),
     customLocations: List<CustomLocation> = emptyList(),
-    onBookmarkClick: (String) -> Unit = {},
-    onRemoveBookmark: (String) -> Unit = {},
+    onBookmarkClick: (ActivePane, String) -> Unit = { _, _ -> },
+    onEditBookmark: (Bookmark) -> Unit = {},
+    onRemoveBookmark: (Bookmark) -> Unit = {},
     onCustomLocationClick: (CustomLocation) -> Unit = {},
     onCustomLocationLongClick: (CustomLocation) -> Unit = {},
     onCustomLocationDelete: (CustomLocation) -> Unit = {},
@@ -94,9 +98,15 @@ fun SideBar(
     onAddLocation: () -> Unit = {},
     onOpenApkExtractor: () -> Unit = {},
     onOpenTextEditor: () -> Unit = {},
+    onOpenFtpClient: () -> Unit = {},
+    onOpenFtpServer: () -> Unit = {},
+    onOpenInspector: () -> Unit = {},
+    onOpenColorPicker: () -> Unit = {},
+    onDisconnectFtp: () -> Unit = {},
     onOpenRecycleBin: () -> Unit = {},
     onOpenKeyManager: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenTasks: () -> Unit = {},
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -116,6 +126,10 @@ fun SideBar(
             add("installed")
             add("text")
             add("keys")
+            add("ftp-client")
+            add("ftp-server")
+            add("inspector")
+            add("color")
             if (explorerPrefs.recycleBinEnabled) add("recycle")
         }
     }
@@ -123,7 +137,7 @@ fun SideBar(
 
     ModalDrawerSheet(
         modifier = Modifier.fillMaxHeight().width(drawerWidth),
-        drawerContainerColor = MaterialTheme.colorScheme.surface,
+        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         drawerContentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
@@ -159,16 +173,12 @@ fun SideBar(
                                 onClick = { headerMenu = false; showHiddenLocations = !showHiddenLocations },
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("Preferences") },
-                            leadingIcon = { Icon(painterResource(R.drawable.mt_ic_settings), null) },
-                            onClick = { headerMenu = false; onOpenSettings() },
-                        )
                     }
                 }
             }
         }
 
+        DrawerToolRow("Home", R.drawable.mt_ic_home, false, onClick = { onClose(); viewModel.navigateHome(activePane) }) { }
         StorageList(storages = storageRoots) { storage ->
             onClose()
             viewModel.navigateToDirectPath(activePane, storage.path)
@@ -196,15 +206,17 @@ fun SideBar(
         if (bookmarks.isNotEmpty()) {
             HorizontalDivider()
             Text("Lesezeichen", modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            bookmarks.forEach { path ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable { onClose(); onBookmarkClick(path) }.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(painterResource(R.drawable.mt_ic_folder), contentDescription = null, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(File(path).name.ifBlank { path }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    IconButton(onClick = { onRemoveBookmark(path) }) { Icon(painterResource(R.drawable.mt_ic_delete), contentDescription = "Lesezeichen entfernen") }
+            Text("Nach links wischen oder lange drücken für Optionen", modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            bookmarks.forEach { bookmark ->
+                key(bookmark.path) {
+                    BookmarkRow(
+                        bookmark = bookmark,
+                        activePane = activePane,
+                        onOpen = { pane -> onClose(); onBookmarkClick(pane, bookmark.path) },
+                        onEdit = { onEditBookmark(bookmark) },
+                        onRemove = { onRemoveBookmark(bookmark) },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    )
                 }
             }
         }
@@ -217,6 +229,12 @@ fun SideBar(
             Icon(Icons.Default.ExpandLess, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
+        val left by viewModel.leftPaneState.collectAsState()
+        val right by viewModel.rightPaneState.collectAsState()
+        if ((if (activePane == io.github.lootdev78.mtapktool.feature.explorer.viewmodel.ActivePane.LEFT) left else right).isFtpView) {
+            DrawerToolRow("FTP im aktiven Panel trennen", R.drawable.mt_ic_close, false, onClick = { onClose(); onDisconnectFtp() }) { }
+        }
+        DrawerToolRow("Tasks", R.drawable.mt_ic_selection_info, false, onClick = { onClose(); onOpenTasks() }) { }
         toolOrder.forEach { id ->
             when (id) {
                 "installed" -> DrawerToolRow("Installed Apps", R.drawable.mt_ic_android, sortMode, onClick = { onClose(); onOpenApkExtractor() }) { delta ->
@@ -225,6 +243,10 @@ fun SideBar(
                 "text" -> DrawerToolRow("Text Editor", R.drawable.mt_ic_text, sortMode, onClick = { onClose(); onOpenTextEditor() }) { delta ->
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }
+                "ftp-client" -> DrawerToolRow("FTP-Client", R.drawable.mt_ic_folder, sortMode, onClick = { onClose(); onOpenFtpClient() }) { delta -> toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder) }
+                "ftp-server" -> DrawerToolRow("FTP-Server", R.drawable.mt_ic_tools, sortMode, onClick = { onClose(); onOpenFtpServer() }) { delta -> toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder) }
+                "inspector" -> DrawerToolRow("Layout Inspector", R.drawable.mt_ic_search, sortMode, onClick = { onClose(); onOpenInspector() }) { delta -> toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder) }
+                "color" -> DrawerToolRow("Color Picker", R.drawable.mt_ic_file, sortMode, onClick = { onClose(); onOpenColorPicker() }) { delta -> toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder) }
                 "keys" -> DrawerToolRow("Key & Certificate Manager", R.drawable.mt_ic_key, sortMode, onClick = { onClose(); onOpenKeyManager() }) { delta ->
                     toolOrder = moveId(toolOrder, id, delta); saveToolOrder(context, toolOrder)
                 }

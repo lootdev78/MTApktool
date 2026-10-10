@@ -19,11 +19,22 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.ViewGroup;
+import android.widget.Button;
+import androidx.activity.OnBackPressedCallback;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.ContextThemeWrapper;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.ProgressBar;
@@ -92,6 +103,31 @@ public class MainActivity extends ComponentActivity {
             "#", "@", "`"
     );
 
+    private static final int OPEN_DOCUMENT = 8801, SAVE_DOCUMENT = 8802, PICK_COLOR = 8803;
+    private static final int MAX_OPEN_FILES = 12;
+    private static final long MAX_EDITOR_BYTES = 16L * 1024 * 1024;
+    private EditorDrawerLayout fileDrawer;
+    private TextView navigationDocumentTitle;
+    private ImageButton navigationSaveButton;
+    private final List<EditorTab> tabs = new ArrayList<>();
+    private EditorTab activeTab;
+    private EditorTab savingAsTab;
+    private Runnable savingAsSuccess;
+    private boolean restoringSession;
+    private final Runnable checkpoint = this::persistEditorSession;
+    private volatile boolean discardSession;
+
+    private static final class EditorTab {
+        final String id = UUID.randomUUID().toString();
+        File file;
+        Uri uri;
+        String title = "Unbenannt", savedText = "";
+        Charset charset = StandardCharsets.UTF_8, savedCharset = StandardCharsets.UTF_8;
+        String eol = "\n", savedEol = "\n";
+        EditView view;
+        boolean loading, saving;
+    }
+
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final Handler mHandler = new Handler(Looper.getMainLooper()) {
         @Override
@@ -108,6 +144,7 @@ public class MainActivity extends ComponentActivity {
         setContentView(R.layout.activity_main);
         configureWindowInsets();
         initialize();
+        setupFileNavigation();
         initializeLogic();
     }
 
@@ -115,8 +152,7 @@ public class MainActivity extends ComponentActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         final View root = findViewById(R.id.rootLayout);
         final View bottom = findViewById(R.id.linear_bottom_layout);
-        final boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                == Configuration.UI_MODE_NIGHT_YES;
+        final boolean dark = isHostDarkTheme();
         WindowInsetsControllerCompat bars = new WindowInsetsControllerCompat(getWindow(), root);
         bars.setAppearanceLightStatusBars(!dark);
         bars.setAppearanceLightNavigationBars(!dark);
@@ -137,18 +173,16 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void applyHostTheme() {
+        setTheme(isHostDarkTheme() ? R.style.MTApktoolEditorTheme_Dark : R.style.MTApktoolEditorTheme_Light);
+    }
+
+    private boolean isHostDarkTheme() {
         String mode = getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE)
                 .getString("mode", "SYSTEM");
-        boolean dark;
-        if ("DARK".equals(mode)) {
-            dark = true;
-        } else if ("LIGHT".equals(mode)) {
-            dark = false;
-        } else {
-            dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                    == Configuration.UI_MODE_NIGHT_YES;
-        }
-        setTheme(dark ? R.style.MTApktoolEditorTheme_Dark : R.style.MTApktoolEditorTheme_Light);
+        if ("DARK".equals(mode)) return true;
+        if ("LIGHT".equals(mode)) return false;
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
     }
 
     private void initialize() {
@@ -217,69 +251,20 @@ public class MainActivity extends ComponentActivity {
             }
         }
 
-        editView.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                // Log.d(TAG, "beforeTextChanged: " + s.length());
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                // Log.d(TAG, "onTextChanged: " + s.length());
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                // Log.d(TAG, "afterTextChanged: " + s.length());
-            }
-        });
-        editView.setOnTextChangedListener(new OnTextChangedListener() {
-            @Override
-            public void onTextChanged() {
-                mHandler.sendEmptyMessage(0);
-                editView.postInvalidate();
-            }
-        });
-        editView.setOnSelectionChangeListener(new EditView.OnSelectionChangeListener() {
-            @Override
-            public void onSelectionChanged(int start, int end) {
-                mHandler.sendEmptyMessage(0);
-            }
-        });
+        EditorTab draft = new EditorTab(); draft.view = editView; tabs.add(draft); activeTab = draft;
+        bindDocument(draft);
+        boolean restored = restoreEditorSession();
         Intent launchIntent = getIntent();
         String directPath = launchIntent != null ? launchIntent.getStringExtra("path") : null;
         String directUri = launchIntent != null ? launchIntent.getStringExtra("uri") : null;
-        sourceDisplayName = launchIntent != null ? launchIntent.getStringExtra("name") : null;
-        if (directUri != null && !directUri.isEmpty()) {
-            try {
-                sourceUri = Uri.parse(directUri);
-                File temp = new File(getCacheDir(), "editor-" + System.nanoTime() + "-" +
-                        (sourceDisplayName == null ? "document.txt" : sourceDisplayName.replace('/', '_')));
-                try (InputStream in = getContentResolver().openInputStream(sourceUri);
-                     FileOutputStream out = new FileOutputStream(temp)) {
-                    if (in == null) throw new IOException("Cannot open document");
-                    byte[] buffer = new byte[1024 * 256];
-                    int read;
-                    while ((read = in.read(buffer)) >= 0) if (read > 0) out.write(buffer, 0, read);
-                }
-                mSharedPreference.edit().putString("path", temp.getAbsolutePath()).apply();
-                setTitle(sourceDisplayName == null ? "Text Editor" : sourceDisplayName);
-                readFileAsync(temp.getAbsolutePath());
-            } catch (Exception error) {
-                Toast.makeText(this, error.getMessage() == null ? "Open failed" : error.getMessage(), Toast.LENGTH_LONG).show();
-            }
-        } else if (directPath != null && !directPath.isEmpty() && new File(directPath).isFile()) {
-            mSharedPreference.edit().putString("path", directPath).apply();
-            setTitle(new File(directPath).getName());
-            readFileAsync(directPath);
-        } else if (mSharedPreference.contains("path")) {
-            String path = mSharedPreference.getString("path", "");
-            if (new File(path).exists()) {
-                setTitle(new File(path).getName());
-                readFileAsync(path);
-            }
+        String title = launchIntent != null ? launchIntent.getStringExtra("name") : null;
+        if (directUri != null && !directUri.isEmpty()) openDocument(null, Uri.parse(directUri), title);
+        else if (directPath != null && !directPath.isEmpty()) openDocument(new File(directPath), null, title);
+        else if (!restored && mSharedPreference.contains("path")) {
+            File previous = new File(mSharedPreference.getString("path", ""));
+            if (previous.isFile() && !previous.getPath().startsWith(getCacheDir().getPath())) openDocument(previous, null, previous.getName());
         }
-
+        rebuildFileDrawer();
         if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
             externalPath = resolveSharedStorageRoot().getAbsolutePath();
         }
@@ -336,7 +321,7 @@ public class MainActivity extends ComponentActivity {
         MenuItem saveMenu = menu.findItem(R.id.save);
         MenuItem undo = menu.findItem(R.id.undo);
         undo.setIcon(R.drawable.ic_undo);
-        if (editView.canUndo() || mFileModifiedManually) {
+        if (activeTab != null && !activeTab.loading && !activeTab.saving && isDirty(activeTab)) {
             saveMenu.getIcon().setTint(themeColor(android.R.attr.textColorPrimary, Color.WHITE));
             saveMenu.setEnabled(true);
         } else {
@@ -423,6 +408,10 @@ public class MainActivity extends ComponentActivity {
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
+        menu.add(0, 9901, 100, "Dokument öffnen");
+        menu.add(0, 9902, 101, "Speichern unter");
+        menu.add(0, 9903, 102, "Tab schließen");
+        menu.add(0, 9904, 103, "Color Picker");
         getMenuInflater().inflate(R.menu.editor_menu, menu);
         return super.onCreateOptionsMenu(menu);
     }
@@ -430,6 +419,14 @@ public class MainActivity extends ComponentActivity {
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
+        if (id == android.R.id.home) { rebuildFileDrawer(); fileDrawer.open(); return true; }
+        if (id == 9901) { Intent chooser = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE); startActivityForResult(chooser, OPEN_DOCUMENT); return true; }
+        if (id == 9902) { saveAs(activeTab, null); return true; }
+        if (id == 9903) { if (activeTab != null) closeTab(activeTab); return true; }
+        if (id == 9904) {
+            Intent color = new Intent().setClassName(getPackageName(), "io.github.lootdev78.mtapktool.feature.tools.ToolsActivity").putExtra("tool", "color").putExtra("pick", true);
+            startActivityForResult(color, PICK_COLOR); return true;
+        }
         if (id == R.id.undo) {
             editView.undo();
         } else if (id == R.id.search) {
@@ -517,10 +514,7 @@ public class MainActivity extends ComponentActivity {
         } else if (id == R.id.preference) {
             menuStyle();
         } else if (id == R.id.save) {
-            String path = mSharedPreference.getString("path", "");
-            if (!path.isEmpty()) {
-                writeFileAsync(path);
-            }
+            saveTab(activeTab, null);
         } else if (id == R.id.delete_line) {
             editView.deleteLine();
             return true;
@@ -683,110 +677,397 @@ public class MainActivity extends ComponentActivity {
             public void onClick(DialogInterface dia, int which) {
                 String pathname = pathEdit.getText().toString();
                 if (!pathname.isEmpty()) {
-                    mSharedPreference.edit().putString("path", pathname).commit();
-                    readFileAsync(pathname);
+                    openDocument(new File(pathname), null, null);
                 }
             }
         });
         builder.setCancelable(true).show();
     }
 
-    // Read/write on a dedicated executor. AsyncTask was removed because it is deprecated.
-    private void readFileAsync(final String path) {
-        editView.setEditedMode(false);
-        mHandler.sendEmptyMessage(0);
-        mIndeterminateBar.setVisibility(View.VISIBLE);
-        ioExecutor.execute(() -> {
-            GapBuffer loadedBuffer = null;
-            boolean success = false;
-            try {
-                File file = new File(path);
-                String charset = UniversalDetector.detectCharset(file);
-                if (charset != null) {
-                    try {
-                        mDefaultCharset = Charset.forName(charset);
-                    } catch (Exception ignored) {
-                        mDefaultCharset = StandardCharsets.UTF_8;
-                    }
-                } else {
-                    mDefaultCharset = StandardCharsets.UTF_8;
-                }
+    private void readFileAsync(String path) { openDocument(new File(path), null, null); }
+    private void writeFileAsync(String path) { saveTab(activeTab, null); }
 
-                byte[] bytes = new byte[(int) file.length()];
-                try (InputStream fis = new java.io.FileInputStream(file)) {
-                    int offset = 0;
-                    while (offset < bytes.length) {
-                        int count = fis.read(bytes, offset, bytes.length - offset);
-                        if (count < 0) break;
-                        offset += count;
-                    }
-                }
-
-                String fullText = new String(bytes, mDefaultCharset);
-                if (fullText.contains("\r\n")) mLineSeparator = "\r\n";
-                else if (fullText.contains("\r")) mLineSeparator = "\r";
-                else mLineSeparator = "\n";
-                mFileModifiedManually = false;
-                loadedBuffer = new GapBuffer(fullText);
-                success = true;
-            } catch (Exception error) {
-                Log.e(TAG, "Read failed", error);
-            }
-            final GapBuffer resultBuffer = loadedBuffer;
-            final boolean result = success;
-            mHandler.post(() -> {
-                if (result && resultBuffer != null) editView.setBuffer(resultBuffer);
-                editView.setEditedMode(true);
-                mHandler.sendEmptyMessage(0);
-                mIndeterminateBar.setVisibility(View.GONE);
-                if (!result) Toast.makeText(MainActivity.this, "Open failed", Toast.LENGTH_LONG).show();
+    private void setupFileNavigation() {
+        View content = findViewById(R.id.rootLayout);
+        ViewGroup parent = (ViewGroup) content.getParent();
+        int index = parent.indexOfChild(content);
+        parent.removeView(content);
+        fileDrawer = new EditorDrawerLayout(this, content, hostColor("surface", android.R.attr.colorBackground, Color.DKGRAY));
+        parent.addView(fileDrawer, index, new ViewGroup.LayoutParams(-1, -1));
+        fileDrawer.setOnOpen(this::rebuildFileDrawer);
+        ViewCompat.setOnApplyWindowInsetsListener(fileDrawer, (view, insets) -> {
+            Insets safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            int spacing = fileDrawer.dp(8);
+            fileDrawer.rows.setPadding(spacing + safe.left, spacing + safe.top, spacing + safe.right, spacing + safe.bottom);
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(fileDrawer);
+        // Always-visible entry, including devices/themes with no native ActionBar.
+        if (content instanceof android.widget.RelativeLayout) {
+            android.widget.RelativeLayout root = (android.widget.RelativeLayout) content;
+            LinearLayout navigation = new LinearLayout(this);
+            navigation.setId(View.generateViewId()); navigation.setGravity(Gravity.CENTER_VERTICAL);
+            navigation.setBackgroundColor(hostColor("navigation", android.R.attr.colorBackground, Color.DKGRAY));
+            android.widget.ImageButton button = new android.widget.ImageButton(this);
+            button.setImageResource(R.drawable.mt_editor_ic_navigation);
+            button.setImageTintList(android.content.res.ColorStateList.valueOf(hostColor("on_surface", android.R.attr.textColorPrimary, Color.WHITE)));
+            button.setBackground(getSelectableBackground());
+            button.setContentDescription("Dateinavigation: offene und zuletzt geöffnete Dateien");
+            button.setOnClickListener(v -> fileDrawer.open());
+            navigation.addView(button, new LinearLayout.LayoutParams(fileDrawer.dp(48), fileDrawer.dp(44)));
+            navigationDocumentTitle = new TextView(this);
+            navigationDocumentTitle.setText("Dateien"); navigationDocumentTitle.setSingleLine(true);
+            navigationDocumentTitle.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+            navigationDocumentTitle.setTextColor(hostColor("on_surface", android.R.attr.textColorPrimary, Color.WHITE));
+            navigationDocumentTitle.setTextSize(14);
+            navigation.addView(navigationDocumentTitle, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView open = new TextView(this); open.setText("+"); open.setTextSize(24); open.setGravity(Gravity.CENTER);
+            open.setTextColor(hostColor("primary", android.R.attr.colorAccent, Color.CYAN));
+            open.setContentDescription("Dokument öffnen"); open.setBackground(getSelectableBackground());
+            open.setOnClickListener(v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), OPEN_DOCUMENT));
+            navigation.addView(open, new LinearLayout.LayoutParams(fileDrawer.dp(48), fileDrawer.dp(44)));
+            android.widget.ImageButton save = new android.widget.ImageButton(this);
+            navigationSaveButton = save;
+            save.setImageResource(R.drawable.mt_editor_ic_save);
+            save.setImageTintList(android.content.res.ColorStateList.valueOf(hostColor("on_surface", android.R.attr.textColorPrimary, Color.WHITE)));
+            save.setContentDescription("Datei speichern"); save.setBackground(getSelectableBackground());
+            save.setOnClickListener(v -> saveTab(activeTab, null));
+            navigation.addView(save, new LinearLayout.LayoutParams(fileDrawer.dp(44), fileDrawer.dp(44)));
+            TextView more = new TextView(this); more.setText("\u22ee"); more.setTextSize(26); more.setGravity(Gravity.CENTER);
+            more.setTextColor(hostColor("on_surface", android.R.attr.textColorPrimary, Color.WHITE));
+            more.setContentDescription("Editor-Menü"); more.setBackground(getSelectableBackground());
+            more.setOnClickListener(v -> {
+                PopupMenu popup = themedPopup(more);
+                onCreateOptionsMenu(popup.getMenu()); onPrepareOptionsMenu(popup.getMenu());
+                stylePopupMenu(popup.getMenu());
+                popup.setOnMenuItemClickListener(this::onOptionsItemSelected); popup.show();
             });
+            navigation.addView(more, new LinearLayout.LayoutParams(fileDrawer.dp(44), fileDrawer.dp(44)));
+            android.widget.RelativeLayout.LayoutParams nav = new android.widget.RelativeLayout.LayoutParams(-1, fileDrawer.dp(44));
+            nav.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP); root.addView(navigation, nav);
+            View editor = root.findViewById(R.id.editorContainer);
+            android.widget.RelativeLayout.LayoutParams editorParams = (android.widget.RelativeLayout.LayoutParams) editor.getLayoutParams();
+            editorParams.addRule(android.widget.RelativeLayout.BELOW, navigation.getId()); editor.setLayoutParams(editorParams);
+            View progress = root.findViewById(R.id.indeterminateBar);
+            android.widget.RelativeLayout.LayoutParams progressParams = (android.widget.RelativeLayout.LayoutParams) progress.getLayoutParams();
+            progressParams.removeRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
+            progressParams.addRule(android.widget.RelativeLayout.BELOW, navigation.getId()); progress.setLayoutParams(progressParams);
+        }
+        content.setBackgroundColor(hostColor("surface", android.R.attr.colorBackground, Color.DKGRAY));
+        findViewById(R.id.linear_bottom_layout).setBackgroundColor(hostColor("navigation", android.R.attr.colorBackground, Color.DKGRAY));
+        search_pad.setBackgroundColor(hostColor("navigation", android.R.attr.colorBackground, Color.DKGRAY));
+        getWindow().setStatusBarColor(hostColor("surface", android.R.attr.colorBackground, Color.DKGRAY));
+        getWindow().setNavigationBarColor(hostColor("navigation", android.R.attr.colorBackground, Color.DKGRAY));
+        if (getActionBar() != null && navigationDocumentTitle != null) getActionBar().hide();
+        if (getActionBar() != null) {
+            getActionBar().setDisplayHomeAsUpEnabled(true);
+            getActionBar().setHomeAsUpIndicator(R.drawable.mt_editor_ic_navigation);
+            getActionBar().setHomeActionContentDescription("Dateinavigation");
+        }
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override public void handleOnBackPressed() {
+                if (fileDrawer.isOpen()) { fileDrawer.close(); return; }
+                if (tabs.stream().anyMatch(t -> t.loading || t.saving)) { Toast.makeText(MainActivity.this, "Dateioperation läuft", Toast.LENGTH_SHORT).show(); return; }
+                if (tabs.stream().noneMatch(MainActivity.this::isDirty)) { persistEditorSession(); finish(); return; }
+                new AlertDialog.Builder(MainActivity.this).setTitle("Ungespeicherte Dateien")
+                    .setMessage("Änderungen vor dem Schließen speichern?")
+                    .setPositiveButton("Speichern", (d, w) -> saveDirtyTabs(0))
+                    .setNegativeButton("Verwerfen", (d, w) -> { discardSession = true; mHandler.removeCallbacks(checkpoint); ioExecutor.execute(() -> mSharedPreference.edit().remove("navigation_session").apply()); finish(); })
+                    .setNeutralButton("Abbrechen", null).show();
+            }
         });
     }
-
-    private void writeFileAsync(final String path) {
-        ioExecutor.execute(() -> {
-            boolean success = false;
-            try {
-                File file = new File(path);
-                if (sourceUri == null && file.isFile() && editor_pref.getBoolean("generate_backup_file", false)) {
-                    File backup = new File(file.getParentFile(), file.getName() + ".bak");
-                    try (InputStream original = new java.io.FileInputStream(file);
-                         OutputStream copy = new java.io.FileOutputStream(backup)) {
-                        byte[] buffer = new byte[1024 * 256];
-                        int read;
-                        while ((read = original.read(buffer)) >= 0) if (read > 0) copy.write(buffer, 0, read);
-                    }
-                }
-                String content = editView.getBuffer().toString();
-                if (!"\n".equals(mLineSeparator)) content = content.replace("\n", mLineSeparator);
-                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
-                     java.io.OutputStreamWriter osw = new java.io.OutputStreamWriter(fos, mDefaultCharset)) {
-                    osw.write(content);
-                    osw.flush();
-                }
-                if (sourceUri != null) {
-                    try (InputStream in = new java.io.FileInputStream(file);
-                         OutputStream out = getContentResolver().openOutputStream(sourceUri, "wt")) {
-                        if (out == null) throw new IOException("Cannot write document");
-                        byte[] buffer = new byte[1024 * 256];
-                        int read;
-                        while ((read = in.read(buffer)) >= 0) if (read > 0) out.write(buffer, 0, read);
-                        out.flush();
-                    }
-                }
-                mFileModifiedManually = false;
-                success = true;
-            } catch (Exception error) {
-                Log.e(TAG, "Write failed", error);
+    private EditView newEditor() {
+        EditView view = new EditView(this);
+        view.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        view.setWordWrap(editor_pref.getBoolean("word_wrap", false));
+        view.setAutoCompleteEnabled(editor_pref.getBoolean("auto_complete", true));
+        view.setShowLineNumbers(editor_pref.getBoolean("show_line_numbers", true));
+        view.setStickyLineNumbers(editor_pref.getBoolean("sticky_line_numbers", true));
+        view.setShowIndentGuides(editor_pref.getBoolean("show_indent_guides", true));
+        view.setShowWrapArrows(editor_pref.getBoolean("show_wrap_arrows", true));
+        view.setAutoIndentEnabled(editor_pref.getBoolean("auto_indent", true));
+        view.setTypeface(Typeface.DEFAULT);
+        int syntax = editor_pref.getInt("syntax_position", 0);
+        if (syntax > 0) { List<SyntaxItem> available = loadSyntaxList(); if (syntax <= available.size()) view.setSyntaxLanguageFileName(available.get(syntax - 1).Path); }
+        int menu = editor_pref.getInt("menu_style", 0);
+        view.setMenuStyle(menu == 1 ? ClipboardPanel.MenuDisplayMode.TEXT_ONLY : menu == 2 ? ClipboardPanel.MenuDisplayMode.ICON_ONLY : ClipboardPanel.MenuDisplayMode.ICON_AND_TEXT);
+        return view;
+    }
+    private void bindDocument(EditorTab tab) {
+        tab.view.setOnTextChangedListener(() -> {
+            if (!tab.loading) {
+                mHandler.sendEmptyMessage(0);
+                mHandler.removeCallbacks(checkpoint); mHandler.postDelayed(checkpoint, 700);
+                if (tab == activeTab) updateDocumentTitle();
             }
-            final boolean result = success;
-            mHandler.post(() -> Toast.makeText(
-                    getApplicationContext(),
-                    result ? "saved success!" : "save failed!",
-                    result ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG
-            ).show());
+            tab.view.postInvalidate();
         });
+        tab.view.setOnSelectionChangeListener((start, end) -> mHandler.sendEmptyMessage(0));
+    }
+    private void captureDocumentSettings() {
+        if (activeTab == null) return;
+        activeTab.charset = mDefaultCharset; activeTab.eol = mLineSeparator;
+    }
+    private boolean isDirty(EditorTab tab) {
+        if (tab == null || tab.loading) return false;
+        if (tab == activeTab) captureDocumentSettings();
+        return !tab.savedText.equals(tab.view.getBuffer().toString()) || !tab.charset.equals(tab.savedCharset) || !tab.eol.equals(tab.savedEol);
+    }
+    private void updateDocumentTitle() {
+        if (activeTab != null) setTitle(activeTab.title + (isDirty(activeTab) ? " *" : ""));
+        if (activeTab != null && navigationDocumentTitle != null) navigationDocumentTitle.setText(activeTab.title + (isDirty(activeTab) ? " *" : ""));
+        if (navigationSaveButton != null) {
+            boolean canSave = activeTab != null && !activeTab.loading && !activeTab.saving && isDirty(activeTab);
+            navigationSaveButton.setEnabled(canSave);
+            navigationSaveButton.setAlpha(canSave ? 1f : .5f);
+        }
+    }
+    private void selectTab(EditorTab tab) {
+        captureDocumentSettings(); activeTab = tab; editView = tab.view;
+        editorContainer.removeAllViews(); editorContainer.addView(editView);
+        addFunctionBar(functionBar, editView);
+        sourceUri = tab.uri; sourceDisplayName = tab.title;
+        mDefaultCharset = tab.charset; mLineSeparator = tab.eol; mFileModifiedManually = false;
+        if (tab.file != null) mSharedPreference.edit().putString("path", tab.file.getAbsolutePath()).apply();
+        mIndeterminateBar.setVisibility(tab.loading ? View.VISIBLE : View.GONE);
+        search_pad.setVisibility(View.GONE); updateDocumentTitle(); invalidateOptionsMenu(); rebuildFileDrawer();
+    }
+    private String documentKey(EditorTab tab) { return tab.uri != null ? tab.uri.toString() : tab.file != null ? tab.file.getAbsolutePath() : ""; }
+    private void openDocument(File file, Uri uri, String title) {
+        try { if (file != null) file = file.getCanonicalFile(); } catch (IOException e) { Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show(); return; }
+        String key = uri != null ? uri.toString() : file != null ? file.getAbsolutePath() : "";
+        for (EditorTab tab : tabs) if (key.equals(documentKey(tab)) && !key.isEmpty()) { selectTab(tab); fileDrawer.close(); return; }
+        if (tabs.size() >= MAX_OPEN_FILES) { Toast.makeText(this, "Maximal 12 Dateien; einen Tab schließen", Toast.LENGTH_LONG).show(); return; }
+        if (activeTab != null && activeTab.file == null && activeTab.uri == null && !isDirty(activeTab)) { tabs.remove(activeTab); }
+        EditorTab tab = new EditorTab(); tab.uri = uri; tab.file = file;
+        tab.title = title != null && !title.isEmpty() ? title : file != null ? file.getName() : "Dokument";
+        tab.view = newEditor(); tab.loading = true; bindDocument(tab); tabs.add(tab); selectTab(tab); fileDrawer.close();
+        final File inputFile = file;
+        final String taskId = EditorTaskBridge.begin("Textdatei öffnen", tab.title);
+        ioExecutor.execute(() -> {
+            try {
+                File local = inputFile;
+                if (uri != null) {
+                    local = new File(getCacheDir(), "mh-document-" + tab.id + ".txt");
+                    try (InputStream in = getContentResolver().openInputStream(uri); OutputStream out = new FileOutputStream(local)) {
+                        if (in == null) throw new IOException("Dokument nicht lesbar");
+                        byte[] buffer = new byte[64 * 1024]; long total = 0;
+                        for (int count; (count = in.read(buffer)) >= 0;) { total += count; if (total > MAX_EDITOR_BYTES) throw new IOException("Datei größer als 16 MiB"); if (count > 0) out.write(buffer, 0, count); }
+                    }
+                }
+                if (local == null || !local.isFile() || local.length() > MAX_EDITOR_BYTES) throw new IOException("Datei fehlt oder ist größer als 16 MiB");
+                String detected = UniversalDetector.detectCharset(local);
+                Charset charset = detected == null ? StandardCharsets.UTF_8 : Charset.forName(detected);
+                String fullText = new String(Files.readAllBytes(local.toPath()), charset);
+                String eol = fullText.contains("\r\n") ? "\r\n" : fullText.contains("\r") ? "\r" : "\n";
+                String normalized = fullText.replace("\r\n", "\n").replace('\r', '\n');
+                File loadedFile = local;
+                EditorTaskBridge.finish(taskId, true, "Datei geladen: " + tab.title);
+                mHandler.post(() -> {
+                    if (!tabs.contains(tab)) return;
+                    tab.file = loadedFile; tab.charset = charset; tab.savedCharset = charset; tab.eol = eol; tab.savedEol = eol;
+                    tab.view.setBuffer(new GapBuffer(normalized)); tab.savedText = normalized; tab.loading = false;
+                    tab.view.setEditedMode(true);
+                    rememberRecent(tab);
+                    if (activeTab == tab) selectTab(tab);
+                    persistEditorSession();
+                });
+            } catch (Exception error) {
+                EditorTaskBridge.finish(taskId, false, error.getMessage());
+                mHandler.post(() -> { tab.loading = false; tabs.remove(tab); if (activeTab == tab) selectOrCreateLastTab(); Toast.makeText(this, "Öffnen fehlgeschlagen: " + error.getMessage(), Toast.LENGTH_LONG).show(); });
+            }
+        });
+    }
+    private void saveTab(EditorTab tab, Runnable success) {
+        if (tab == null || tab.loading || tab.saving) return;
+        if (tab.file == null && tab.uri == null) { saveAs(tab, success); return; }
+        if (tab == activeTab) captureDocumentSettings();
+        final String snapshot = tab.view.getBuffer().toString();
+        final Charset charset = tab.charset; final String eol = tab.eol;
+        final Uri destinationUri = tab.uri;
+        final File destination = tab.file;
+        final String taskId = EditorTaskBridge.begin("Textdatei speichern", tab.title);
+        tab.saving = true; updateDocumentTitle(); invalidateOptionsMenu();
+        ioExecutor.execute(() -> {
+            try {
+                if (destination == null) throw new IOException("Speicherort fehlt");
+                File staged = File.createTempFile(".mh-save-", ".tmp", destination.getParentFile());
+                try {
+                    try (OutputStream out = new FileOutputStream(staged)) { out.write(snapshot.replace("\n", eol).getBytes(charset)); }
+                    if (destinationUri == null && destination.isFile()) android.system.Os.chmod(staged.getAbsolutePath(), android.system.Os.stat(destination.getAbsolutePath()).st_mode & 07777);
+                    if (destinationUri == null && destination.isFile() && editor_pref.getBoolean("generate_backup_file", false))
+                        Files.copy(destination.toPath(), new File(destination.getParentFile(), destination.getName() + ".bak").toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    if (destinationUri != null) {
+                        try (InputStream in = new java.io.FileInputStream(staged); OutputStream out = getContentResolver().openOutputStream(destinationUri, "wt")) {
+                            if (out == null) throw new IOException("Dokument nicht beschreibbar");
+                            byte[] buffer = new byte[64 * 1024]; for (int n; (n = in.read(buffer)) >= 0;) if (n > 0) out.write(buffer, 0, n);
+                        }
+                    }
+                    Files.move(staged.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                } finally { staged.delete(); }
+                EditorTaskBridge.finish(taskId, true, "Datei gespeichert: " + tab.title);
+                mHandler.post(() -> {
+                    tab.saving = false; tab.savedText = snapshot; tab.savedCharset = charset; tab.savedEol = eol;
+                    mFileModifiedManually = false; updateDocumentTitle(); rebuildFileDrawer(); invalidateOptionsMenu(); rememberRecent(tab); persistEditorSession();
+                    Toast.makeText(this, "Gespeichert", Toast.LENGTH_SHORT).show(); if (success != null) success.run();
+                });
+            } catch (Exception error) { EditorTaskBridge.finish(taskId, false, error.getMessage()); mHandler.post(() -> { tab.saving = false; updateDocumentTitle(); invalidateOptionsMenu(); Toast.makeText(this, "Speichern fehlgeschlagen: " + error.getMessage(), Toast.LENGTH_LONG).show(); }); }
+        });
+    }
+    private void saveAs(EditorTab tab, Runnable success) {
+        if (tab == null || tab.loading || tab.saving) return;
+        savingAsTab = tab; savingAsSuccess = success;
+        startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("text/plain").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, tab.title.equals("Unbenannt") ? "document.txt" : tab.title), SAVE_DOCUMENT);
+    }
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (result != RESULT_OK || data == null) { if (request == SAVE_DOCUMENT) { savingAsTab = null; savingAsSuccess = null; } return; }
+        if (request == OPEN_DOCUMENT && data.getData() != null) {
+            Uri uri = data.getData(); try { getContentResolver().takePersistableUriPermission(uri, data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION)); } catch (Exception ignored) { }
+            String title = "Dokument";
+            try (android.database.Cursor cursor = getContentResolver().query(uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) { if (cursor != null && cursor.moveToFirst()) title = cursor.getString(0); }
+            openDocument(null, uri, title);
+        } else if (request == SAVE_DOCUMENT && savingAsTab != null && data.getData() != null) {
+            EditorTab tab = savingAsTab; Runnable success = savingAsSuccess; savingAsTab = null; savingAsSuccess = null;
+            tab.uri = data.getData(); tab.file = new File(getCacheDir(), "mh-document-" + tab.id + ".txt");
+            try { getContentResolver().takePersistableUriPermission(tab.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Exception ignored) { }
+            saveTab(tab, success);
+        } else if (request == PICK_COLOR) { String color = data.getStringExtra("color"); if (color != null) editView.insertText(color); }
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent); setIntent(intent);
+        String path = intent.getStringExtra("path"), uri = intent.getStringExtra("uri");
+        if (uri != null) openDocument(null, Uri.parse(uri), intent.getStringExtra("name")); else if (path != null) openDocument(new File(path), null, intent.getStringExtra("name"));
+    }
+    private void closeTab(EditorTab tab) {
+        if (tab.loading || tab.saving) return;
+        Runnable close = () -> { tabs.remove(tab); if (activeTab == tab) selectOrCreateLastTab(); rebuildFileDrawer(); persistEditorSession(); };
+        if (!isDirty(tab)) { close.run(); return; }
+        new AlertDialog.Builder(this).setTitle(tab.title).setMessage("Änderungen speichern?")
+            .setPositiveButton("Speichern", (d, w) -> saveTab(tab, close)).setNegativeButton("Verwerfen", (d, w) -> close.run()).setNeutralButton("Abbrechen", null).show();
+    }
+    private void selectOrCreateLastTab() {
+        if (tabs.isEmpty()) { EditorTab draft = new EditorTab(); draft.view = newEditor(); bindDocument(draft); tabs.add(draft); }
+        selectTab(tabs.get(tabs.size() - 1));
+    }
+    private void saveDirtyTabs(int index) {
+        if (index >= tabs.size()) { persistEditorSession(); finish(); return; }
+        EditorTab tab = tabs.get(index);
+        if (isDirty(tab)) saveTab(tab, () -> saveDirtyTabs(index + 1)); else saveDirtyTabs(index + 1);
+    }
+    private void rememberRecent(EditorTab tab) {
+        String key = documentKey(tab); if (key.isEmpty()) return;
+        JSONArray previous = recentFiles(); JSONArray next = new JSONArray();
+        next.put(json("path", key, "name", tab.title));
+        for (int i = 0; i < previous.length() && next.length() < 40; i++) { JSONObject item = previous.optJSONObject(i); if (item != null && !key.equals(item.optString("path"))) next.put(item); }
+        mSharedPreference.edit().putString("navigation_recent", next.toString()).apply();
+    }
+    private JSONArray recentFiles() { try { return new JSONArray(mSharedPreference.getString("navigation_recent", "[]")); } catch (Exception ignored) { return new JSONArray(); } }
+    private TextView navigationLabel(String text, boolean heading) {
+        TextView row = new TextView(this); row.setText(text); row.setTextColor(hostColor(heading ? "primary" : "on_surface", heading ? android.R.attr.colorAccent : android.R.attr.textColorPrimary, Color.WHITE));
+        row.setTextSize(heading ? 14 : 13); row.setPadding(fileDrawer.dp(12), fileDrawer.dp(heading ? 18 : 10), fileDrawer.dp(8), fileDrawer.dp(10));
+        row.setMinHeight(fileDrawer.dp(44)); row.setGravity(Gravity.CENTER_VERTICAL);
+        if (heading) row.setTypeface(null, Typeface.BOLD); else row.setBackground(getSelectableBackground()); return row;
+    }
+    private void rebuildFileDrawer() {
+        if (fileDrawer == null) return;
+        fileDrawer.rows.removeAllViews();
+        fileDrawer.rows.addView(navigationLabel("Dateien", true));
+        TextView open = navigationLabel("+ Datei öffnen", false); open.setOnClickListener(v -> { fileDrawer.close(); startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), OPEN_DOCUMENT); }); fileDrawer.rows.addView(open);
+        fileDrawer.rows.addView(navigationLabel("Geöffnete Dateien", true));
+        for (EditorTab tab : new ArrayList<>(tabs)) {
+            LinearLayout row = new LinearLayout(this);
+            if (tab == activeTab) row.setBackgroundColor(hostColor("container", android.R.attr.colorControlHighlight, Color.DKGRAY));
+            TextView label = navigationLabel((tab == activeTab ? "› " : "") + (isDirty(tab) ? "● " : "") + tab.title, false);
+            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1)); label.setOnClickListener(v -> { selectTab(tab); fileDrawer.close(); });
+            TextView close = navigationLabel("×", false); close.setContentDescription("Tab schließen"); close.setOnClickListener(v -> closeTab(tab)); row.addView(close); fileDrawer.rows.addView(row);
+        }
+        fileDrawer.rows.addView(navigationLabel("Zuletzt geöffnet", true));
+        JSONArray recent = recentFiles();
+        for (int i = 0; i < recent.length(); i++) {
+            JSONObject item = recent.optJSONObject(i); if (item == null) continue;
+            String key = item.optString("path"), title = item.optString("name");
+            TextView row = navigationLabel(title + "\n" + key, false); row.setMaxLines(2); row.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE); row.setOnClickListener(v -> { fileDrawer.close(); if (key.startsWith("content://")) openDocument(null, Uri.parse(key), title); else openDocument(new File(key), null, title); });
+            row.setOnLongClickListener(v -> { JSONArray next = new JSONArray(); for (int n = 0; n < recent.length(); n++) { JSONObject value = recent.optJSONObject(n); if (value != null && !key.equals(value.optString("path"))) next.put(value); } mSharedPreference.edit().putString("navigation_recent", next.toString()).apply(); rebuildFileDrawer(); return true; });
+            fileDrawer.rows.addView(row);
+        }
+        if (activeTab != null && activeTab.uri == null && activeTab.file != null) {
+            File directory = activeTab.file.getParentFile();
+            TextView header = navigationLabel("Aktueller Ordner", true); fileDrawer.rows.addView(header);
+            ioExecutor.execute(() -> {
+                File[] children = directory == null ? null : directory.listFiles(f -> f.isFile() && f.length() <= MAX_EDITOR_BYTES && isTextName(f.getName()));
+                if (children == null) return; Arrays.sort(children, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+                mHandler.post(() -> { if (activeTab == null || activeTab.file == null || !directory.equals(activeTab.file.getParentFile()) || header.getParent() == null) return;
+                    for (int i = 0; i < Math.min(children.length, 100); i++) { File child = children[i]; TextView row = navigationLabel(child.getName(), false); row.setOnClickListener(v -> { fileDrawer.close(); openDocument(child, null, child.getName()); }); fileDrawer.rows.addView(row); }
+                });
+            });
+        }
+    }
+    private void persistEditorSession() {
+        if (discardSession || restoringSession || tabs.isEmpty()) return;
+        captureDocumentSettings();
+        JSONArray metadata = new JSONArray(); List<String[]> buffers = new ArrayList<>();
+        File sessionDirectory = new File(getFilesDir(), "mh-editor-session");
+        for (EditorTab tab : tabs) {
+            if (tab.loading) continue;
+            JSONObject item = json("id", tab.id, "file", tab.file == null ? "" : tab.file.getAbsolutePath(), "uri", tab.uri == null ? "" : tab.uri.toString(),
+                "title", tab.title, "charset", tab.charset.name(), "savedCharset", tab.savedCharset.name(), "eol", tab.eol, "savedEol", tab.savedEol,
+                "cursor", tab.view.getSelectionStart(), "active", tab == activeTab);
+            metadata.put(item); buffers.add(new String[]{tab.id, tab.view.getBuffer().toString(), tab.savedText});
+        }
+        ioExecutor.execute(() -> {
+            try {
+                if (discardSession) return;
+                if (!sessionDirectory.exists() && !sessionDirectory.mkdirs()) return;
+                Set<String> live = new HashSet<>();
+                for (String[] buffer : buffers) { live.add(buffer[0] + ".draft"); live.add(buffer[0] + ".saved");
+                    for (int n = 1; n <= 2; n++) { File output = new File(sessionDirectory, buffer[0] + (n == 1 ? ".draft" : ".saved")); File temp = new File(sessionDirectory, output.getName() + ".tmp"); Files.write(temp.toPath(), buffer[n].getBytes(StandardCharsets.UTF_8)); Files.move(temp.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING); }
+                }
+                if (!discardSession) mSharedPreference.edit().putString("navigation_session", metadata.toString()).apply();
+                File[] old = sessionDirectory.listFiles(); if (old != null) for (File file : old) if (!live.contains(file.getName())) file.delete();
+            } catch (Exception e) { Log.e(TAG, "Editor checkpoint failed", e); }
+        });
+    }
+    private static JSONObject json(Object... pairs) {
+        JSONObject result = new JSONObject();
+        try { for (int i = 0; i < pairs.length; i += 2) result.put((String) pairs[i], pairs[i + 1]); }
+        catch (org.json.JSONException e) { throw new IllegalStateException(e); }
+        return result;
+    }
+    private static boolean isTextName(String name) {
+        return name.matches("(?i).+\\.(txt|md|xml|json|smali|java|kt|kts|gradle|html|css|js|ts|tsx|jsx|yaml|yml|ini|conf|properties|sh|py|c|cpp|h|hpp|log|csv|svg)$") || name.equalsIgnoreCase("LICENSE") || name.equalsIgnoreCase("Makefile");
+    }
+    private boolean restoreEditorSession() {
+        JSONArray metadata; try { metadata = new JSONArray(mSharedPreference.getString("navigation_session", "[]")); } catch (Exception e) { return false; }
+        if (metadata.length() == 0) return false;
+        restoringSession = true;
+        ioExecutor.execute(() -> {
+            List<String[]> restored = new ArrayList<>();
+            File directory = new File(getFilesDir(), "mh-editor-session");
+            for (int i = 0; i < Math.min(metadata.length(), MAX_OPEN_FILES); i++) try {
+                JSONObject item = metadata.getJSONObject(i); String id = item.getString("id"); if (!id.matches("[0-9a-f-]{36}")) continue;
+                File draft = new File(directory, id + ".draft"), saved = new File(directory, id + ".saved");
+                if (!draft.isFile() || !saved.isFile() || draft.length() > MAX_EDITOR_BYTES || saved.length() > MAX_EDITOR_BYTES) continue;
+                restored.add(new String[]{item.toString(), new String(Files.readAllBytes(draft.toPath()), StandardCharsets.UTF_8), new String(Files.readAllBytes(saved.toPath()), StandardCharsets.UTF_8)});
+            } catch (Exception e) { Log.w(TAG, "Cannot restore editor tab", e); }
+            mHandler.post(() -> {
+                for (String[] entry : restored) try {
+                    JSONObject item = new JSONObject(entry[0]); String key = item.optString("uri").isEmpty() ? item.optString("file") : item.optString("uri");
+                    if (!key.isEmpty() && tabs.stream().anyMatch(t -> key.equals(documentKey(t)))) continue;
+                    if (tabs.size() >= MAX_OPEN_FILES) break;
+                    EditorTab tab = new EditorTab(); tab.title = item.optString("title", "Unbenannt"); String path = item.optString("file"); tab.file = path.isEmpty() ? null : new File(path);
+                    String uri = item.optString("uri"); tab.uri = uri.isEmpty() ? null : Uri.parse(uri);
+                    if (tab.uri != null && tab.file == null) tab.file = new File(getCacheDir(), "mh-document-" + tab.id + ".txt");
+                    tab.charset = Charset.forName(item.optString("charset", "UTF-8")); tab.savedCharset = Charset.forName(item.optString("savedCharset", "UTF-8")); tab.eol = item.optString("eol", "\n"); tab.savedEol = item.optString("savedEol", "\n");
+                    tab.view = newEditor(); tab.view.setBuffer(new GapBuffer(entry[1])); tab.savedText = entry[2]; bindDocument(tab); tabs.add(tab); tab.view.setSelection(item.optInt("cursor"), item.optInt("cursor"));
+                    if (item.optBoolean("active") && (activeTab == null || documentKey(activeTab).isEmpty() && !isDirty(activeTab))) selectTab(tab);
+                } catch (Exception e) { Log.w(TAG, "Cannot restore tab", e); }
+                if (tabs.size() > 1) tabs.removeIf(t -> t != activeTab && documentKey(t).isEmpty() && !isDirty(t));
+                restoringSession = false; rebuildFileDrawer(); persistEditorSession();
+            });
+        });
+        return true;
     }
 
     private File resolveSharedStorageRoot() {
@@ -798,10 +1079,36 @@ public class MainActivity extends ComponentActivity {
 
     @Override
     protected void onDestroy() {
-        ioExecutor.shutdownNow();
+        mHandler.removeCallbacksAndMessages(null);
+        ioExecutor.shutdown();
         super.onDestroy();
     }
 
+
+    private PopupMenu themedPopup(View anchor) {
+        ContextThemeWrapper popupContext = new ContextThemeWrapper(this,
+                isHostDarkTheme() ? R.style.MTApktoolEditorPopup_Dark : R.style.MTApktoolEditorPopup_Light);
+        return new PopupMenu(popupContext, anchor, Gravity.END);
+    }
+
+    private void stylePopupMenu(Menu menu) {
+        int text = hostColor("on_surface", android.R.attr.textColorPrimary, isHostDarkTheme() ? Color.WHITE : Color.BLACK);
+        for (int i = 0; i < menu.size(); i++) {
+            MenuItem item = menu.getItem(i);
+            int color = item.isEnabled() ? text : (text & 0x00FFFFFF) | 0x66000000;
+            if (item.getTitle() != null) {
+                SpannableString title = new SpannableString(item.getTitle().toString());
+                title.setSpan(new ForegroundColorSpan(color), 0, title.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                item.setTitle(title);
+            }
+            if (item.getIcon() != null) item.getIcon().mutate().setTint(color);
+            if (item.hasSubMenu()) stylePopupMenu(item.getSubMenu());
+        }
+    }
+
+    private int hostColor(String key, int attr, int fallback) {
+        return getSharedPreferences("mtapktool_theme_bridge", MODE_PRIVATE).getInt(key, themeColor(attr, fallback));
+    }
 
     private int themeColor(int attr, int fallback) {
         TypedValue out = new TypedValue();
@@ -873,8 +1180,9 @@ public class MainActivity extends ComponentActivity {
 
             @Override
             public void onClick(View view) {
-                PopupMenu popup = new PopupMenu(MainActivity.this, item_menu);
+                PopupMenu popup = themedPopup(item_menu);
                 popup.inflate(R.menu.menu_search_options);
+                stylePopupMenu(popup.getMenu());
                 popup.getMenu().findItem(R.id.search_option_regex).setChecked(true);
                 popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
                     public boolean onMenuItemClick(MenuItem item) {
@@ -936,10 +1244,10 @@ public class MainActivity extends ComponentActivity {
     }
 
     private Drawable getSelectableBackground() {
-        TypedValue outValue = new TypedValue();
-        getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
-
-        return getResources().getDrawable(outValue.resourceId, getTheme());
+        int accent = hostColor("primary", android.R.attr.colorAccent, Color.CYAN);
+        return new android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf((accent & 0x00ffffff) | 0x33000000),
+            null, new android.graphics.drawable.ColorDrawable(Color.WHITE));
     }
 	
 	private List<SyntaxItem> loadSyntaxList() {

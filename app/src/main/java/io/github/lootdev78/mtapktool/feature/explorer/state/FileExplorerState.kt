@@ -33,7 +33,10 @@ data class PaneState(
     val loadingProgress: Int? = null,
     val loadingLabel: String? = null,
     val highlightedItemName: String? = null,
+    val highlightedItemPath: String? = null,
+    val highlightEvent: Long = 0L,
     val searchQuery: String = "",
+    val searchResultsLabel: String? = null,
     val showSystemHidden: Boolean = true,
     val showManuallyHidden: Boolean = true,
     val manuallyHiddenPaths: Set<String> = emptySet(),
@@ -41,30 +44,36 @@ data class PaneState(
     val filter: FileFilter = FileFilter.ALL,
     val recentlyChangedPaths: Set<String> = emptySet(),
     val archiveFilePath: String? = null,
+    val archiveDisplayPath: String? = null,
     val archiveRootPath: String? = null,
     val displayPathOverride: String? = null,
+    val archiveStatus: io.github.lootdev78.mtapktool.archive.ArchiveSessionState? = null,
+    val archiveChanges: Int = 0,
+    val archiveCharset: String = "",
 ) {
+
+    val isFtpView: Boolean get() = currentPath.startsWith("mtftp://")
 
     val isArchiveView: Boolean
         get() = archiveFilePath != null && archiveRootPath != null
 
     val displayPath: String
         get() {
-            displayPathOverride?.let { return it }
-            val archivePath = archiveFilePath ?: return currentPath
-            val rootPath = archiveRootPath ?: return currentPath
-            val root = File(rootPath)
-            val current = File(currentPath)
-            val relative = runCatching { current.relativeTo(root).invariantSeparatorsPath }.getOrDefault("")
-            return if (relative.isBlank() || relative == ".") "$archivePath!/" else "$archivePath!/$relative"
+            val archivePath = archiveDisplayPath ?: archiveFilePath
+            val rootPath = archiveRootPath
+            val base = displayPathOverride ?: if (archivePath != null && rootPath != null) {
+                val relative = runCatching { File(currentPath).relativeTo(File(rootPath)).invariantSeparatorsPath }.getOrDefault("")
+                if (relative.isBlank() || relative == ".") "$archivePath!/" else "$archivePath!/$relative"
+            } else currentPath
+            return searchResultsLabel?.let { "$base ($it)" } ?: base
         }
 
     val filteredItems: List<FileItem>
         get() {
             val now = System.currentTimeMillis()
             val visible = items.asSequence()
-                .filter { showSystemHidden || !it.name.startsWith(".") }
-                .filter { showManuallyHidden || it.path !in manuallyHiddenPaths }
+                .filter { showSystemHidden || !it.name.startsWith(".") || it.name == highlightedItemName }
+                .filter { showManuallyHidden || it.path !in manuallyHiddenPaths || it.name == highlightedItemName }
                 .filter { searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true) }
                 .filter { item ->
                     when (filter) {

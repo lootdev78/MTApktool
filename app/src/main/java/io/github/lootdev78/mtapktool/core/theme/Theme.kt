@@ -9,9 +9,13 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
@@ -65,6 +69,15 @@ private val MtClassicShapes = Shapes(
     large = RoundedCornerShape(2.dp),
     extraLarge = RoundedCornerShape(2.dp),
 )
+
+/** Explorer panels follow the brightness mode independently of the accent/Monet palette. */
+@Immutable
+data class ExplorerColors(val panel: Color, val onPanel: Color, val secondaryText: Color)
+
+val LocalExplorerColors = staticCompositionLocalOf {
+    ExplorerColors(MdThemeLightSurface, MdThemeLightOnSurface, MdThemeLightOnSurfaceVariant)
+}
+
 @Composable
 fun MTExplorerTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -93,14 +106,33 @@ fun MTExplorerTheme(
         primary = accent,
         onPrimary = onAccent,
         secondary = accent,
+        onSecondary = onAccent,
+        primaryContainer = lerp(baseScheme.surface, accent, 0.22f),
+        onPrimaryContainer = baseScheme.onSurface,
+        secondaryContainer = lerp(baseScheme.surface, accent, 0.16f),
+        onSecondaryContainer = baseScheme.onSurface,
+        surfaceVariant = lerp(baseScheme.surfaceVariant, accent, 0.12f),
+        onSurfaceVariant = baseScheme.onSurface,
+        surfaceContainerLowest = lerp(baseScheme.surfaceContainerLowest, accent, 0.03f),
+        surfaceContainerLow = lerp(baseScheme.surfaceContainerLow, accent, 0.06f),
+        surfaceContainer = lerp(baseScheme.surfaceContainer, accent, 0.08f),
+        surfaceContainerHigh = lerp(baseScheme.surfaceContainerHigh, accent, 0.10f),
+        surfaceContainerHighest = lerp(baseScheme.surfaceContainerHighest, accent, 0.12f),
     )
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        shapes = MtClassicShapes,
-        content = content
-    )
+    val explorerColors = if (darkTheme) {
+        ExplorerColors(MdThemeDarkSurface, MdThemeDarkOnSurface, MdThemeDarkOnSurfaceVariant)
+    } else {
+        ExplorerColors(MdThemeLightSurface, MdThemeLightOnSurface, MdThemeLightOnSurfaceVariant)
+    }
+    CompositionLocalProvider(LocalExplorerColors provides explorerColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            shapes = MtClassicShapes,
+            content = content
+        )
+    }
 }
 
 

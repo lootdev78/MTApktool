@@ -66,13 +66,18 @@ object ApkArchiveReader {
         appInfo.sourceDir = file.absolutePath
         appInfo.publicSourceDir = file.absolutePath
         val bitmap = runCatching { appInfo.loadIcon(context.packageManager).toBitmap(96, 96) }.getOrNull()
-        iconCache[file.absolutePath] = IconEntry(file.lastModified(), file.length(), bitmap)
+        if (bitmap != null) {
+            if (iconCache.size > 256) iconCache.clear()
+            iconCache[file.absolutePath] = IconEntry(file.lastModified(), file.length(), bitmap)
+        }
         return bitmap
     }
 
     fun read(context: Context, file: File): ApkArchiveInfo? {
         val pm = context.packageManager
-        val info = archivePackageInfo(pm, file, PackageManager.GET_SIGNING_CERTIFICATES) ?: return null
+        if (!file.isFile || !file.canRead() || file.length() == 0L) return null
+        val info = runCatching { archivePackageInfo(pm, file, PackageManager.GET_SIGNING_CERTIFICATES) }.getOrNull()
+            ?: runCatching { archivePackageInfo(pm, file, 0) }.getOrNull() ?: return null
         val appInfo = info.applicationInfo ?: return null
         appInfo.sourceDir = file.absolutePath
         appInfo.publicSourceDir = file.absolutePath
