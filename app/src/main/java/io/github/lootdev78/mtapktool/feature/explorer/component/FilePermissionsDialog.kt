@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.documentfile.provider.DocumentFile
 
 @Composable
 fun FilePermissionsDialog(item: FileItem, onDismiss: () -> Unit, onChanged: () -> Unit, onDocumentGrant: () -> Unit,

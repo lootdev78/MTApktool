@@ -170,6 +170,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import modder.hub.editor.MainActivity as MhTextEditorActivity
+import androidx.compose.ui.res.painterResource
+import io.github.lootdev78.mtapktool.R
+import androidx.compose.material3.HorizontalDivider
 
 @Composable
 fun ExplorerScreen(

@@ -133,6 +133,8 @@ dependencies {
     implementation(libs.xz)
     // Use the Android AAR so libzstd JNI payloads are packaged as native libraries.
     implementation("com.github.luben:zstd-jni:1.5.7-4@aar")
+    
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -144,4 +146,5 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    
 }
