@@ -1,6 +1,6 @@
 # MTApktool
 
-MTApktool combines the MTExplorer dual-pane file manager with the supplied Apktool-A Android port. Apktool remains connected as source/library modules; explorer UI and `.apk/.apks/.apkm/.xapk` handling live in `app/src`.
+MTApktool dual-pane file manager with the supplied Apktool Android port. Apktool remains connected as source/library modules; explorer UI and `.apk/.apks/.apkm/.xapk` handling live in `app/src`.
 
 ## Build profiles
 
